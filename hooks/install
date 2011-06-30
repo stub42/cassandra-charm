@@ -1,0 +1,39 @@
+#!/bin/bash
+
+set -x
+
+# Install the repositories
+echo "deb http://www.apache.org/dist/cassandra/debian unstable main" > /etc/apt/sources.list.d/cassandra.list
+echo "deb-src http://www.apache.org/dist/cassandra/debian unstable main" >> /etc/apt/sources.list.d/cassandra.list
+
+# Add the key
+apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F758CE318D77295D
+
+# Update the repositories
+apt-get update
+
+# Install the package
+apt-get install -y cassandra
+
+HOSTNAME=`hostname -f`
+CWD=`dirname $0`
+DEFAULT_JMX_PORT=7199
+DEFAULT_CLUSTER_PORT=7000
+DEFAULT_CLIENT_PORT=9160
+
+mv /etc/cassandra/cassandra-env.sh /etc/cassandra/cassandra-env.sh.orig
+sed -e #__jmx_port__#${DEFAULT_JMX_PORT}# ${CWD}/../templats/cassandra_env_sh.tmpl > /etc/cassandra/cassandra-env.sh
+chown root:root /etc/cassandra/cassandra-env.sh
+chmod 644 /etc/cassandra/cassandra-env.sh
+
+mv /etc/cassandra/cassandra.yaml /etc/cassandra/cassandra.yaml.orig
+cat ${CWD}/../templates/cassandra_yaml_top.tmp > /etc/cassandra/cassandra.yaml
+sed -e #__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e #__cluster_port__#${DEFAULT_CLUSTER_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e #__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e #__client_port__#${DEFAULT_CLIENT_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+
+chown root:root /etc/cassandra/cassandra.yaml
+chmod 644 /etc/cassandra/cassandra.yaml
+
+service cassandra status && service cassandra restart || service cassandra start

@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -x
+
+HOSTNAME=`hostname -f`
+CWD=`dirname $0`
+DEFAULT_JMX_PORT=7199
+DEFAULT_CLUSTER_PORT=7000
+DEFAULT_CLIENT_PORT=9160
+
+relation-set hostname=`hostname -f` jmx_port="${DEFAULT_JMX_PORT}" cluster_port="${DEFAULT_CLUSTER_PORT}" client_port="${DEFAULT_CLIENT_PORT}"
+echo $ENSEMBLE_REMOTE_UNIT joined

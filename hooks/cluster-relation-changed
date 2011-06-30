@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -x
+
+CWD=`dirname $0`
+
+cat ${CWD}/../templates/cassandra_yaml_top.tmp > /etc/cassandra/cassandra.yaml
+
+for node in `relation-list`
+do
+   HOSTNAME=`relation-get hostname ${node}`
+   DEFAULT_JMX_PORT=`relation-get jmx_port ${node}`
+   DEFAULT_CLUSTER_PORT=`relation-get cluster_port ${node}`
+   DEFAULT_CLIENT_PORT=`relation-get client_port ${node}`
+   sed -e #__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
+done
+
+sed -e #__cluster_port__#${DEFAULT_CLUSTER_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e #__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e #__client_port__#${DEFAULT_CLIENT_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+
+chown root:root /etc/cassandra/cassandra.yaml
+chmod 644 /etc/cassandra/cassandra.yaml
+
+service cassandra status && service cassandra restart || service cassandra start
+
+echo $ENSEMBLE_REMOTE_UNIT modified its settings
+echo Relation settings:
+relation-get
+echo Relation members:
+relation-list
