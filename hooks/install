@@ -22,16 +22,16 @@ DEFAULT_CLUSTER_PORT=7000
 DEFAULT_CLIENT_PORT=9160
 
 mv /etc/cassandra/cassandra-env.sh /etc/cassandra/cassandra-env.sh.orig
-sed -e #__jmx_port__#${DEFAULT_JMX_PORT}# ${CWD}/../templats/cassandra_env_sh.tmpl > /etc/cassandra/cassandra-env.sh
+sed -e s#__jmx_port__#${DEFAULT_JMX_PORT}# ${CWD}/../templats/cassandra_env_sh.tmpl > /etc/cassandra/cassandra-env.sh
 chown root:root /etc/cassandra/cassandra-env.sh
 chmod 644 /etc/cassandra/cassandra-env.sh
 
 mv /etc/cassandra/cassandra.yaml /etc/cassandra/cassandra.yaml.orig
 cat ${CWD}/../templates/cassandra_yaml_top.tmp > /etc/cassandra/cassandra.yaml
-sed -e #__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
-sed -e #__cluster_port__#${DEFAULT_CLUSTER_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
-sed -e #__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
-sed -e #__client_port__#${DEFAULT_CLIENT_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e s#__cluster_port__#${DEFAULT_CLUSTER_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e s#__client_port__#${DEFAULT_CLIENT_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
 
 chown root:root /etc/cassandra/cassandra.yaml
 chmod 644 /etc/cassandra/cassandra.yaml
