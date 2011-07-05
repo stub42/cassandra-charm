@@ -2,11 +2,11 @@
 
 set -x
 
-HOSTNAME=`hostname -f`
+HOSTNAME=`facter cassandra_hostname`
 CWD=`dirname $0`
-DEFAULT_JMX_PORT=7199
-DEFAULT_CLUSTER_PORT=7000
-DEFAULT_CLIENT_PORT=9160
+DEFAULT_JMX_PORT=`facter cassandra_default_jmx_port`
+DEFAULT_CLUSTER_PORT=`facter cassandra_default_cluster_port`
+DEFAULT_CLIENT_PORT=`facter cassandra_default_client_port`
 
-relation-set hostname=`hostname -f` jmx_port="${DEFAULT_JMX_PORT}" cluster_port="${DEFAULT_CLUSTER_PORT}" client_port="${DEFAULT_CLIENT_PORT}"
+relation-set hostname="${HOSTNAME}" jmx_port="${DEFAULT_JMX_PORT}" cluster_port="${DEFAULT_CLUSTER_PORT}" client_port="${DEFAULT_CLIENT_PORT}"
 echo $ENSEMBLE_REMOTE_UNIT joined

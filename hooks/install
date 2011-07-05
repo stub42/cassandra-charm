@@ -2,6 +2,12 @@
 
 set -x
 
+# Install utility packages
+apt-get -y install python-software-properties
+
+# Add facter and facter-plugins repository
+apt-add-repository ppa:facter-plugins/ppa
+
 # Install the repositories
 echo "deb http://www.apache.org/dist/cassandra/debian unstable main" > /etc/apt/sources.list.d/cassandra.list
 echo "deb-src http://www.apache.org/dist/cassandra/debian unstable main" >> /etc/apt/sources.list.d/cassandra.list
@@ -13,7 +19,7 @@ apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F758CE318D77295D
 apt-get update
 
 # Install the package
-apt-get install -y cassandra
+apt-get install -y cassandra facter facter-customfacts-plugin
 
 HOSTNAME=`hostname -f`
 CWD=`dirname $0`
@@ -21,11 +27,19 @@ DEFAULT_JMX_PORT=7199
 DEFAULT_CLUSTER_PORT=7000
 DEFAULT_CLIENT_PORT=9160
 
+# Persist the data for future use
+fact-add cassandra_hostname ${HOSTNAME}
+fact-add cassandra_default_jmx_port ${DEFAULT_JMX_PORT}
+fact-add cassandra_default_cluster_port ${DEFAULT_CLUSTER_PORT}
+fact-add cassandra_default_client_port ${DEFAULT_CLIENT_PORT}
+
+# Update the cassandra environment with the appropriate JMX port
 mv /etc/cassandra/cassandra-env.sh /etc/cassandra/cassandra-env.sh.orig
 sed -e s#__jmx_port__#${DEFAULT_JMX_PORT}# ${CWD}/../templats/cassandra_env_sh.tmpl > /etc/cassandra/cassandra-env.sh
 chown root:root /etc/cassandra/cassandra-env.sh
 chmod 644 /etc/cassandra/cassandra-env.sh
 
+# Construct the cassandra.yaml file from the appropriate information above
 mv /etc/cassandra/cassandra.yaml /etc/cassandra/cassandra.yaml.orig
 cat ${CWD}/../templates/cassandra_yaml_top.tmp > /etc/cassandra/cassandra.yaml
 sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
