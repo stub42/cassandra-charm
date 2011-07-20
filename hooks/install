@@ -27,6 +27,13 @@ DEFAULT_JMX_PORT=7199
 DEFAULT_CLUSTER_PORT=7000
 DEFAULT_CLIENT_PORT=9160
 
+# Open the necessary ports
+if [ -x `which open-port` ]; then
+   open-port ${DEFAULT_JMX_PORT}/TCP
+   open-port ${DEFAULT_CLUSTER_PORT}/TCP
+   open-port ${DEFAULT_CLIENT_PORT}/TCP
+fi
+
 # Persist the data for future use
 fact-add cassandra_hostname ${HOSTNAME}
 fact-add cassandra_default_jmx_port ${DEFAULT_JMX_PORT}
