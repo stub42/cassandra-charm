@@ -51,7 +51,7 @@ fact-add cassandra_default_client_port ${DEFAULT_CLIENT_PORT}
 
 # Update the cassandra environment with the appropriate JMX port
 mv /etc/cassandra/cassandra-env.sh /etc/cassandra/cassandra-env.sh.orig
-sed -e s#__jmx_port__#${DEFAULT_JMX_PORT}# ${CWD}/../templats/cassandra_env_sh.tmpl > /etc/cassandra/cassandra-env.sh
+sed -e s#__jmx_port__#${DEFAULT_JMX_PORT}# ${CWD}/../templates/cassandra_env_sh.tmpl > /etc/cassandra/cassandra-env.sh
 chown root:root /etc/cassandra/cassandra-env.sh
 chmod 644 /etc/cassandra/cassandra-env.sh
 
