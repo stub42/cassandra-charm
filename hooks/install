@@ -59,9 +59,10 @@ chmod 644 /etc/cassandra/cassandra-env.sh
 mv /etc/cassandra/cassandra.yaml /etc/cassandra/cassandra.yaml.orig
 cat ${CWD}/../templates/cassandra_yaml_top.tmpl > /etc/cassandra/cassandra.yaml
 sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
-sed -e s#__cluster_port__#${DEFAULT_CLUSTER_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
-sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
-sed -e s#__client_port__#${DEFAULT_CLIENT_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
+sed -e s#__cluster_port__#${DEFAULT_CLUSTER_PORT}# \
+    -e s#__hostname__#${HOSTNAME}# \
+    -e s#__client_port__#${DEFAULT_CLIENT_PORT}# \
+    ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
 
 chown root:root /etc/cassandra/cassandra.yaml
 chmod 644 /etc/cassandra/cassandra.yaml
