@@ -1,12 +1,18 @@
 #!/bin/bash
 
-set -x
+set -ux
+
+export LANG=en_US.UTF-8
 
 # Install utility packages
-apt-get -y install python-software-properties
+DEBIAN_FRONTEND=noninteractive apt-get -y install python-software-properties
 
 # Add facter and facter-plugins repository
-apt-add-repository ppa:facter-plugins/ppa
+echo deb http://ppa.launchpad.net/facter-plugins/ppa/ubuntu oneiric main  >> /etc/apt/sources.list.d/facter-plugins-ppa-oneiric.list
+echo deb-src http://ppa.launchpad.net/facter-plugins/ppa/ubuntu oneiric main  >> /etc/apt/sources.list.d/facter-plugins-ppa-oneiric.list
+apt-key adv --keyserver keyserver.ubuntu.com --recv-keys B696B50DD8914A9290A4923D6383E098F7D4BE4B
+
+#apt-add-repository ppa:facter-plugins/ppa
 
 # Install the repositories
 echo "deb http://www.apache.org/dist/cassandra/debian unstable main" > /etc/apt/sources.list.d/cassandra.list
@@ -19,7 +25,10 @@ apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F758CE318D77295D
 apt-get update
 
 # Install the package
-apt-get install -y cassandra facter facter-customfacts-plugin
+DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-6-jre-headless jsvc libcommons-daemon-java adduser libjna-java facter facter-customfacts-plugin
+cd /tmp
+curl -O http://people.canonical.com/~negronjl/cassandra_0.8.3_all.deb
+DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/cassandra_0.8.3_all.deb
 
 HOSTNAME=`hostname -f`
 CWD=`dirname $0`
@@ -48,7 +57,7 @@ chmod 644 /etc/cassandra/cassandra-env.sh
 
 # Construct the cassandra.yaml file from the appropriate information above
 mv /etc/cassandra/cassandra.yaml /etc/cassandra/cassandra.yaml.orig
-cat ${CWD}/../templates/cassandra_yaml_top.tmp > /etc/cassandra/cassandra.yaml
+cat ${CWD}/../templates/cassandra_yaml_top.tmpl > /etc/cassandra/cassandra.yaml
 sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
 sed -e s#__cluster_port__#${DEFAULT_CLUSTER_PORT}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
 sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
