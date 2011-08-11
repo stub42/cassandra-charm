@@ -4,7 +4,7 @@ set -x
 
 CWD=`dirname $0`
 
-cat ${CWD}/../templates/cassandra_yaml_top.tmp > /etc/cassandra/cassandra.yaml
+cat ${CWD}/../templates/cassandra_yaml_top.tmpl > /etc/cassandra/cassandra.yaml
 
 for node in `relation-list`
 do
