@@ -4,25 +4,17 @@ set -x
 
 CWD=`dirname $0`
 
-cat ${CWD}/../templates/cassandra_yaml_top.tmpl > /etc/cassandra/cassandra.yaml
-
 for node in `relation-list`
 do
    HOSTNAME=`relation-get hostname ${node}`
+   IP=`relation-get ip`
    DEFAULT_JMX_PORT=`relation-get jmx_port ${node}`
    DEFAULT_CLUSTER_PORT=`relation-get cluster_port ${node}`
    DEFAULT_CLIENT_PORT=`relation-get client_port ${node}`
-   sed -e s#__hostname__#${HOSTNAME}# ${CWD}/../templates/cassandra_yaml_seeds.tmpl >> /etc/cassandra/cassandra.yaml
+   [ -z ${TMP_SEEDS} ] && TMP_SEEDS=${IP} || TMP_SEEDS="${TMP_SEEDS},${IP}"
 done
 
-
-sed -e s#__cluster_port__#${DEFAULT_CLUSTER_PORT}# \
-    -e s#__hostname__#${HOSTNAME}# \
-    -e s#__client_port__#${DEFAULT_CLIENT_PORT}# \
-    ${CWD}/../templates/cassandra_yaml_bottom.tmpl >> /etc/cassandra/cassandra.yaml
-
-chown root:root /etc/cassandra/cassandra.yaml
-chmod 644 /etc/cassandra/cassandra.yaml
+sed -i -e "s/\- seeds:.*/\- seeds: \"${TMP_SEEDS}\"/" /etc/cassandra/cassandra.yaml
 
 service cassandra status && service cassandra restart || service cassandra start
 
