@@ -1,0 +1,18 @@
+options:
+  jmx-port:
+    type: string
+    default: 7199
+    description: JMX management port
+  cluster-port:
+    type: string
+    default: 7000
+    description: Port to support cluster communication
+  client-port:
+    type: string
+    default: 9160
+    description: Port for client communcation
+  cluster-name:
+    type: string
+    default: "Test Cluster"
+    description: Name of the Cassandra Cluster - don't change yet!
+

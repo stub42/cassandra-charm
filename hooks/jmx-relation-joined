@@ -1,14 +1,1 @@
-#!/bin/sh
-
-set -x
-
-HOSTNAME=`facter cassandra_hostname`
-IP=`facter ipaddress`
-CWD=`dirname $0`
-DEFAULT_JMX_PORT=`facter cassandra_default_jmx_port`
-DEFAULT_CLUSTER_PORT=`facter cassandra_default_cluster_port`
-DEFAULT_CLIENT_PORT=`facter cassandra_default_client_port`
-DEFAULT_CLUSTER_NAME=`facter cassandra_default_cluster_name`
-
-relation-set hostname="${HOSTNAME}" jmx_port="${DEFAULT_JMX_PORT}" cluster_port="${DEFAULT_CLUSTER_PORT}" client_port="${DEFAULT_CLIENT_PORT}" cluster_name="${DEFAULT_CLUSTER_NAME}" ip="${IP}"
-echo $ENSEMBLE_REMOTE_UNIT joined
+cassandra-common
