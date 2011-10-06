@@ -1,6 +1,5 @@
 ensemble: formula
 name: cassandra
-revision: 2
 summary: distributed storage system for structured data
 description: |
   Cassandra is a distributed (peer-to-peer) system for the management and

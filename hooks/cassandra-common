@@ -5,13 +5,8 @@ set -ex
 
 export LANG=en_US.UTF-8
 
-install_facter () {
-  apt-get -qq install -y facter
-}
-[[ -x /usr/bin/facter ]] || install_facter
 
-HOSTNAME=`hostname -f`
-IP=`facter ipaddress`
+IP=`unit-get private-address`
 # Pull configuration for charm
 JMX_PORT=`config-get jmx-port`
 CLUSTER_PORT=`config-get cluster-port`
@@ -74,18 +69,12 @@ stop_cassandra() {
 
 setup_database_interface () {
   juju-log "Setup Cassandra database interface"
-  relation-set hostname="${1}" client_port="${1}"
+  relation-set port="${1}"
 }
 
 setup_jmx_interface () {
   juju-log "Setup Cassandra JMX interface"
-  relation-set hostname="${1}" client_port="${1}"
-}
-
-
-setup_cluster_interface () {
-  juju-log "Setup Cassandra cluster interface"
-  relation-set hostname="${1}"
+  relation-set port="${1}"
 }
 
 reconfigure_cluster_seeds () {
@@ -109,7 +98,7 @@ reconfigure_cluster_seeds () {
   # nodes startup to build the ring.
   for node in `relation-list`
   do
-    NODE_HOSTNAME=`relation-get hostname ${node}`
+    NODE_HOSTNAME=`relation-get private-address ${node}`
     [ -z ${TMP_SEEDS} ] && TMP_SEEDS=${NODE_HOSTNAME} || TMP_SEEDS="${TMP_SEEDS},${NODE_HOSTNAME}"
   done
   sed -i -e "s/\- seeds:.*/\- seeds: \"${TMP_SEEDS}\"/" /etc/cassandra/cassandra.yaml
@@ -158,16 +147,16 @@ case $COMMAND in
     stop_cassandra
     ;;
   database-relation-joined)
-    setup_database_interface $HOSTNAME $CLIENT_PORT
+    setup_database_interface $CLIENT_PORT
     ;;
   cluster-relation-joined)
-    setup_cluster_interface $HOSTNAME
+    juju-log "Joining cassandra cluster..."
     ;;
   cluster-relation-changed)
-    reconfigure_cluster_seeds $HOSTNAME
+    reconfigure_cluster_seeds
     ;;
   jmx-relation-joined)
-    setup_jmx_interface $HOSTNAME $JMX_PORT
+    setup_jmx_interface $JMX_PORT
     ;;
   *)
     juju-log "Command not recognised"
