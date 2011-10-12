@@ -15,7 +15,7 @@ install_cassandra () {
   # Update the repositories
   apt-get update
   # Install the package
-  apt-get -qq install -y cassandra python-cheetah
+  apt-get -qq install -y cassandra python-cheetah dnsutils
 }
 
 # Update the cassandra environment with the appropriate JMX port
