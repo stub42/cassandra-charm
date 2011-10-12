@@ -5,6 +5,22 @@ set -e
 
 export LANG=en_US.UTF-8
 
+# Comms-less leader determination
+# Picks the unit with the lowest id.
+am_i_the_leader () {
+  # Leader is the lowest unit number and won't be in the
+  # list of relation peersa
+  units=`relation-list`
+  unit_no=`echo $JUJU_UNIT_NAME | cut -d / -f 2`
+  for unit in $units; do
+    peer_unit_no=`echo $unit | cut -d / -f 2`
+    if [ "$peer_unit_no" -lt "$unit_no" ]; then
+        return 1
+    fi
+  done
+  return 0
+}
+
 # Install cassandra source and install packages
 install_cassandra () {
   juju-log "Installing Cassandra"
@@ -30,7 +46,8 @@ configure_jmx_port () {
 get_private_ip () {
   # Make sure that we use the resolvable private address
   # dig deals with both hostnames and ip addresses in a nice
-  # way
+  # way - this has been tested in local and ec2 providers
+  # with ec2 and openstack
   dig +short `unit-get private-address` 
 }
 
@@ -128,6 +145,18 @@ reconfigure_cluster_seeds () {
   juju-log "$JUJU_REMOTE_UNIT modified its settings or departed"
 }
 
+remove_down_nodes () {
+  if am_i_the_leader; then
+    juju-log "Removing tokens for nodes which are marked 'Down'"
+    PRIVATE_IP=`get_private_ip`
+    tokens=`nodetool -h $PRIVATE_IP ring | grep Down | awk '{ print $9 }'`
+    for token in $tokens; do
+      juju-log "Removing token $token from the ring"
+      nodetool -h $PRIVATE_IP removetoken $token
+    done
+  fi
+}
+
 decommission_node () {
   juju-log "Decommissioning node - this may take some time..."
   nodetool -h `get_private_ip` decommission
@@ -170,8 +199,12 @@ case $COMMAND in
   cluster-relation-joined)
     juju-log "Joining cassandra cluster..."
     ;;
-  cluster-relation-changed|cluster-relation-departed)
+  cluster-relation-changed)
     reconfigure_cluster_seeds
+    ;;
+  cluster-relation-departed)
+    reconfigure_cluster_seeds
+    remove_down_nodes
     ;;
   jmx-relation-joined)
     setup_jmx_interface
