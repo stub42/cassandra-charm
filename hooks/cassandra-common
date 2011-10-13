@@ -1,7 +1,7 @@
 #!/bin/bash
 # vim: set tabstop=2 expandtab:
 
-set -e
+set -ex
 
 export LANG=en_US.UTF-8
 
@@ -30,6 +30,16 @@ install_cassandra () {
   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 2B5C1B00
   # Update the repositories
   apt-get update
+  # Ensure that cassandra does not startup before we have configured it
+  cat > /usr/sbin/policy-rc.d <<EOF
+#!/bin/bash
+if [ "\$1" == "cassandra" ] && [ "\$2" == "start" ]; then
+        exit 101
+else
+        exit 0
+fi
+EOF
+  chmod a+x /usr/sbin/policy-rc.d
   # Install the package
   apt-get -qq install -y cassandra python-cheetah dnsutils
 }
@@ -88,7 +98,7 @@ configure_cassandra () {
 # Service Control Commands
 restart_cassandra () {
   juju-log "Restarting Cassandra"
-  service cassandra status && service cassandra restart || service cassandra start
+  service cassandra status && service cassandra restart || :
 }
 
 start_cassandra() {
@@ -98,7 +108,7 @@ start_cassandra() {
 
 stop_cassandra() {
   juju-log "Stopping Cassandra"
-  service cassandra stop
+  service cassandra stop || :
 }
 
 setup_database_interface () {
@@ -147,6 +157,7 @@ reconfigure_cluster_seeds () {
 
 remove_down_nodes () {
   if am_i_the_leader; then
+    sleep 30
     juju-log "Removing tokens for nodes which are marked 'Down'"
     PRIVATE_IP=`get_private_ip`
     tokens=`nodetool -h $PRIVATE_IP ring | grep Down | awk '{ print $9 }'`
@@ -173,8 +184,6 @@ case $COMMAND in
     configure_jmx_port 
     # Construct the cassandra.yaml file from the appropriate information above
     configure_cassandra 
-    # Restart as required
-    restart_cassandra
     ;;
   config-changed)
     # Update the cassandra environment with the appropriate JMX port
