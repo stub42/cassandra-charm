@@ -1,14 +1,14 @@
 options:
   jmx-port:
-    type: string
+    type: int
     default: 7199
     description: JMX management port
   cluster-port:
-    type: string
+    type: int
     default: 7000
     description: Port to support cluster communication
   client-port:
-    type: string
+    type: int
     default: 9160
     description: Port for client communcation
   cluster-name:
@@ -16,17 +16,17 @@ options:
     default: "Test Cluster"
     description: Name of the Cassandra Cluster - don't change yet!
   auto-memory:
-    type: string
+    type: boolean
     default: true
-    description: Automatically configure memory options based on 
+    description: Automatically configure memory options based on
       specification of the server infrastructure its running on.
   heap-size:
     type: string
     default: 1G
-    description: Total size of Java memory heap, for example 1G or 512M. 
+    description: Total size of Java memory heap, for example 1G or 512M.
       Only used if auto-memory = false.
   new-gen-size:
     type: string
     default: 100M
-    description: Size of Java new generation memory, for example 100M. 
+    description: Size of Java new generation memory, for example 100M.
       Only used if auto-memory = false.
