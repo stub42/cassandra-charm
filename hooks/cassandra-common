@@ -25,7 +25,7 @@ am_i_the_leader () {
 install_cassandra () {
   juju-log "Installing Cassandra"
   # Install the repositories
-  echo "deb http://www.apache.org/dist/cassandra/debian 08x main" > /etc/apt/sources.list.d/cassandra.list
+  echo "deb http://www.apache.org/dist/cassandra/debian 10x main" > /etc/apt/sources.list.d/cassandra.list
   # Add the key
   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 2B5C1B00
   # Update the repositories
