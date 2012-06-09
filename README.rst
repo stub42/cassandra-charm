@@ -33,7 +33,7 @@ See http://wiki.apache.org/cassandra/ThriftInterface for more details of how
 to use this API.
 
 Cassandra recommend using one of the many client options - see
-http://wiki.apache.org/cassandra/ClientOptions for moe details
+http://wiki.apache.org/cassandra/ClientOptions for more details
 
 To relate the Cassandra charm to a service that understands how to talk to
 Cassandra using thrift::
