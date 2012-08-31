@@ -1,0 +1,38 @@
+# vim: sw=4 ts=4 et ai tw=80
+options:
+    # http://wiki.apache.org/cassandra/FAQ#ports
+    jmx-port:
+        type: int
+        default: 7199
+        description: JMX management port
+    cluster-port:
+        type: int
+        default: 7000
+        description: Cluster communication port
+    client-port:
+        type: int
+        default: 9160
+        description: Thrift clients port
+    cluster-name:
+        type: string
+        default: "Cassandra Cluster"
+        description: >
+            Name of the Cassandra Cluster - don't change yet!
+    auto-memory:
+        type: boolean
+        default: true
+        description: >
+            Automatically configure memory options based on specification
+            of the server infrastructure its running on.
+    heap-size:
+        type: string
+        default: 1G
+        description: >
+            Total size of Java memory heap, for example 1G or 512M.
+            Only used if auto-memory = false.
+    new-gen-size:
+        type: string
+        default: 100M
+        description: >
+            Size of Java new generation memory, for example 100M.  Only used
+            if auto-memory = false.

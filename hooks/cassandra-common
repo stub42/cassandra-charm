@@ -1,0 +1,224 @@
+#!/bin/bash
+# vim: set tabstop=2 expandtab:
+
+set -e
+
+export LANG=en_US.UTF-8
+
+# Comms-less leader determination
+# Picks the unit with the lowest id.
+am_i_the_leader () {
+  # Leader is the lowest unit number and won't be in the
+  # list of relation peersa
+  units=`relation-list`
+  unit_no=`echo $JUJU_UNIT_NAME | cut -d / -f 2`
+  for unit in $units; do
+    peer_unit_no=`echo $unit | cut -d / -f 2`
+    if [ "$peer_unit_no" -lt "$unit_no" ]; then
+        return 1
+    fi
+  done
+  return 0
+}
+
+# Install cassandra source and install packages
+install_cassandra () {
+  juju-log "Installing Cassandra"
+  # Install the repositories
+  echo "deb http://www.apache.org/dist/cassandra/debian 11x main" > /etc/apt/sources.list.d/cassandra.list
+  # Add the key
+  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F758CE318D77295D
+  # Update the repositories
+  apt-get update
+  # Ensure that cassandra does not startup before we have configured it
+  cat > /usr/sbin/policy-rc.d <<EOF
+#!/bin/bash
+if [ "\$1" == "cassandra" ] && [ "\$2" == "start" ]; then
+        exit 101
+else
+        exit 0
+fi
+EOF
+  chmod a+x /usr/sbin/policy-rc.d
+  # Install the package
+  apt-get -qq install -y cassandra python-cheetah dnsutils
+}
+
+# Update the cassandra environment with the appropriate JMX port
+configure_jmx_port () {
+  juju-log "Configuring JMX port"
+  JMX_PORT=`config-get jmx-port`
+  sed -i -e "s/^JMX_PORT=.*/JMX_PORT=\"${JMX_PORT}\"/" /etc/cassandra/cassandra-env.sh
+  # Open port ready for expose
+  open-port ${JMX_PORT}/TCP
+}
+
+get_private_ip () {
+  # Make sure that we use the resolvable private address
+  # dig deals with both hostnames and ip addresses in a nice
+  # way - this has been tested in local and ec2 providers
+  # with ec2 and openstack
+  dig +short `unit-get private-address` 
+}
+
+# Construct the cassandra.yaml file from the appropriate information above
+configure_cassandra () {
+  juju-log "Configuring Cassandra"
+  IP=`get_private_ip`
+  CLUSTER_PORT=`config-get cluster-port`
+  CLIENT_PORT=`config-get client-port`
+  CLUSTER_NAME=`config-get cluster-name`
+  AUTO_MEMORY=`config-get auto-memory`
+  HEAP_SIZE=`config-get heap-size`
+  NEW_GEN_SIZE=`config-get new-gen-size`
+  # This needs to 'detect' whether its running in ec2
+  # and use the ec2Snitch instead if it is - or we could
+  # specify this as a configuration parameter
+  sed -i -e "s/^cluster_name:.*/cluster_name: \'${CLUSTER_NAME}\'/" \
+         -e "s/\- seeds:.*/\- seeds: \"${IP}\"/" \
+         -e "s/^storage_port:.*/storage_port: ${CLUSTER_PORT}/" \
+         -e "s/^listen_address:.*/listen_address: ${IP}/" \
+         -e "s/^rpc_address:.*/rpc_address: ${IP}/" \
+         -e "s/^rpc_port:.*/rpc_port: ${CLIENT_PORT}/" \
+         /etc/cassandra/cassandra.yaml
+  # Open port ready for expose
+  open-port ${CLIENT_PORT}/TCP
+
+  # Configure memory settings as specified in configuration
+  if [ "$AUTO_MEMORY" = "False" ]; then
+    juju-log "Configuring Manual Memory Setttings"
+    sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
+           -e "s/^[#]HEAP_NEWSIZE=.*/HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+  else
+    sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/#MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
+           -e "s/^[#]HEAP_NEWSIZE=.*/#HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+  fi 
+}
+
+# Service Control Commands
+restart_cassandra () {
+  juju-log "Restarting Cassandra"
+  service cassandra status && service cassandra restart || :
+}
+
+start_cassandra() {
+  juju-log "Starting Cassandra"
+  service cassandra status || service cassandra start
+}
+
+stop_cassandra() {
+  juju-log "Stopping Cassandra"
+  service cassandra stop || :
+}
+
+setup_database_interface () {
+  juju-log "Setup Cassandra database interface"
+  relation-set port="`config-get client-port`"
+}
+
+setup_jmx_interface () {
+  juju-log "Setup Cassandra JMX interface"
+  relation-set port="`config-get jmx-port`"
+}
+
+reconfigure_cluster_seeds () {
+  juju-log "Reconfiguring cluster seeds"
+  # If I'm the initial bootstrap node then I 
+  # don't need to be set to auto_bootstrap
+  # as everything seeded off me anyway
+  INIT_SEED=$(echo ${JUJU_UNIT_NAME} | sed s,.*/,,)
+  [ ${INIT_SEED} == "0" ] && return 0
+
+  # If node is not set to autoboostrap then set it to be
+  AUTO=$(grep '^auto_bootstrap: true$' /etc/cassandra/cassandra.yaml || true)
+  if [ -z "${AUTO}" ]; then
+    # Enable bootstrap for this node.
+    sed -i -e "s/^auto_bootstrap:.*/auto_bootstrap: true/" \
+        /etc/cassandra/cassandra.yaml
+  fi
+  # This needs careful handling - to start with we need 
+  # an initial seed - which should not auto_boostrap
+  # Build up list of seeds - these are used when new
+  # nodes startup to build the ring.
+  for node in `relation-list`
+  do
+    NODE_HOSTNAME=`relation-get private-address ${node}`
+    [ -z ${TMP_SEEDS} ] && TMP_SEEDS=${NODE_HOSTNAME} || TMP_SEEDS="${TMP_SEEDS},${NODE_HOSTNAME}"
+  done
+  sed -i -e "s/\- seeds:.*/\- seeds: \"${TMP_SEEDS}\"/" /etc/cassandra/cassandra.yaml
+  # Restart to pickup changes - this only really needs to 
+  # happen for NEW nodes in the ring - not existing ones 
+  # which have already auto_bootstrapped
+  if [ -z "${AUTO}" ]; then
+    restart_cassandra
+  fi
+  juju-log "$JUJU_REMOTE_UNIT modified its settings or departed"
+}
+
+remove_down_nodes () {
+  if am_i_the_leader; then
+    sleep 30
+    juju-log "Removing tokens for nodes which are marked 'Down'"
+    PRIVATE_IP=`get_private_ip`
+    tokens=`nodetool -h $PRIVATE_IP ring | grep Down | awk '{ print $9 }'`
+    for token in $tokens; do
+      juju-log "Removing token $token from the ring"
+      nodetool -h $PRIVATE_IP removetoken $token
+    done
+  fi
+}
+
+decommission_node () {
+  juju-log "Decommissioning node - this may take some time..."
+  nodetool -h `get_private_ip` decommission
+}
+
+# Actual processing
+COMMAND=`basename $0`
+
+case $COMMAND in
+  install)
+    # Install cassandra first run only
+    [[ -d /usr/share/cassandra ]] || install_cassandra
+    # Update the cassandra environment with the appropriate JMX port
+    configure_jmx_port 
+    # Construct the cassandra.yaml file from the appropriate information above
+    configure_cassandra 
+    ;;
+  config-changed)
+    # Update the cassandra environment with the appropriate JMX port
+    configure_jmx_port 
+    # Construct the cassandra.yaml file from the appropriate information above
+    configure_cassandra
+    # Restart as required
+    restart_cassandra
+    ;;
+  upgrade-charm)
+    juju-log "Updating this charm - currently no-op"
+    ;;
+  start)
+    start_cassandra
+    ;;
+  stop)
+    stop_cassandra
+    ;;
+  database-relation-joined)
+    setup_database_interface 
+    ;;
+  cluster-relation-joined)
+    juju-log "Joining cassandra cluster..."
+    ;;
+  cluster-relation-changed)
+    reconfigure_cluster_seeds
+    ;;
+  cluster-relation-departed)
+    reconfigure_cluster_seeds
+    remove_down_nodes
+    ;;
+  jmx-relation-joined)
+    setup_jmx_interface
+    ;;
+  *)
+    juju-log "Command not recognised"
+    ;;
+esac
