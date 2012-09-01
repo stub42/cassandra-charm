@@ -9,12 +9,13 @@ export LANG=en_US.UTF-8
 # Picks the unit with the lowest id.
 am_i_the_leader () {
   # Leader is the lowest unit number and won't be in the
-  # list of relation peersa
-  units=`relation-list`
-  unit_no=`echo $JUJU_UNIT_NAME | cut -d / -f 2`
-  for unit in $units; do
-    peer_unit_no=`echo $unit | cut -d / -f 2`
-    if [ "$peer_unit_no" -lt "$unit_no" ]; then
+  # list of relation peers
+  local units=$(relation-list)
+  local unit_no=${JUJU_UNIT_NAME##*/}
+  local unit
+  for unit in ${units}; do
+    peer_unit_no=${unit##*/}
+    if [ "${peer_unit_no}" -lt "${unit_no}" ]; then
         return 1
     fi
   done
@@ -47,7 +48,9 @@ EOF
 # Update the cassandra environment with the appropriate JMX port
 configure_jmx_port () {
   juju-log "Configuring JMX port"
-  JMX_PORT=`config-get jmx-port`
+  JMX_PORT=$(config-get jmx-port)
+  test -n "${JMX_PORT}" || return 1
+  test ${JMX_PORT} -gt 0 -a ${JMX_PORT} -lt 65535 || return 1
   sed -i -e "s/^JMX_PORT=.*/JMX_PORT=\"${JMX_PORT}\"/" /etc/cassandra/cassandra-env.sh
   # Open port ready for expose
   open-port ${JMX_PORT}/TCP
@@ -58,31 +61,33 @@ get_private_ip () {
   # dig deals with both hostnames and ip addresses in a nice
   # way - this has been tested in local and ec2 providers
   # with ec2 and openstack
-  dig +short `unit-get private-address` 
+  dig +short `unit-get private-address`
 }
 
 # Construct the cassandra.yaml file from the appropriate information above
 configure_cassandra () {
   juju-log "Configuring Cassandra"
-  IP=`get_private_ip`
-  CLUSTER_PORT=`config-get cluster-port`
-  CLIENT_PORT=`config-get client-port`
-  CLUSTER_NAME=`config-get cluster-name`
-  AUTO_MEMORY=`config-get auto-memory`
-  HEAP_SIZE=`config-get heap-size`
-  NEW_GEN_SIZE=`config-get new-gen-size`
+  local IP=`get_private_ip`
+  local juju_configs=$(/bin/mktemp --suffix=.juju)
+
   # This needs to 'detect' whether its running in ec2
   # and use the ec2Snitch instead if it is - or we could
   # specify this as a configuration parameter
-  sed -i -e "s/^cluster_name:.*/cluster_name: \'${CLUSTER_NAME}\'/" \
-         -e "s/\- seeds:.*/\- seeds: \"${IP}\"/" \
-         -e "s/^storage_port:.*/storage_port: ${CLUSTER_PORT}/" \
-         -e "s/^listen_address:.*/listen_address: ${IP}/" \
-         -e "s/^rpc_address:.*/rpc_address: ${IP}/" \
-         -e "s/^rpc_port:.*/rpc_port: ${CLIENT_PORT}/" \
-         /etc/cassandra/cassandra.yaml
+	config-get --format=json -o ${juju_configs}
+  cp -p /etc/cassandra/cassandra.yaml{,.new}
+  ../scripts/file-edit.py -j ${juju_configs} -t yaml \
+    < /etc/cassandra/cassandra.yaml > /etc/cassandra/cassandra.yaml.new
+  mv -S .$(date +%s) -b /etc/cassandra/cassandra.yaml.new /etc/cassandra/cassandra.yaml
+  rm -f ${juju_configs}
+
+  local CLIENT_PORT=`config-get client-port`
   # Open port ready for expose
   open-port ${CLIENT_PORT}/TCP
+
+  # Configure memory settings as specified in configuration
+  local AUTO_MEMORY=`config-get auto-memory`
+  local HEAP_SIZE=`config-get heap-size`
+  local NEW_GEN_SIZE=`config-get new-gen-size`
 
   # Configure memory settings as specified in configuration
   if [ "$AUTO_MEMORY" = "False" ]; then
@@ -159,22 +164,22 @@ remove_down_nodes () {
   if am_i_the_leader; then
     sleep 30
     juju-log "Removing tokens for nodes which are marked 'Down'"
-    PRIVATE_IP=`get_private_ip`
-    tokens=`nodetool -h $PRIVATE_IP ring | grep Down | awk '{ print $9 }'`
-    for token in $tokens; do
-      juju-log "Removing token $token from the ring"
-      nodetool -h $PRIVATE_IP removetoken $token
+    local PRIVATE_IP=$(get_private_ip)
+    tokens=$(nodetool -h $PRIVATE_IP ring | awk '/Down/{ print $9 }')
+    for token in ${tokens}; do
+      juju-log "Removing token ${token} from the ring"
+      nodetool -h ${PRIVATE_IP} removetoken ${token}
     done
   fi
 }
 
 decommission_node () {
   juju-log "Decommissioning node - this may take some time..."
-  nodetool -h `get_private_ip` decommission
+  nodetool -h $(get_private_ip) decommission
 }
 
 # Actual processing
-COMMAND=`basename $0`
+COMMAND=${0##*/}
 
 case $COMMAND in
   install)
