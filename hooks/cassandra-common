@@ -75,10 +75,11 @@ configure_cassandra () {
   # specify this as a configuration parameter
 	config-get --format=json -o ${juju_configs}
   cp -p /etc/cassandra/cassandra.yaml{,.new}
-  ../scripts/file-edit.py -j ${juju_configs} -t yaml \
+  ./scripts/file-edit.py -j ${juju_configs} -t yaml \
     < /etc/cassandra/cassandra.yaml > /etc/cassandra/cassandra.yaml.new
-  mv -S .$(date +%s) -b /etc/cassandra/cassandra.yaml.new /etc/cassandra/cassandra.yaml
-  rm -f ${juju_configs}
+  cmp -s /etc/cassandra/cassandra.yaml{.new,} || \
+    mv -S .$(date +%s) -b /etc/cassandra/cassandra.yaml{.new,}
+  rm -f ${juju_configs} /etc/cassandra/cassandra.yaml.new
 
   local CLIENT_PORT=`config-get client-port`
   # Open port ready for expose
@@ -92,12 +93,17 @@ configure_cassandra () {
   # Configure memory settings as specified in configuration
   if [ "$AUTO_MEMORY" = "False" ]; then
     juju-log "Configuring Manual Memory Setttings"
-    sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
-           -e "s/^[#]HEAP_NEWSIZE=.*/HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+    sed -e "s/^[#]MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
+        -e "s/^[#]HEAP_NEWSIZE=.*/HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh \
+          > /etc/cassandra/cassandra-env.sh.new
   else
-    sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/#MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
-           -e "s/^[#]HEAP_NEWSIZE=.*/#HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+    sed -e "s/^[#]MAX_HEAP_SIZE=.*/#MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
+        -e "s/^[#]HEAP_NEWSIZE=.*/#HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh \
+          > /etc/cassandra/cassandra-env.sh.new
   fi 
+  cmp -s /etc/cassandra/cassandra-env.sh{.new,} || \
+    mv -S .$(date +%s) -b /etc/cassandra/cassandra-env.sh{.new,}
+  rm -f /etc/cassandra/cassandra-env.sh.new
 }
 
 # Service Control Commands
