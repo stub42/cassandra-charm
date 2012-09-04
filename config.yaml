@@ -36,3 +36,9 @@ options:
         description: >
             Size of Java new generation memory, for example 100M.  Only used
             if auto-memory = false.
+    srv-root:
+        type: string
+        default: "/srv"
+        description: >
+            Service directory root: will be used as  <srv-root>/<juju-unit-name>, e.g.
+            /srv/cassandra/0
