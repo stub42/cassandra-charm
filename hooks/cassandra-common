@@ -209,6 +209,7 @@ case $COMMAND in
     # Install cassandra first run only
     [[ -d /usr/share/cassandra ]] || install_cassandra
     # Initialize /etc/cassandra bzr
+    bzr whoami "${JUJU_UNIT_NAME} <juju@${HOSTNAME}>"
     test -d /etc/cassandra/.bzr || bzr init /etc/cassandra && bzr add /etc/cassandra
     bzr_ci "main:${COMMAND}" /etc/cassandra
     # Update the cassandra environment with the appropriate JMX port
