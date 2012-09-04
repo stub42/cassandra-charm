@@ -25,7 +25,7 @@ am_i_the_leader () {
 bzr_ci () {
   local msg=${FUNCNAME[1]}
   test -n "$1" && msg="$1"
-  bzr ci -m "[$(date +%Y-%m-%d %H:%M:%s)] ${JUJU_UNIT_NAME}: ${msg} auto-commit" /etc/cassandra || return 0
+  bzr ci -m "[$(date "+%Y-%m-%d %H:%M:%S")] ${JUJU_UNIT_NAME}: ${msg} auto-commit" /etc/cassandra || return 0
 }
 
 # Install cassandra source and install packages
