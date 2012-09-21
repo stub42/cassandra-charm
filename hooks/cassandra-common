@@ -4,7 +4,6 @@
 set -e
 
 export LANG=en_US.UTF-8
-source ../scripts/common
 
 # Comms-less leader determination
 # Picks the unit with the lowest id.
@@ -35,7 +34,7 @@ install_cassandra () {
   # Install the repositories
   echo "deb http://www.apache.org/dist/cassandra/debian 11x main" > /etc/apt/sources.list.d/cassandra.list
   # Add the key
-  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4BD736A82B5C1B00
+  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F758CE318D77295D
   # Update the repositories
   apt-get update
   # Ensure that cassandra does not startup before we have configured it
@@ -55,14 +54,11 @@ EOF
 
 # Update the cassandra environment with the appropriate JMX port
 configure_jmx_port () {
-  juju-log "Configuring JMX port: $JMX_PORT"
-  local JMX_PORT=$(config-get jmx-port)
+  juju-log "Configuring JMX port"
+  JMX_PORT=$(config-get jmx-port)
   test -n "${JMX_PORT}" || return 1
   test ${JMX_PORT} -gt 0 -a ${JMX_PORT} -lt 65535 || return 1
-  CONFIG_LISTEN_ADDRESS=$(get_private_ip)
-  CONFIG_DATA_DIR="${SRV_ROOT?}/${JUJU_UNIT_NAME}"
-  CONFIG_AUTO_MEMORY=$(config-get auto-memory)
-  update_config cassandra-env.sh
+  sed -i -e "s/^JMX_PORT=.*/JMX_PORT=\"${JMX_PORT}\"/" /etc/cassandra/cassandra-env.sh
   bzr_ci
   # Open port ready for expose
   open-port ${JMX_PORT}/TCP
@@ -79,21 +75,50 @@ get_private_ip () {
 # Construct the cassandra.yaml file from the appropriate information above
 configure_cassandra () {
   juju-log "Configuring Cassandra"
+  local IP=$(get_private_ip)
+  local CLUSTER_PORT=$(config-get cluster-port)
   local CLIENT_PORT=$(config-get client-port)
-  CONFIG_LISTEN_ADDRESS=$(get_private_ip)
-  CONFIG_DATA_DIR="${SRV_ROOT?}/${JUJU_UNIT_NAME}"
-  CONFIG_AUTO_MEMORY=$(config-get auto-memory)
+  local CLUSTER_NAME=$(config-get cluster-name)
+  local AUTO_MEMORY=$(config-get auto-memory)
+  local HEAP_SIZE=$(config-get heap-size)
+  local NEW_GEN_SIZE=$(config-get new-gen-size)
+  local SRV_ROOT=$(config-get srv-root)
+  # e.g.:  /srv/cassandra/0
+  local DATA_DIR="${SRV_ROOT?}/${JUJU_UNIT_NAME}"
+  # TODO(jjo): sanity check || return 1
 
-  test -d "${CONFIG_DATA_DIR?}" || {
-    mkdir -p "${CONFIG_DATA_DIR}"
-    chown -R cassandra:cassandra "${CONFIG_DATA_DIR}"
+  test -d "${DATA_DIR?}" || {
+    mkdir -p "${DATA_DIR}"
+    chown -R cassandra:cassandra "${DATA_DIR}"
   }
 
-  update_config
+  # This needs to 'detect' whether its running in ec2
+  # and use the ec2Snitch instead if it is - or we could
+  # specify this as a configuration parameter
 
+  # non-trivial sed to edit data_file_directories (has its value in the line following it)
+  sed -i -e "s/^cluster_name:.*/cluster_name: \'${CLUSTER_NAME}\'/" \
+         -e "s/\- seeds:.*/\- seeds: \"${IP}\"/" \
+         -e "s/^storage_port:.*/storage_port: ${CLUSTER_PORT}/" \
+         -e "s/^listen_address:.*/listen_address: ${IP}/" \
+         -e "s/^rpc_address:.*/rpc_address: ${IP}/" \
+         -e "s/^rpc_port:.*/rpc_port: ${CLIENT_PORT}/" \
+         -e $'/data_file_directories:/{\nN;s|- /.*|- '"${DATA_DIR}/data"'|}' \
+         -e "s|^commitlog_directory:.*|commitlog_directory: ${DATA_DIR}/commitlog|" \
+         -e "s|^saved_caches_directory:.*|saved_caches_directory: ${DATA_DIR}/savedcache_dir|" \
+         /etc/cassandra/cassandra.yaml
   # Open port ready for expose
   open-port ${CLIENT_PORT}/TCP
 
+  # Configure memory settings as specified in configuration
+  if [ "$AUTO_MEMORY" = "False" ]; then
+    juju-log "Configuring Manual Memory Setttings"
+    sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
+           -e "s/^[#]HEAP_NEWSIZE=.*/HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+  else
+    sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/#MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
+           -e "s/^[#]HEAP_NEWSIZE=.*/#HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+  fi 
   bzr_ci
 }
 
