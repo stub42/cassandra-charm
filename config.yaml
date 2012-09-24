@@ -47,9 +47,14 @@ options:
             are inserting data is more than sufficient.  Setting this to
             0 disables throttling. Note that this account for all types
             of compaction, including validation compaction.
-    srv-root:
-        type: string
-        default: "/srv"
+    delay-start-until-volume:
+        type: boolean
+        default: false
         description: >
-            Service directory root: will be used as  <srv-root>/<juju-unit-name>, e.g.
-            /srv/cassandra/0
+            Delay cassandra start until "volume-map" shows a volume id
+            assigned to the instance.
+    volume-map:
+        type: string
+        default: ""
+        description: >
+            JSON map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }"

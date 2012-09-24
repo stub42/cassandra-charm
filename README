@@ -1,1 +1,11 @@
-This is WIP, started off from Juan Negron's http://jujucharms.com/charms/precise/cassandra
+See README.storage for the persistent storage approach taken.
+
+TODO(jjo):                                                  [2012/Sep/24]
+* [P0]  Support setting an invalid volume-map (JSON syntax) - ie don't
+        assume we've 'lost' our volume assignment
+* [P0]  Create helper scripts to scrape euca-describe-volumes, and 'merge'
+        with juju status output, to:
+        - fire attachments, then:
+        - set a proper volume-map (instance->volume)
+* [P1]  Fix DELAY_START_UNTIL_VOLUME logic/state transition
+* [P2]  Support migrating to a new extra volume?
