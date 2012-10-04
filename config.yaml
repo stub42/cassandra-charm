@@ -72,7 +72,7 @@ options:
 
     volume-dev-regexp:
         type: string
-        default: "/dev/vd[c-z]"
+        default: "/dev/vd[b-z]"
         description: >
             Block device for attached volumes as seen by the VM, will be "scanned"
             for an unused device when "volume-map" is valid for the unit.

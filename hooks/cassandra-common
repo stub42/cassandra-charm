@@ -1,6 +1,6 @@
 #!/bin/bash
 # vim: set tabstop=2 expandtab:
-. ../scripts/storage-common.sh
+. ./scripts/storage-common.sh
 
 set -e
 
@@ -103,7 +103,7 @@ srv_root_save() {
   }
 }
 disable_cassandra_start() {
-  echo 'test start == "$1" && exit 0' > /etc/default/cassandra
+  echo '[ start = "$1" ] && exit 0' > /etc/default/cassandra
 }
 enable_cassandra_start() {
   echo '## NEEDS_START' > /etc/default/cassandra
@@ -120,7 +120,6 @@ configure_cassandra () {
   local HEAP_SIZE=$(config-get heap-size)
   local NEW_GEN_SIZE=$(config-get new-gen-size)
   local SRV_ROOT=$(config-get srv-root)
-  local DEV_REGEXP=$(config-get volume-dev-regexp)
   local COMPACTION_THROUGHPUT=$(config-get compaction-throughput)
 
   # This needs to 'detect' whether its running in ec2
@@ -138,27 +137,30 @@ configure_cassandra () {
          /etc/cassandra/cassandra.yaml
 
   ## Storage configuration
-  if local volid=$(storage_config);then
+  local volid
+  if volid=$(storage_config);then
     juju-log "INFO: volid=${volid}"
   else
     disable_cassandra_start
     juju-log "ERROR: invalid storage_config at ${FUNCNAME[0]}"
   fi
   local srv_root_curr=$(srv_root_get)
-  if [[ -n ${volid} -a ${volid} == --ephermeral ]];then
+  (
+  set -e
+  if [[ -n ${volid} && ${volid} != --ephermeral ]];then
     local srv_root_new=$(srv_root_from_volid ${volid})
-    [[ ${srv_root_new} != ${srv_root_curr} ]] && {
-      volume_init_and_mount ${volid} ${dev_regexp}
+    if ${srv_root_new} != ${srv_root_curr} ]];then
+      :
+    else
+      volume_init_and_mount ${volid}
       if [[ -d ${srv_root_curr}/data ]];then
         juju-log "WARNING: found already existing cassandra data, migrating ${srv_root_curr} -> ${srv_root_new}"
         migrate_cassandra_data ${srv_root_curr} ${srv_root_new}
       fi
       srv_root_save ${srv_root_new}
-    }
-  else
-     juju-log "ERROR: volid not found for ${JUJU_UNIT_NAME}"
-     return 1
+    fi
   fi
+  ) && enable_cassandra_start || disable_cassandra_start
 
   # Open port ready for expose
   open-port ${CLIENT_PORT}/TCP

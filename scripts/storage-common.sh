@@ -27,7 +27,7 @@ mntpoint_from_volid() {
 volume_init_and_mount() {
   ## Find 1st unused device (reverse sort /dev/vdX)
   local volid=${1:?missing volid}
-  local dev_regexp=${2:?missing dev_regexp}
+  local dev_regexp=$(config-get volume-dev_regexp)
   local dev found_dev=
   local mntpoint=$(mntpoint_from_volid ${volid})
   local label="${volid}"
@@ -36,9 +36,9 @@ volume_init_and_mount() {
   [[ -z ${mntpoint} ]] && return 1
 
   # Assume udev will create only existing devices
-  for dev in $(ls -r /dev/vd?);do
+  for dev in $(ls -r ${dev_regexp} 2>/dev/null);do
     ## Check it's not already mounted
-    mount | fgrep -q "${dev}[1-9]" || { found_dev=${dev}; break;}
+    mount | fgrep -q "${dev}[1-9]?" || { found_dev=${dev}; break;}
   done
   [[ -n "${found_dev}" ]] || {
     juju-log "ERROR: ${func}: coult not find an unused for: ${dev_regexp}"
@@ -104,7 +104,7 @@ volid_config_get() {
 }
 
 # Do we have a valid storage state?
-# @returns  0 echo-es volid, or "--ephermeral"
+# @returns  0 does echo $volid (can be "--ephemeral")
 #           1 config state is invalid - we should not serve
 storage_config() {
   local EPHEMERAL_STORAGE=$(config-get ephemeral-storage)
@@ -122,5 +122,6 @@ storage_config() {
         return 1
      fi
   fi
+  echo "$volid"
   return 0
 }
