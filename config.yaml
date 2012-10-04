@@ -47,7 +47,12 @@ options:
             are inserting data is more than sufficient.  Setting this to
             0 disables throttling. Note that this account for all types
             of compaction, including validation compaction.
-    ephemeral-storage:
+    #------------------------------------------------------------------------
+    # Volume management
+    #   volume-map, volume-dev_regexp are only used 
+    #   if volume-ephemeral-storage == False
+    #------------------------------------------------------------------------
+    volume-ephemeral-storage:
         type: boolean
         default: false
         description: >
@@ -59,9 +64,6 @@ options:
                thus storage lifetime will equal VM, thus ephemeral.
                YOU'VE BEEN WARNED.
             
-    #------------------------------------------------------------------------
-    # Volume management, only used if ephemeral-storage == False
-    #------------------------------------------------------------------------
     volume-map:
         type: string
         default: ""

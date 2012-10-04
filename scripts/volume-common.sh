@@ -1,4 +1,5 @@
 # juju storage common shell library
+# 
 
 #------------------------------
 # Returns a mount point from passed vol-id, e.g. /srv/juju/vol-000012345
@@ -17,12 +18,9 @@ mntpoint_from_volid() {
 #
 # @param  $1 volume-id, can be any arbitrary string, better if
 #            equal to EC2/OS vol-id name (just for consistency)
-# @param  $2 device regexp, eg /dev/vd? - the top reverse sorted
-#            unused will be used
 # @return  0 success
 #          1 nil volid/etc
 #          2 error while handling the device (non-block device, sfdisk error, etc)
-# @calls   mntpoint_from_volid()
 #------------------------------
 volume_init_and_mount() {
   ## Find 1st unused device (reverse sort /dev/vdX)
@@ -94,10 +92,12 @@ volume_init_and_mount() {
 
 #------------------------------
 # Get volume-id from juju config "volume-map" dictionary as
-#   volume-map[JUJU_UNIT_NAME]
-# @return  volid or "" (echoed)
+#     volume-map[JUJU_UNIT_NAME]
+# @return  0 if volume-map value found ( does echo volid or ""), else:
+#          1 if not found or None
+#
 #------------------------------
-volid_config_get() {
+volume_get_volid_from_map() {
   local volid=$(config-get "volume-map"|python -c$'import sys;import os;from yaml import load;from itertools import chain; volume_map = load(sys.stdin)\nif volume_map: print volume_map.get(os.environ["JUJU_UNIT_NAME"])')
   [[ $volid == None ]] && return 1
   echo "$volid"
@@ -106,19 +106,19 @@ volid_config_get() {
 # Do we have a valid storage state?
 # @returns  0 does echo $volid (can be "--ephemeral")
 #           1 config state is invalid - we should not serve
-storage_config() {
-  local EPHEMERAL_STORAGE=$(config-get ephemeral-storage)
-  local volid=$(volid_config_get)
+volume_get_volume_id() {
+  local EPHEMERAL_STORAGE=$(config-get volume-ephemeral-storage)
+  local volid=$(volume_get_volid_from_map)
   if [[ $EPHEMERAL_STORAGE == True ]];then
     # Ephemeral -> should not have a valid volid
     if [[ $volid != "" ]];then
-        juju-log "ERROR: ephemeral-storage is True, but $JUJU_UNIT_NAME maps to volid=${volid}"
+        juju-log "ERROR: volume-ephemeral-storage is True, but $JUJU_UNIT_NAME maps to volid=${volid}"
         return 1
     fi
   else
-    # Durable (not ephemeral) -> must have a valid volid
+    # Durable (not ephemeral) -> must have a valid volid for this unit
      if [[ $volid == "" ]];then
-        juju-log "ERROR: ephemeral-storage is False, but no volid found for: $JUJU_UNIT_NAME"
+        juju-log "ERROR: volume-ephemeral-storage is False, but no volid found for: $JUJU_UNIT_NAME"
         return 1
      fi
   fi
