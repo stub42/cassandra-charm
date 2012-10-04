@@ -1,5 +1,6 @@
 #!/bin/bash
 # vim: set tabstop=2 expandtab:
+. ../scripts/storage-common.sh
 
 set -e
 
@@ -29,41 +30,13 @@ bzr_ci () {
   bzr ci -m "[$(date "+%Y-%m-%d %H:%M:%S")] ${JUJU_UNIT_NAME}: ${msg} auto-commit" /etc/cassandra || return 0
 }
 
-# Initialize volume, mount point
-volume_init_and_mount() {
-  ## Find 1st unused device (reverse sort /dev/vdX)
-  local volid=${1:?missing volid}
-  local dev DEV=
-  local MNTPOINT=$(mnt_point_from_volid ${volid})
-  local LABEL="${volid}"
 
-  [[ -z ${MNTPOINT} ]] && return 0
-
-  for dev in $(ls -r /dev/vd?);do
-    ## Check it's not being used
-    mount | fgrep -q "${dev}" || { DEV=${dev}; break;}
-  done
-  [[ -n "${DEV}" ]] || { juju-log "ERROR: ${FUNCNAME[0]}: coult not find an unused device as /dev/vdX"; return 1;}
-
-  juju-log "INFO: ${FUNCNAME[0]}: found DEV=${DEV}"
-  [[ -b ${DEV?}  ]] || { juju-log "ERROR: ${FUNCNAME[0]}: ${DEV} is not a blockdevice"; return 1;}
-  blockdev --rereadpt ${DEV}
-  [[ -b ${DEV?}1 ]] || { sfdisk ${DEV} <<<",+," ;}
-  juju-log "INFO: ${FUNCNAME[0]}: mkfs.ext4 -L ${LABEL} ${DEV}1"
-  file -s ${DEV?}1 | egrep -q ext4 || { mkfs.ext4 -L "${LABEL}" ${DEV}1;}
-  [[ -d "${MNTPOINT}" ]] || mkdir -p "${MNTPOINT}"
-  mount | egrep -wq "${DEV}1" || mount -L "${LABEL}" "${MNTPOINT}"
-  echo "LABEL=${LABEL}    ${MNTPOINT}    auto    defaults,nobootwait,comment=${VOL_ID}" >> /etc/fstab
-  juju-log "INFO: ${FUNCNAME[0]}: $(mount | egrep -w ${DEV}1)"
-}
-
-migrate_cassandra_data_and_restart() {
+migrate_cassandra_data() {
   local from=${1?} to=${2?}
   [[ $from = $to ]] && return 0
   /etc/init.d/cassandra stop
   rsync -vaP "$from/" "$to/"
   mv "$from" "$from.migrated_${JUJU_UNIT_NAME//\//-}@$(date +%s)"
-  /etc/init.d/cassandra start
 }
 
 # Install cassandra source and install packages
@@ -110,18 +83,8 @@ get_private_ip () {
   dig +short `unit-get private-address`
 }
 
-volid_config_get() {
-  local volid=$(config-get "volume-map"|python -c$'import sys;import os;from yaml import load;from itertools import chain; volume_map = load(sys.stdin)\nif volume_map: print volume_map.get(os.environ["JUJU_UNIT_NAME"])')
-  [[ $volid == None ]] && return 1
-  echo "$volid"
-}
-
 srv_root_get() {
   sed -r -n 's,commitlog_directory: *([^ ]+)/commitlog.*,\1,p' /etc/cassandra/cassandra.yaml
-}
-mnt_point_from_volid() {
-  local volid=${1?missing volid}
-  [[ ${volid} != "" ]] && echo /srv/juju/${volid} || echo ""
 }
 srv_root_from_volid() {
   local volid=${1?missing volid}
@@ -139,6 +102,12 @@ srv_root_save() {
     chown -R cassandra:cassandra "${srv_root}"
   }
 }
+disable_cassandra_start() {
+  echo 'test start == "$1" && exit 0' > /etc/default/cassandra
+}
+enable_cassandra_start() {
+  echo '## NEEDS_START' > /etc/default/cassandra
+}
 
 # Construct the cassandra.yaml file from the appropriate information above
 configure_cassandra () {
@@ -151,8 +120,8 @@ configure_cassandra () {
   local HEAP_SIZE=$(config-get heap-size)
   local NEW_GEN_SIZE=$(config-get new-gen-size)
   local SRV_ROOT=$(config-get srv-root)
+  local DEV_REGEXP=$(config-get volume-dev-regexp)
   local COMPACTION_THROUGHPUT=$(config-get compaction-throughput)
-  local DELAY_START_UNTIL_VOLUME=$(config-get delay-start-until-volume)
 
   # This needs to 'detect' whether its running in ec2
   # and use the ec2Snitch instead if it is - or we could
@@ -168,23 +137,28 @@ configure_cassandra () {
          -e "s/^(compaction_throughput_mb_per_sec):.*/\1: ${COMPACTION_THROUGHPUT}/" \
          /etc/cassandra/cassandra.yaml
 
-  local volid=$(volid_config_get)
-### TODO(jjo): DELAY_START_UNTIL_VOLUME logic/state-transition needs fixing
-#  if [[ $DELAY_START_UNTIL_VOLUME = True && -z ${volid} ]];then
-#    echo 'test start == "$1" && exit 0' > /etc/default/cassandra
-#  else
-#    echo '##NEEDS_START' > /etc/default/cassandra
-#  fi
+  ## Storage configuration
+  if local volid=$(storage_config);then
+    juju-log "INFO: volid=${volid}"
+  else
+    disable_cassandra_start
+    juju-log "ERROR: invalid storage_config at ${FUNCNAME[0]}"
+  fi
   local srv_root_curr=$(srv_root_get)
-  [[ -n "${volid}" ]] && {
+  if [[ -n ${volid} -a ${volid} == --ephermeral ]];then
     local srv_root_new=$(srv_root_from_volid ${volid})
     [[ ${srv_root_new} != ${srv_root_curr} ]] && {
-      volume_init_and_mount ${volid}
-      [[ -d ${srv_root_curr}/data ]] && \
-        migrate_cassandra_data_and_restart ${srv_root_curr} ${srv_root_new}
+      volume_init_and_mount ${volid} ${dev_regexp}
+      if [[ -d ${srv_root_curr}/data ]];then
+        juju-log "WARNING: found already existing cassandra data, migrating ${srv_root_curr} -> ${srv_root_new}"
+        migrate_cassandra_data ${srv_root_curr} ${srv_root_new}
+      fi
       srv_root_save ${srv_root_new}
     }
-  }
+  else
+     juju-log "ERROR: volid not found for ${JUJU_UNIT_NAME}"
+     return 1
+  fi
 
   # Open port ready for expose
   open-port ${CLIENT_PORT}/TCP
@@ -224,12 +198,12 @@ stop_cassandra() {
 
 setup_database_interface () {
   juju-log "Setup Cassandra database interface"
-  relation-set port="`config-get client-port`"
+  relation-set port="$(config-get client-port)"
 }
 
 setup_jmx_interface () {
   juju-log "Setup Cassandra JMX interface"
-  relation-set port="`config-get jmx-port`"
+  relation-set port="$(config-get jmx-port)"
 }
 
 reconfigure_cluster_seeds () {

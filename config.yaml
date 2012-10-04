@@ -47,14 +47,32 @@ options:
             are inserting data is more than sufficient.  Setting this to
             0 disables throttling. Note that this account for all types
             of compaction, including validation compaction.
-    delay-start-until-volume:
+    ephemeral-storage:
         type: boolean
         default: false
         description: >
-            Delay cassandra start until "volume-map" shows a volume id
-            assigned to the instance.
+            If false, a configure-error state will be raised if
+               volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
+               below) - see "volume-map" below.
+            If true, service units won't try to use "volume-map" (and
+               related variables) to mount and use external (EBS) volumes,
+               thus storage lifetime will equal VM, thus ephemeral.
+               YOU'VE BEEN WARNED.
+            
+    #------------------------------------------------------------------------
+    # Volume management, only used if ephemeral-storage == False
+    #------------------------------------------------------------------------
     volume-map:
         type: string
         default: ""
         description: >
-            JSON map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }"
+            YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
+            Service units will raise a "configure-error" condition if no volume-map
+            value is set for it - it's expected a human to set it properly to resolve it.
+
+    volume-dev-regexp:
+        type: string
+        default: "/dev/vd[c-z]"
+        description: >
+            Block device for attached volumes as seen by the VM, will be "scanned"
+            for an unused device when "volume-map" is valid for the unit.
