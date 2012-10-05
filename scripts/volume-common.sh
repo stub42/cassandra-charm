@@ -4,10 +4,10 @@
 #------------------------------
 # Returns a mount point from passed vol-id, e.g. /srv/juju/vol-000012345
 #
-# @param  $1 volume id
-# @return    mount point path, eg /srv/juju/vol-000012345
+# @param  $1             volume id
+# @echoes mntpoint-path  eg /srv/juju/vol-000012345
 #------------------------------
-mntpoint_from_volid() {
+_mntpoint_from_volid() {
   local volid=${1?missing volid}
   [[ ${volid} != "" ]] && echo /srv/juju/${volid} || echo ""
 }
@@ -27,7 +27,7 @@ volume_init_and_mount() {
   local volid=${1:?missing volid}
   local dev_regexp=$(config-get volume-dev_regexp)
   local dev found_dev=
-  local mntpoint=$(mntpoint_from_volid ${volid})
+  local mntpoint=$(_mntpoint_from_volid ${volid})
   local label="${volid}"
   local func=${FUNCNAME[0]}
 
@@ -97,18 +97,34 @@ volume_init_and_mount() {
 #          1 if not found or None
 #
 #------------------------------
-volume_get_volid_from_map() {
+volume_get_volid_from_volume_map() {
   local volid=$(config-get "volume-map"|python -c$'import sys;import os;from yaml import load;from itertools import chain; volume_map = load(sys.stdin)\nif volume_map: print volume_map.get(os.environ["JUJU_UNIT_NAME"])')
   [[ $volid == None ]] && return 1
   echo "$volid"
 }
 
+# Returns true if permanent storage (considers --ephemeral)
+# @returns  0 if volid set and not --ephermeral, else:
+#           1 
+volume_is_permanent() {
+  local volid=${1:?missing volid}
+  [[ -n ${volid} && ${volid} != --ephermeral ]] && return 0 || return 1
+}
+volume_mount_pont_from_volid(){
+  local volid=${1:?missing volid}
+  if volume_is_permanent;then
+	  echo "/srv/juju/${volid}"
+    return 0
+  else
+    return 1
+  fi
+}
 # Do we have a valid storage state?
 # @returns  0 does echo $volid (can be "--ephemeral")
 #           1 config state is invalid - we should not serve
 volume_get_volume_id() {
   local EPHEMERAL_STORAGE=$(config-get volume-ephemeral-storage)
-  local volid=$(volume_get_volid_from_map)
+  local volid=$(volume_get_volid_from_volume_map)
   if [[ $EPHEMERAL_STORAGE == True ]];then
     # Ephemeral -> should not have a valid volid
     if [[ $volid != "" ]];then

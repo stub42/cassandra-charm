@@ -81,8 +81,12 @@ srv_root_get() {
 }
 srv_root_from_volid() {
   local volid=${1?missing volid}
-  local srv_root
-  [[ ${volid} != "" ]] && echo "/srv/juju/${volid}/cassandra" || echo /var/lib/cassandra
+  local mntpoint
+  if mntpoint=$(volume_mount_pont_from_volid "${volid}"); then
+    echo "${mntpoint}/cassandra"
+  else
+    echo "/var/lib/cassandra"
+  fi
 }
 srv_root_save() {
   local srv_root=${1:?missing srv_root}
@@ -146,7 +150,7 @@ configure_cassandra () {
   local srv_root_curr=$(srv_root_get)
   (
   set -e
-  if [[ -n ${volid} && ${volid} != --ephermeral ]];then
+  if volume_is_permanent "${volid}";then
     #immutable_set "volid" "$volid" || return 1
     local srv_root_new=$(srv_root_from_volid ${volid})
     if ${srv_root_new} != ${srv_root_curr} ]];then
