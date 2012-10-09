@@ -82,7 +82,7 @@ srv_root_get() {
 srv_root_from_volid() {
   local volid=${1?missing volid}
   local mntpoint
-  if mntpoint=$(volume_mount_pont_from_volid "${volid}"); then
+  if mntpoint=$(volume_mount_point_from_volid "${volid}"); then
     echo "${mntpoint}/cassandra"
   else
     echo "/var/lib/cassandra"

@@ -25,13 +25,26 @@ _mntpoint_from_volid() {
 volume_init_and_mount() {
   ## Find 1st unused device (reverse sort /dev/vdX)
   local volid=${1:?missing volid}
-  local dev_regexp=$(config-get volume-dev_regexp)
+  local dev_regexp
   local dev found_dev=
-  local mntpoint=$(_mntpoint_from_volid ${volid})
   local label="${volid}"
   local func=${FUNCNAME[0]}
+  dev_regexp=$(config-get volume-dev-regexp) || return 1
+  mntpoint=$(_mntpoint_from_volid ${volid})
 
   [[ -z ${mntpoint} ]] && return 1
+
+  # Sanitize
+  case "${dev_regexp?}" in
+    # Careful: this is glob matching against an regexp -
+    # quite narrowed
+    /dev/*|/dev/disk/by-*)
+      ;; ## Ok
+    *)
+      juju-log "ERROR: invalid 'volume-dev-regexp' specified"
+      return 1
+      ;;
+  esac
 
   # Assume udev will create only existing devices
   for dev in $(ls -r ${dev_regexp} 2>/dev/null);do
@@ -39,7 +52,7 @@ volume_init_and_mount() {
     mount | fgrep -q "${dev}[1-9]?" || { found_dev=${dev}; break;}
   done
   [[ -n "${found_dev}" ]] || {
-    juju-log "ERROR: ${func}: coult not find an unused for: ${dev_regexp}"
+    juju-log "ERROR: ${func}: coult not find an unused device for regexp: ${dev_regexp}"
     return 1
   }
   partition1_dev=${found_dev}1
@@ -78,12 +91,12 @@ volume_init_and_mount() {
   [[ -d "${mntpoint}" ]] || mkdir -p "${mntpoint}"
   mount | fgrep -wq "${partition1_dev}" || {
     mount -L "${label}" "${mntpoint}"
-    juju-log "INFO: ${func}: mounted as: $(mount | fgrep -w ${found_dev})"
+    juju-log "INFO: ${func}: mounted as: $(mount | fgrep -w ${partition1_dev})"
   }
 
   # Add it to fstab is not already there
   fgrep -wq "LABEL=${label}" /etc/fstab || {
-    echo "LABEL=${label}    ${mntpoint}    auto    defaults,nobootwait,comment=${volid}" | tee -a /etc/fstab
+    echo "LABEL=${label}    ${mntpoint}    ext4    defaults,nobootwait,comment=${volid}" | tee -a /etc/fstab
     juju-log "INFO: ${func}: LABEL=${label} added to /etc/fstab"
   }
   )
@@ -110,7 +123,7 @@ volume_is_permanent() {
   local volid=${1:?missing volid}
   [[ -n ${volid} && ${volid} != --ephermeral ]] && return 0 || return 1
 }
-volume_mount_pont_from_volid(){
+volume_mount_point_from_volid(){
   local volid=${1:?missing volid}
   if volume_is_permanent;then
 	  echo "/srv/juju/${volid}"
@@ -123,9 +136,11 @@ volume_mount_pont_from_volid(){
 # @returns  0 does echo $volid (can be "--ephemeral")
 #           1 config state is invalid - we should not serve
 volume_get_volume_id() {
-  local EPHEMERAL_STORAGE=$(config-get volume-ephemeral-storage)
-  local volid=$(volume_get_volid_from_volume_map)
-  if [[ $EPHEMERAL_STORAGE == True ]];then
+  local ephemeral_storage
+  local volid
+  ephemeral_storage=$(config-get volume-ephemeral-storage) || return 1
+  volid=$(volume_get_volid_from_volume_map) || return 1
+  if [[ $ephemeral_storage == True ]];then
     # Ephemeral -> should not have a valid volid
     if [[ $volid != "" ]];then
         juju-log "ERROR: volume-ephemeral-storage is True, but $JUJU_UNIT_NAME maps to volid=${volid}"
@@ -141,3 +156,13 @@ volume_get_volume_id() {
   echo "$volid"
   return 0
 }
+
+case "$1" in
+  ## allow non SHELL scripts to call helper functions
+  call)
+    : ${JUJU_UNIT_NAME?} ## Must be called in juju environment
+    shift;
+    function="${1:?usage: ${0##*/} call function arg1 arg2 ...}"
+    shift;
+    ${function} "$@" && exit 0 || exit 1
+esac
