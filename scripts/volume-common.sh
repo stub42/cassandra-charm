@@ -125,7 +125,7 @@ volume_is_permanent() {
 }
 volume_mount_point_from_volid(){
   local volid=${1:?missing volid}
-  if volume_is_permanent;then
+  if volume_is_permanent "$volid";then
 	  echo "/srv/juju/${volid}"
     return 0
   else
