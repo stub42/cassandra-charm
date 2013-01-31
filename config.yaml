@@ -47,6 +47,16 @@ options:
             are inserting data is more than sufficient.  Setting this to
             0 disables throttling. Note that this account for all types
             of compaction, including validation compaction.
+    apt-repo-spec:
+        type: string
+        default: deb http://www.apache.org/dist/cassandra/debian 11x main
+        description: >
+            Apt repository to install cassandra package(s) from
+    apt-repo-key:
+        type: string
+        default: 4BD736A82B5C1B00
+        description: >
+            Apt repository key, typically needed for apt-repo-spec 
     #------------------------------------------------------------------------
     # Volume management
     #   volume-map, volume-dev_regexp are only used 
