@@ -43,10 +43,16 @@ migrate_cassandra_data() {
 # Install cassandra source and install packages
 install_cassandra () {
   juju-log "Installing Cassandra"
-  # Install the repositories
-  echo "deb http://www.apache.org/dist/cassandra/debian 11x main" > /etc/apt/sources.list.d/cassandra.list
+  # Install the repository
+  APT_REPO_SPEC="$(config-get apt-repo-spec)"
+  APT_REPO_KEY=$(config-get apt-repo-key)
   # Add the key
-  apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4BD736A82B5C1B00
+  if [[ -n "${APT_REPO_KEY}" ]]; then
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys ${APT_REPO_KEY}
+  fi
+  if [[ -n "${APT_REPO_SPEC}" ]]; then 
+    echo "${APT_REPO_SPEC}" > /etc/apt/sources.list.d/cassandra.list
+  fi
   # Update the repositories
   apt-get update
   # Ensure that cassandra does not startup before we have configured it
@@ -150,6 +156,7 @@ configure_cassandra () {
   local srv_root_curr=$(srv_root_get)
   (
   set -e
+  [[ -z "${volid}" ]] && exit 0
   if volume_is_permanent "${volid}";then
     #immutable_set "volid" "$volid" || return 1
     local srv_root_new=$(srv_root_from_volid ${volid})
@@ -169,6 +176,9 @@ configure_cassandra () {
   # Open port ready for expose
   open-port ${CLIENT_PORT}/TCP
 
+  # Default cassandra-env.sh for some cassandra 1.0.x specifies -Xss128k
+  # while 160k min is required
+  sed -i -e "s/-Xss128k/-Xss256k/" /etc/cassandra/cassandra-env.sh
   # Configure memory settings as specified in configuration
   if [ "$AUTO_MEMORY" = "False" ]; then
     juju-log "Configuring Manual Memory Setttings"
@@ -183,12 +193,6 @@ configure_cassandra () {
 
 # Service Control Commands
 restart_cassandra () {
-  ## TODO(jjo): NEEDS_START logic
-  grep -q NEEDS_START /etc/default/cassandra && {
-    echo '' > /etc/default/cassandra
-    service cassandra start
-    return $?
-  }
   juju-log "Restarting Cassandra"
   service cassandra status && service cassandra restart || :
 }
@@ -265,6 +269,20 @@ decommission_node () {
   juju-log "Decommissioning node - this may take some time..."
   nodetool -h $(get_private_ip) decommission
 }
+run_exec_d_hooks() {
+  local exec_hook=${1:?}
+  if [[ -d exec.d ]]; then
+    shopt -s nullglob
+    for f in exec.d/*/charm-${exec_hook}; do
+    [[ -x "$f" ]] || continue
+    ${SHELL} -c "$f"|| {
+        ## bail out if anyone fails
+        juju-log -l ERROR "$f: returned exit_status=$? "
+        exit 1
+    }
+    done
+  fi
+}
 
 # Actual processing
 COMMAND=${0##*/}
@@ -273,6 +291,7 @@ export BZR_HOME=/root
 
 case $COMMAND in
   install)
+    run_exec_d_hooks "pre-install"
     #immutable_cleanup
     # Install cassandra first run only
     [[ -d /usr/share/cassandra ]] || install_cassandra
