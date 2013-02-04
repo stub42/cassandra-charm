@@ -1,7 +1,6 @@
 #!/bin/bash
 # vim: set tabstop=2 expandtab:
 . ./scripts/volume-common.sh
-. ./scripts/immutable-common.sh
 
 set -e
 
@@ -158,7 +157,6 @@ configure_cassandra () {
   set -e
   [[ -z "${volid}" ]] && exit 0
   if volume_is_permanent "${volid}";then
-    #immutable_set "volid" "$volid" || return 1
     local srv_root_new=$(srv_root_from_volid ${volid})
     if ${srv_root_new} != ${srv_root_curr} ]];then
       :
@@ -292,7 +290,6 @@ export BZR_HOME=/root
 case $COMMAND in
   install)
     run_exec_d_hooks "pre-install"
-    #immutable_cleanup
     # Install cassandra first run only
     [[ -d /usr/share/cassandra ]] || install_cassandra
     # Initialize /etc/cassandra bzr
