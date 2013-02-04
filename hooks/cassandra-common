@@ -44,7 +44,7 @@ migrate_cassandra_data() {
 install_cassandra () {
   juju-log "Installing Cassandra"
   # Install the repository
-  APT_REPO_SPEC=$(config-get apt-repo-spec)
+  APT_REPO_SPEC="$(config-get apt-repo-spec)"
   APT_REPO_KEY=$(config-get apt-repo-key)
   # Add the key
   if [[ -n "${APT_REPO_KEY}" ]]; then

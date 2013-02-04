@@ -49,14 +49,14 @@ options:
             of compaction, including validation compaction.
     apt-repo-spec:
         type: string
-        default: deb http://www.apache.org/dist/cassandra/debian 11x main
+        default: deb http://www.apache.org/dist/cassandra/debian 12x main
         description: >
-            Apt repository to install cassandra package(s) from
+            Apt repository to install cassandra package(s) from.
     apt-repo-key:
         type: string
         default: 4BD736A82B5C1B00
         description: >
-            Apt repository key, typically needed for apt-repo-spec 
+            Apt repository key, typically needed for apt-repo-spec.
     #------------------------------------------------------------------------
     # Volume management
     #   volume-map, volume-dev_regexp are only used 
@@ -64,12 +64,12 @@ options:
     #------------------------------------------------------------------------
     volume-ephemeral-storage:
         type: boolean
-        default: false
-        description: >
-            If false, a configure-error state will be raised if
+        default: True
+        description: |
+            If False, a configure-error state will be raised if
                volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
                below) - see "volume-map" below.
-            If true, service units won't try to use "volume-map" (and
+            If True, service units won't try to use "volume-map" (and
                related variables) to mount and use external (EBS) volumes,
                thus storage lifetime will equal VM, thus ephemeral.
                YOU'VE BEEN WARNED.
