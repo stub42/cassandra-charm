@@ -1,19 +1,6 @@
 #!/bin/bash
 # vim: set tabstop=2 expandtab:
 
-# Pre-exec
-if [[ -d exec.d ]]; then
-    shopt -s nullglob
-    for f in exec.d/*/charm-pre-install; do
-    [[ -x "$f" ]] || continue
-    ${SHELL} -c "$f"|| {
-        ## bail out if anyone fails
-        juju-log -l ERROR "$f: returned exit_status=$? "
-        exit 1
-    }
-    done
-fi
-
 . ./scripts/volume-common.sh
 
 set -e
@@ -314,6 +301,7 @@ case $COMMAND in
     configure_jmx_port 
     # Construct the cassandra.yaml file from the appropriate information above
     configure_cassandra 
+    run_exec_d_hooks "post-install"
     ;;
   config-changed)
     # Update the cassandra environment with the appropriate JMX port
