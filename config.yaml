@@ -18,6 +18,12 @@ options:
         default: "Cassandra Cluster"
         description: >
             Name of the Cassandra Cluster - don't change yet!
+    num-tokens:
+        type: int
+        default: 256
+        description: >
+            Number of tokens per node for Cassandra 1.2+. Ignored for earlier
+            versions.
     auto-memory:
         type: boolean
         default: true
