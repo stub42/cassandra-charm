@@ -57,7 +57,7 @@ install_cassandra () {
   # Ensure that cassandra does not startup before we have configured it
   disable_cassandra_start
   # Install the package
-  apt-get -qq install -y cassandra python-cheetah dnsutils
+  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y cassandra python-cheetah dnsutils
   bzr_ci
 }
 
@@ -234,39 +234,30 @@ reconfigure_cluster_seeds () {
 }
 
 bootstrap () {
-  cassandra_is_running && return 0
+  service cassandra status && return 0
   seeds=$(relation-get seed-nodes)
   if [ -n "${seeds}" ] || am_i_the_leader; then
     start_cassandra
-    # wait for the node to become ready
+    juju-log "Waiting for this node to join the cluster"
     IP=`get_private_ip`
     count=0
-    status="$(nodetool -h $IP ring 2>/dev/null | grep $IP | awk '{print $3}' | uniq)"
-    while [ "${status}" != "Up" ] && [ $count -lt 20 ]; do
-      sleep 10
-      status="$(nodetool -h $IP ring 2>/dev/null | grep $IP | awk '{print $3}' | uniq)"
+    status="$(nodetool -h $IP status 2>/dev/null | grep $IP | awk '{print $1}')"
+    while [ "${status}" != "UN" ] && [ $count -lt 40 ]; do
+      sleep 30
+      status="$(nodetool -h $IP status 2>/dev/null | grep $IP | awk '{print $1}')"
       count=$((count + 1))
+      juju-log "Waited $((count * 30)) seconds so far..."
     done
-    if [ $count -eq 20 ]; then
-      # node didn't start successfully
+    if [ $count -eq 40 ]; then
+      juju-log "Timed out waiting for node"
       exit 2
     fi
-    relation-set seed-nodes="$(echo $(nodetool -h $IP ring 2>/dev/null | grep Up | awk '{print $1}' | sort -u))"
+    relation-set seed-nodes="$(echo $(nodetool -h $IP status 2>/dev/null | grep ^UN | awk '{print $2}'))"
   fi
 }
 
 remove_down_nodes () {
-  if [ "$(relation-get purge-nodes)" == "True" ] && am_i_the_leader; then
-    sleep 30
-    juju-log "Removing tokens for nodes which are marked 'Down'"
-    local PRIVATE_IP=$(get_private_ip)
-    tokens=$(nodetool -h $PRIVATE_IP ring | awk '/Down/{ print $9 }')
-    for token in ${tokens}; do
-      juju-log "Removing token ${token} from the ring"
-      nodetool -h ${PRIVATE_IP} removetoken ${token}
-    done
-    relation-set seed-nodes="$(echo $(nodetool -h $IP ring 2>/dev/null | grep Up | awk '{print $1}' | sort -u))"
-  fi
+    relation-set seed-nodes="$(echo $(nodetool -h $IP status 2>/dev/null | grep ^UN | awk '{print $2}'))"
 }
 
 decommission_node () {

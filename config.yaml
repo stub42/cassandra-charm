@@ -1,6 +1,12 @@
 # vim: sw=4 ts=4 et ai tw=80
 options:
     # http://wiki.apache.org/cassandra/FAQ#ports
+    allow-single-node:
+        type: boolean
+        default: False
+        description: Allow cassandra to start in a single-node configuration.
+            When deploying a new service with more than one initial unit (i.e.
+            juju deploy -n 2), this should be set to false.
     jmx-port:
         type: int
         default: 7199
