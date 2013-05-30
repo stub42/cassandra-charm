@@ -1,6 +1,12 @@
 # vim: sw=4 ts=4 et ai tw=80
 options:
     # http://wiki.apache.org/cassandra/FAQ#ports
+    allow-single-node:
+        type: boolean
+        default: False
+        description: Allow cassandra to start in a single-node configuration.
+            When deploying a new service with more than one initial unit (i.e.
+            juju deploy -n 2), this should be set to false.
     jmx-port:
         type: int
         default: 7199
@@ -18,6 +24,12 @@ options:
         default: "Cassandra Cluster"
         description: >
             Name of the Cassandra Cluster - don't change yet!
+    num-tokens:
+        type: int
+        default: 256
+        description: >
+            Number of tokens per node for Cassandra 1.2+. Ignored for earlier
+            versions.
     auto-memory:
         type: boolean
         default: true
