@@ -233,6 +233,29 @@ reconfigure_cluster_seeds () {
   bzr_ci
 }
 
+nodestatus() {
+    local node_ip=$1
+    local VER=$(dpkg-query --show --showformat='${Version}' cassandra)
+    local MAJ=${VER%%.*}
+    local MIN_REL=${VER#*.}
+    local MIN=${MIN_REL%%.*}
+    local RING_COLS='$3$4'
+    if [ $MAJ == "0" ] || ([ $MAJ == "1" ] && [ $MIN == "0" ]); then 
+        # nodetool ring columns are different in 1.0 and lower
+        RING_COLS='$4$5'
+    fi
+    nodetool -h $IP ring 2>/dev/null | \
+        awk "/^$IP / {print $RING_COLS}" | \
+        tail -n1
+}
+
+running_nodes() {
+    nodetool -h $IP ring 2>/dev/null | \
+        awk '/Up *Normal/ {print $1}' | \
+        sort -u | \
+        paste -d " " -s
+}
+
 bootstrap () {
   service cassandra status && return 0
   seeds=$(relation-get seed-nodes)
@@ -241,10 +264,10 @@ bootstrap () {
     juju-log "Waiting for this node to join the cluster"
     IP=`get_private_ip`
     count=0
-    status="$(nodetool -h $IP status 2>/dev/null | grep $IP | awk '{print $1}')"
-    while [ "${status}" != "UN" ] && [ $count -lt 40 ]; do
+    status="$(nodestatus $IP)"
+    while [ "${status}" != "UpNormal" ] && [ $count -lt 40 ]; do
       sleep 30
-      status="$(nodetool -h $IP status 2>/dev/null | grep $IP | awk '{print $1}')"
+      status="$(nodestatus $IP)"
       count=$((count + 1))
       juju-log "Waited $((count * 30)) seconds so far..."
     done
@@ -252,12 +275,12 @@ bootstrap () {
       juju-log "Timed out waiting for node"
       exit 2
     fi
-    relation-set seed-nodes="$(echo $(nodetool -h $IP status 2>/dev/null | grep ^UN | awk '{print $2}'))"
+    relation-set seed-nodes="$(running_nodes)"
   fi
 }
 
 remove_down_nodes () {
-    relation-set seed-nodes="$(echo $(nodetool -h $IP status 2>/dev/null | grep ^UN | awk '{print $2}'))"
+    relation-set seed-nodes="$(running_nodes)"
 }
 
 decommission_node () {
