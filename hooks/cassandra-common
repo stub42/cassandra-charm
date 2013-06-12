@@ -1,5 +1,6 @@
 #!/bin/bash
 # vim: set tabstop=2 expandtab:
+
 . ./scripts/volume-common.sh
 
 set -e
@@ -320,6 +321,7 @@ case $COMMAND in
     configure_jmx_port 
     # Construct the cassandra.yaml file from the appropriate information above
     configure_cassandra 
+    run_exec_d_hooks "post-install"
     ;;
   config-changed)
     # Update the cassandra environment with the appropriate JMX port
