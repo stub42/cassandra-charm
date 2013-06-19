@@ -310,6 +310,24 @@ run_exec_d_hooks() {
   fi
 }
 
+update_nagios_checks() {
+  if [ -d "/usr/lib/nagios/plugins" ] && [ -d "/etc/nagios/nrpe.d" ]; then
+    IP=`get_private_ip`
+    install --owner=root --group=root --mode=0555 files/check_cassandra_heap.sh /usr/lib/nagios/plugins/check_cassandra_heap.sh
+    export NAGIOS_CONTEXT="$(config-get nagios_context)"
+    export NAGIOS_HOSTNAME="${NAGIOS_CONTEXT}-${JUJU_UNIT_NAME//\//-}"
+    export NAGIOS_SERVICEGROUP=${NAGIOS_CONTEXT}
+
+    export WARN_PCT="$(config-get nagios_heapchk_warn_pct)"
+    export CRIT_PCT="$(config-get nagios_heapchk_crit_pct)"
+    export SERVICE_DESCRIPTION="Cassandra server heap usage"
+    export NRPE_CMD_NAME="check_${NAGIOS_CONTEXT}_cassandra_heap"
+    export NRPE_CMD="/usr/lib/nagios/plugins/check_cassandra_heap.sh ${IP} ${WARN_PCT} ${CRIT_PCT}"
+    cheetah fill --env -p templates/nrpe_cmd_file.tmpl > /etc/nagios/nrpe.d/${NRPE_CMD_NAME}.cfg
+    cheetah fill --env -p templates/nrpe_service_file.tmpl > /var/lib/nagios/export/service__${NAGIOS_HOSTNAME}_${NRPE_CMD_NAME}.cfg
+  fi
+}
+
 # Actual processing
 COMMAND=${0##*/}
 
@@ -337,6 +355,8 @@ case $COMMAND in
     configure_cassandra
     # Restart as required
     restart_cassandra
+    # Fill in nagios checks
+    update_nagios_checks
     ;;
   upgrade-charm)
     juju-log "Updating this charm - currently no-op"
@@ -365,6 +385,9 @@ case $COMMAND in
     ;;
   jmx-relation-joined)
     setup_jmx_interface
+    ;;
+  nrpe-external-master-relation-changed)
+    update_nagios_checks
     ;;
   *)
     juju-log "Command not recognised"
