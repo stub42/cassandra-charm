@@ -229,7 +229,14 @@ setup_jmx_interface () {
 reconfigure_cluster_seeds () {
   juju-log "Reconfiguring cluster seeds"
   seeds="$(relation-get seed-nodes | tr ' ' ',')"
-  sed -i -e "s/\- seeds:.*/\- seeds: \"${seeds}\"/" /etc/cassandra/cassandra.yaml
+  IP=`get_private_ip`
+  if [ -z "${seeds}" ] && am_i_the_leader; then
+    juju-log "Configuring myself locally as a seed node"
+    sed -i -e "s/\- seeds:.*/\- seeds: \"${IP}\"/" /etc/cassandra/cassandra.yaml
+  else
+    juju-log "Setting seeds node to be ${seeds}"
+    sed -i -e "s/\- seeds:.*/\- seeds: \"${seeds}\"/" /etc/cassandra/cassandra.yaml
+  fi
   juju-log "$JUJU_REMOTE_UNIT modified its settings or departed"
   bzr_ci
 }
