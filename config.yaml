@@ -100,3 +100,22 @@ options:
         description: >
             Block device for attached volumes as seen by the VM, will be "scanned"
             for an unused device when "volume-map" is valid for the unit.
+    nagios_context:
+        default: "juju"
+        type: string
+        description: |
+            a string that will be prepended to instance name to set the host name
+            in nagios. So for instance the hostname would be something like:
+                juju-cassandra-0
+            If you're running multiple environments with the same services in them
+            this allows you to differentiate between them.
+    nagios_heapchk_warn_pct:
+        default: 80
+        type: int
+        description: |
+            The pct of heap used to trigger a nagios warning
+    nagios_heapchk_crit_pct:
+        default: 90
+        type: int
+        description: |
+            The pct of heap used to trigger a nagios critcal alert
