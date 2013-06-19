@@ -169,9 +169,7 @@ configure_cassandra () {
   [[ -z "${volid}" ]] && exit 0
   if volume_is_permanent "${volid}";then
     local srv_root_new=$(srv_root_from_volid ${volid})
-    if ${srv_root_new} != ${srv_root_curr} ]];then
-      :
-    else
+    if [[ ${srv_root_new} != ${srv_root_curr} ]];then
       volume_init_and_mount ${volid}
       if [[ -d ${srv_root_curr}/data ]];then
         juju-log "WARNING: found already existing cassandra data, migrating ${srv_root_curr} -> ${srv_root_new}"
