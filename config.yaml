@@ -69,6 +69,13 @@ options:
         default: 4BD736A82B5C1B00
         description: >
             Apt repository key, typically needed for apt-repo-spec.
+    force-seed-node:
+        type: string
+        default: ""
+        description: >
+            A comma seperated list of seed nodes. This is useful if the cluster
+            being created in this juju environment is part of a larger cluser
+            and the seed nodes are remote.
     #------------------------------------------------------------------------
     # Volume management
     #   volume-map, volume-dev_regexp are only used 
