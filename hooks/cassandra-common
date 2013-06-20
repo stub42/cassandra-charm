@@ -18,9 +18,11 @@ am_i_the_leader () {
   for unit in ${units}; do
     peer_unit_no=${unit##*/}
     if [ "${peer_unit_no}" -lt "${unit_no}" ]; then
+        juju-log "I am not the leader"
         return 1
     fi
   done
+  juju-log "I am the leader"
   return 0
 }
 
@@ -84,7 +86,7 @@ get_private_ip () {
 
 get_seed_nodes () {
   FORCE_SEED_NODE=$(config-get force-seed-node)
-  if [ -n $FORCE_SEED_NODE ]; then
+  if [[ -n $FORCE_SEED_NODE ]]; then
     echo $FORCE_SEED_NODE
   else
     relation-get seed-nodes | tr ' ' ','
@@ -93,9 +95,11 @@ get_seed_nodes () {
 
 set_seed_nodes () {
   FORCE_SEED_NODE=$(config-get force-seed-node)
-  if [ -n $FORCE_SEED_NODE ]; then
+  if [[ -n $FORCE_SEED_NODE ]]; then
+    juju-log "Setting seed_node to $FORCE_SEED_NODE"
     relation-set seed-nodes=$FORCE_SEED_NODE
   else
+    juju-log "Setting seed_node to $(running_nodes)"
     relation-set seed-nodes="$(running_nodes)"
   fi 
 }
@@ -268,13 +272,14 @@ nodestatus() {
         # nodetool ring columns are different in 1.0 and lower
         RING_COLS='$4$5'
     fi
-    nodetool -h $IP ring 2>/dev/null | \
-        awk "/^$IP / {print $RING_COLS}" | \
+    nodetool -h $node_ip ring 2>/dev/null | \
+        awk "/^$node_ip / {print $RING_COLS}" | \
         tail -n1
 }
 
 running_nodes() {
-    nodetool -h $IP ring 2>/dev/null | \
+    local node_ip=$(get_private_ip)
+    nodetool -h $node_ip ring 2>/dev/null | \
         awk '/Up *Normal/ {print $1}' | \
         sort -u | \
         paste -d " " -s
@@ -293,7 +298,7 @@ bootstrap () {
       sleep 30
       status="$(nodestatus $IP)"
       count=$((count + 1))
-      juju-log "Waited $((count * 30)) seconds so far..."
+      juju-log "Waited $((count * 30)) seconds so far...(nodestatus=${status})"
     done
     if [ $count -eq 40 ]; then
       juju-log "Timed out waiting for node"
@@ -304,7 +309,7 @@ bootstrap () {
 }
 
 remove_down_nodes () {
-    relation-set seed-nodes="$(running_nodes)"
+    set_seed_nodes
 }
 
 decommission_node () {
@@ -409,3 +414,4 @@ case $COMMAND in
     juju-log "Command not recognised"
     ;;
 esac
+
