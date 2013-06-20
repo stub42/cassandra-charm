@@ -128,7 +128,7 @@ volume_init_and_mount() {
   # Mount it at e.g. /srv/juju/vol-000012345
   [[ -d "${mntpoint}" ]] || mkdir -p "${mntpoint}"
   mount | fgrep -wq "${partition1_dev}" || {
-    local files_below_mntpoint="$(ls -d "${mntpoint}"/* 2>/dev/null |wc -l )" 
+    local files_below_mntpoint="$(cd ${mntpoint}; ls -1A |wc -l )"
     if [[ ${files_below_mntpoint} -ne 0 ]]; then
       juju-log "ERROR: *not* doing 'mount "${partition1_dev}" "${mntpoint}"' because there are already ${files_below_mntpoint} files/dirs beneath '${mntpoint}'"
       exit 1
