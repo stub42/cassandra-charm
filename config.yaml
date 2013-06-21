@@ -73,7 +73,7 @@ options:
         type: string
         default: ""
         description: >
-            A comma seperated list of seed nodes. This is useful if the cluster
+            A comma separated list of seed nodes. This is useful if the cluster
             being created in this juju environment is part of a larger cluser
             and the seed nodes are remote.
     #------------------------------------------------------------------------
