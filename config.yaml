@@ -69,7 +69,7 @@ options:
         default: 4BD736A82B5C1B00
         description: >
             Apt repository key, typically needed for apt-repo-spec.
-    force-seed-node:
+    force-seed-nodes:
         type: string
         default: ""
         description: >

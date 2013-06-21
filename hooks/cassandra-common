@@ -85,19 +85,19 @@ get_private_ip () {
 }
 
 get_seed_nodes () {
-  FORCE_SEED_NODE=$(config-get force-seed-node)
-  if [[ -n $FORCE_SEED_NODE ]]; then
-    echo $FORCE_SEED_NODE
+  FORCE_SEED_NODES=$(config-get force-seed-nodes)
+  if [[ -n $FORCE_SEED_NODES ]]; then
+    echo $FORCE_SEED_NODES
   else
     relation-get seed-nodes | tr ' ' ','
   fi 
 }
 
 set_seed_nodes () {
-  FORCE_SEED_NODE=$(config-get force-seed-node)
-  if [[ -n $FORCE_SEED_NODE ]]; then
-    juju-log "Setting seed_node to $FORCE_SEED_NODE"
-    relation-set seed-nodes=$FORCE_SEED_NODE
+  FORCE_SEED_NODES=$(config-get force-seed-nodes)
+  if [[ -n $FORCE_SEED_NODES ]]; then
+    juju-log "Setting seed_node to $FORCE_SEED_NODES"
+    relation-set seed-nodes=$FORCE_SEED_NODES
   else
     juju-log "Setting seed_node to $(running_nodes)"
     relation-set seed-nodes="$(running_nodes)"
