@@ -143,6 +143,28 @@ enable_cassandra_start() {
   fi
 }
 
+get_initial_token() {
+    token_map_unitname=$(config-get token-map-by-unitname)
+    token_map_volid=$(config-get token-map-by-volid)
+    initial_token=""
+    if [[ -z ${token_map_unitname} ]] && [[ -z ${token_map_volid} ]]; then
+        echo $initial_token
+        return
+    elif [[ -n ${token_map_unitname} ]] && [[ -n ${token_map_volid} ]]; then
+        juju-log "ERROR: cannot specify token-map-by-unitname and token-map-by-volid"
+        exit 1
+    elif [[ -n ${token_map_unitname} ]]; then
+        token_map=$token_map_unitname
+        token_key=${JUJU_UNIT_NAME}
+    elif [[ -n ${token_map_volid} ]]; then
+        token_map=$token_map_volid
+        token_key=$(volume_get_volume_id)
+    fi
+    python="import sys;from yaml import load;token_map = load(sys.stdin);print token_map.get(\"${token_key}\")"
+    initial_token=$(echo $token_map | python -c "${python}")
+    echo ${initial_token/None/}
+}
+
 # Construct the cassandra.yaml file from the appropriate information above
 configure_cassandra () {
   juju-log "Configuring Cassandra"
@@ -157,12 +179,13 @@ configure_cassandra () {
   local COMPACTION_THROUGHPUT=$(config-get compaction-throughput)
   local NUM_TOKENS=$(config-get num-tokens)
   local SEED_ADDRESSES=$(get_seed_nodes)
+  local INITIAL_TOKEN=$(get_initial_token)
   # This needs to 'detect' whether its running in ec2
   # and use the ec2Snitch instead if it is - or we could
   # specify this as a configuration parameter
-
   # non-trivial sed to edit data_file_directories (has its value in the line following it)
   sed -i -r -e "s/^cluster_name:.*/cluster_name: \'${CLUSTER_NAME}\'/" \
+         -e "s/^(initial_token):.*/\1: ${INITIAL_TOKEN}/" \
          -e "s/(- seeds):.*/\1: \"${SEED_ADDRESSES}\"/" \
          -e "s/^(storage_port):.*/\1: ${CLUSTER_PORT}/" \
          -e "s/^(listen_address):.*/\1: ${LISTEN_ADDRESS}/" \
