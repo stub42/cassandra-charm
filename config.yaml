@@ -76,12 +76,21 @@ options:
             A comma seperated list of seed nodes. This is useful if the cluster
             being created in this juju environment is part of a larger cluser
             and the seed nodes are remote.
-    token-map:
+    token-map-by-unitname:
         type: string
         default: ""
         description: >
             YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
-            Set initial_token according to the map. Useful when rebalancing a ring by hand
+            Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set.
+            Useful when rebalancing a ring by hand
+    token-map-by-volid:
+        type: string
+        default: ""
+        description: >
+            YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
+            Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
+            and cannot be used if token-map-by-unitname is also set.
+            Useful when rebalancing a ring by hand
     #------------------------------------------------------------------------
     # Volume management
     #   volume-map, volume-dev_regexp are only used 

@@ -144,11 +144,25 @@ enable_cassandra_start() {
 }
 
 get_initial_token() {
-  token_map=$(config-get token-map)
-  #python="import sys;from yaml import load;token_map = load(sys.stdin);print token_map.get(\"${JUJU_UNIT_NAME}\")"
-  python="import sys;from yaml import load;token_map = load(sys.stdin);print token_map.get(\"JUJU_UNIT_NAME\")"
-  initial_token=$(echo $token_map | python -c "${python}")
-  echo ${initial_token/None/}
+    token_map_unitname=$(config-get token-map-by-unitname)
+    token_map_volid=$(config-get token-map-by-volid)
+    initial_token=""
+    if [[ -z ${token_map_unitname} ]] && [[ -z ${token_map_volid} ]]; then
+        echo $initial_token
+        return
+    elif [[ -n ${token_map_unitname} ]] && [[ -n ${token_map_volid} ]]; then
+        juju-log "ERROR: cannot specify token-map-by-unitname and token-map-by-volid"
+        exit 1
+    elif [[ -n ${token_map_unitname} ]]; then
+        token_map=$token_map_unitname
+        token_key=${JUJU_UNIT_NAME}
+    elif [[ -n ${token_map_volid} ]]; then
+        token_map=$token_map_volid
+        token_key=$(volume_get_volume_id)
+    fi
+    python="import sys;from yaml import load;token_map = load(sys.stdin);print token_map.get(\"${token_key}\")"
+    initial_token=$(echo $token_map | python -c "${python}")
+    echo ${initial_token/None/}
 }
 
 # Construct the cassandra.yaml file from the appropriate information above
