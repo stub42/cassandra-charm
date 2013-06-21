@@ -89,7 +89,7 @@ get_seed_nodes () {
   if [[ -n $FORCE_SEED_NODES ]]; then
     echo $FORCE_SEED_NODES
   else
-    relation-get seed-nodes | tr ' ' ','
+    relation-get seed-nodes | sed -e 's!\s\+!,!g'
   fi 
 }
 
