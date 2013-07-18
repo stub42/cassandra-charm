@@ -60,7 +60,7 @@ install_cassandra () {
   # Ensure that cassandra does not startup before we have configured it
   disable_cassandra_start
   # Install the package
-  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y cassandra python-cheetah dnsutils
+  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y cassandra python-cheetah dnsutils bzr
   bzr_ci
 }
 
