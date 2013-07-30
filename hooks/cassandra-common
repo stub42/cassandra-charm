@@ -49,8 +49,7 @@ install_cassandra () {
   # Install the repository
   APT_REPO_SPEC="$(config-get apt-repo-spec)"
   APT_REPO_KEY=$(config-get apt-repo-key)
-  # Check for configured extra apt repository and packages
-  EXTRA_APT_REPO="$(config-get extra_apt_source)"
+  # Check for configured extra packages to install from config
   EXTRA_PACKAGES="$(config-get extra_packages)"
   # Add the key
   if [[ -n "${APT_REPO_KEY}" ]]; then
@@ -58,9 +57,6 @@ install_cassandra () {
   fi
   if [[ -n "${APT_REPO_SPEC}" ]]; then 
     echo "${APT_REPO_SPEC}" > /etc/apt/sources.list.d/cassandra.list
-  fi
-  if [[ -n "${EXTRA_APT_REPO}" ]]; then 
-    echo "${EXTRA_APT_REPO}" > /etc/apt/sources.list.d/cassandra-extra.list
   fi
   # Update the repositories
 
