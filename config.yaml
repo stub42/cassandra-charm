@@ -146,12 +146,12 @@ options:
     ## Additional apt-source and packages
     extra_packages:
 	type: string
-	default: "libcassandra-dpkgversiontype-java"
+	default: ""
 	description: |
             Extra packages to install. A space delimited list of packages.
     extra_apt_source:
 	type: string
-	default: "deb http://archive.admin.canonical.com/ubuntu precise-cat-engineering main"
+	default: ""
 	description: |
 		An extra apt source, a single, literal sources.list line.
 
