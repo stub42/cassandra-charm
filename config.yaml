@@ -142,3 +142,16 @@ options:
         type: int
         description: |
             The pct of heap used to trigger a nagios critcal alert
+
+    ## Additional apt-source and packages
+    extra_packages:
+	type: string
+	default: "libcassandra-dpkgversiontype-java"
+	description: |
+            Extra packages to install. A space delimited list of packages.
+    extra_apt_source:
+	type: string
+	default: "deb http://archive.admin.canonical.com/ubuntu precise-cat-engineering main"
+	description: |
+		An extra apt source, a single, literal sources.list line.
+

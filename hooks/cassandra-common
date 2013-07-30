@@ -49,6 +49,9 @@ install_cassandra () {
   # Install the repository
   APT_REPO_SPEC="$(config-get apt-repo-spec)"
   APT_REPO_KEY=$(config-get apt-repo-key)
+  # Check for configured extra apt repository and packages
+  EXTRA_APT_REPO="$(config-get extra_apt_source)"
+  EXTRA_PACKAGES="$(config-get extra_packages)"
   # Add the key
   if [[ -n "${APT_REPO_KEY}" ]]; then
     apt-key adv --keyserver keyserver.ubuntu.com --recv-keys ${APT_REPO_KEY}
@@ -56,12 +59,16 @@ install_cassandra () {
   if [[ -n "${APT_REPO_SPEC}" ]]; then 
     echo "${APT_REPO_SPEC}" > /etc/apt/sources.list.d/cassandra.list
   fi
+  if [[ -n "${EXTRA_APT_REPO}" ]]; then 
+    echo "${EXTRA_APT_REPO}" > /etc/apt/sources.list.d/cassandra-extra.list
+  fi
   # Update the repositories
+
   apt-get update
   # Ensure that cassandra does not startup before we have configured it
   disable_cassandra_start
   # Install the package
-  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y cassandra python-cheetah dnsutils
+  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y cassandra python-cheetah dnsutils ${EXTRA_PACKAGES}
   bzr_ci || :
 }
 
