@@ -1,5 +1,4 @@
-Overview
---------
+# Apache Cassandra Overview
 
 The Apache Cassandra database is the right choice when you need scalability
 and high availability without compromising performance. Linear scalability
@@ -13,14 +12,13 @@ Cassandra's ColumnFamily data model offers the convenience of column indexes
 with the performance of log-structured updates, strong support for materialized
 views, and powerful built-in caching.
 
-See http://cassandra.apache.org for more information.
+See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 
-Usage
------
+# Usage
 
 Cassandra deployments are relatively simple in that they consist of a set of
 Cassandra nodes which seed from each other to create a ring of servers::
-
+    
     juju deploy --repository . local:cassandra
     juju add-unit -n 2 cassandra
 
@@ -29,11 +27,11 @@ The service units will deploy and will form a single ring.
 The API to Cassandra is supported through Apache Thrift; Thrift is a software
 framework for scalable cross-language services development.
 
-See http://wiki.apache.org/cassandra/ThriftInterface for more details of how
+See [this documentation](http://wiki.apache.org/cassandra/ThriftInterface) for more details of how
 to use this API.
 
 Cassandra recommend using one of the many client options - see
-http://wiki.apache.org/cassandra/ClientOptions for more details
+[ClientOptions(http://wiki.apache.org/cassandra/ClientOptions) for more details
 
 To relate the Cassandra charm to a service that understands how to talk to
 Cassandra using thrift::
@@ -41,8 +39,7 @@ Cassandra using thrift::
     juju deploy --repository . local:service-that-needs-cassandra
     juju add-relation service-that-needs-cassandra cassandra
 
-Configuration
--------------
+# Configuration
 
 Cassandra has a pretty good guess at configuring its Java memory settings to
 fit the machine that it has been deployed on.
@@ -63,8 +60,7 @@ Cassandra sets both is minimum and maximum heap size on startup so will
 pre-allocate all memory to avoid freezes during operation (this happens
 during normal operation as more memory is allocated to heap.
 
-Words of Caution
-----------------
+# Words of Caution
 
 Changing the configuration of a deployed Cassandra cluster is supported; however
 it will result in a restart of each Cassandra node as the changes are implemented
