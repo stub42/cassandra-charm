@@ -142,3 +142,10 @@ options:
         type: int
         description: |
             The pct of heap used to trigger a nagios critcal alert
+
+    extra_packages:
+	type: string
+	default: ""
+	description: |
+            Extra packages to install. A space delimited list of packages.
+
