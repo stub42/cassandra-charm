@@ -199,6 +199,7 @@ configure_cassandra () {
          -e "s/^(rpc_port):.*/\1: ${CLIENT_PORT}/" \
          -e "s/^(compaction_throughput_mb_per_sec):.*/\1: ${COMPACTION_THROUGHPUT}/" \
          -e "s/^(partitioner):.*/\1: ${PARTITIONER}/" \
+         -e "s/^(endpoint_snitch):.*/\1: ${ENDPOINT_SNITCH}/" \
          /etc/cassandra/cassandra.yaml
 
   ## Number of tokens
