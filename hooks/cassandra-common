@@ -191,7 +191,6 @@ configure_cassandra () {
   # specify this as a configuration parameter
   # non-trivial sed to edit data_file_directories (has its value in the line following it)
   sed -i -r -e "s/^cluster_name:.*/cluster_name: \'${CLUSTER_NAME}\'/" \
-         -e "s/^(initial_token):.*/\1: ${INITIAL_TOKEN}/" \
          -e "s/(- seeds):.*/\1: \"${SEED_ADDRESSES}\"/" \
          -e "s/^(storage_port):.*/\1: ${CLUSTER_PORT}/" \
          -e "s/^(listen_address):.*/\1: ${LISTEN_ADDRESS}/" \
@@ -202,13 +201,18 @@ configure_cassandra () {
          -e "s/^(endpoint_snitch):.*/\1: ${ENDPOINT_SNITCH}/" \
          /etc/cassandra/cassandra.yaml
 
-  ## Number of tokens
-  if [ $NUM_TOKENS -eq 0 ]; then
+  ## Number of tokens or initial token
+  if [ $NUM_TOKENS -eq 0 ] && [ -n "$INITIAL_TOKEN" ]; then
       sed -i -r -e "s/^(# )?(num_tokens):.*/#\2: ${NUM_TOKENS}/" \
+         -e "s/^(# )?(initial_token):.*/\2: ${INITIAL_TOKEN}/" \
+         /etc/cassandra/cassandra.yaml
+  elif [ $NUM_TOKENS -gt 0 ] && [ -z "$INITIAL_TOKEN" ]; then 
+      sed -i -r -e "s/^(# )?(num_tokens):.*/\2: ${NUM_TOKENS}/" \
+         -e "s/^(# )?(initial_token):.*/# \2: ${INITIAL_TOKEN}/" \
          /etc/cassandra/cassandra.yaml
   else
-      sed -i -r -e "s/^(# )?(num_tokens):.*/\2: ${NUM_TOKENS}/" \
-         /etc/cassandra/cassandra.yaml
+        juju-log "ERROR: cannot specify num_tokens and initial_token"
+        exit 1
   fi
 
   ## Enpoint Snitch configuration
