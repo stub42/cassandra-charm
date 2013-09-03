@@ -216,6 +216,7 @@ configure_cassandra () {
   fi
 
   ## Enpoint Snitch configuration
+  # XXX Handle more endpoint snitch options
   if [ "$ENDPOINT_SNITCH" == "SimpleSnitch" ]; then
     rm -f /etc/cassandra/cassandra-rackdc.properties
     rm -f /etc/cassandra/cassandra-topology.properties

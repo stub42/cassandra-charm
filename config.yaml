@@ -151,7 +151,8 @@ options:
         default: "SimpleSnitch"
         type: string
         description:
-            The cassandra endpoint snitch to use
+            The cassandra endpoint snitch to use. Currently supported by the
+            charm, SimpleSnitch and GossipingPropertyFileSnitch.
     prefer_local:
         default: False
         type: boolean
