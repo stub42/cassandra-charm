@@ -29,7 +29,7 @@ options:
         default: 256
         description: >
             Number of tokens per node for Cassandra 1.2+. Ignored for earlier
-            versions.
+            versions. 0 disables.
     auto-memory:
         type: boolean
         default: true
@@ -142,3 +142,34 @@ options:
         type: int
         description: |
             The pct of heap used to trigger a nagios critcal alert
+    partitioner:
+        default: "org.apache.cassandra.dht.RandomPartitioner"
+        type: string
+        description:
+            The cassandra partitioner to use
+    endpoint_snitch:
+        default: "SimpleSnitch"
+        type: string
+        description:
+            The cassandra endpoint snitch to use. Currently supported by the
+            charm, SimpleSnitch and GossipingPropertyFileSnitch.
+    prefer_local:
+        default: False
+        type: boolean
+        description:
+            Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
+            possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
+    dc_suffix:
+        type: string
+        description:
+            Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
+            append a string to the EC2 region name. Used with cassandra >= 1.2.x
+    datacenter:
+        type: string
+        description:
+            The datacenter used by the enpoint_snitch. i.e. "DC1"
+    rack: 
+        type: string
+        description:
+            The rack used by the enpoint_snitch. i.e. "Rack1"
+

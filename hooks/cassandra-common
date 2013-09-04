@@ -180,23 +180,59 @@ configure_cassandra () {
   local NUM_TOKENS=$(config-get num-tokens)
   local SEED_ADDRESSES=$(get_seed_nodes)
   local INITIAL_TOKEN=$(get_initial_token)
+  local PARTITIONER=$(config-get partitioner)
+  local ENDPOINT_SNITCH=$(config-get endpoint_snitch)
+  local DATACENTER=$(config-get datacenter)
+  local RACK=$(config-get rack)
+  local DC_SUFFIX=$(config-get dc_suffix)
+  local PREFER_LOCAL=$(config-get prefer_local | tr '[:upper:]' '[:lower:]')
   # This needs to 'detect' whether its running in ec2
   # and use the ec2Snitch instead if it is - or we could
   # specify this as a configuration parameter
   # non-trivial sed to edit data_file_directories (has its value in the line following it)
   sed -i -r -e "s/^cluster_name:.*/cluster_name: \'${CLUSTER_NAME}\'/" \
-         -e "s/^(initial_token):.*/\1: ${INITIAL_TOKEN}/" \
          -e "s/(- seeds):.*/\1: \"${SEED_ADDRESSES}\"/" \
          -e "s/^(storage_port):.*/\1: ${CLUSTER_PORT}/" \
          -e "s/^(listen_address):.*/\1: ${LISTEN_ADDRESS}/" \
          -e "s/^(rpc_address):.*/\1: ${LISTEN_ADDRESS}/" \
          -e "s/^(rpc_port):.*/\1: ${CLIENT_PORT}/" \
          -e "s/^(compaction_throughput_mb_per_sec):.*/\1: ${COMPACTION_THROUGHPUT}/" \
+         -e "s/^(partitioner):.*/\1: ${PARTITIONER}/" \
+         -e "s/^(endpoint_snitch):.*/\1: ${ENDPOINT_SNITCH}/" \
          /etc/cassandra/cassandra.yaml
 
-  if [ -n "$NUM_TOKENS" ]; then
-      sed -i -r -e "s/^(# )?(num_tokens):.*/\2: ${NUM_TOKENS}/" \
+  ## Number of tokens or initial token
+  if [ $NUM_TOKENS -eq 0 ] && [ -n "$INITIAL_TOKEN" ]; then
+      sed -i -r -e "s/^(# )?(num_tokens):.*/#\2: ${NUM_TOKENS}/" \
+         -e "s/^(# )?(initial_token):.*/\2: ${INITIAL_TOKEN}/" \
          /etc/cassandra/cassandra.yaml
+  elif [ $NUM_TOKENS -gt 0 ] && [ -z "$INITIAL_TOKEN" ]; then 
+      sed -i -r -e "s/^(# )?(num_tokens):.*/\2: ${NUM_TOKENS}/" \
+         -e "s/^(# )?(initial_token):.*/# \2: ${INITIAL_TOKEN}/" \
+         /etc/cassandra/cassandra.yaml
+  else
+        juju-log "ERROR: cannot specify num_tokens and initial_token"
+        exit 1
+  fi
+
+  ## Enpoint Snitch configuration
+  # XXX Handle more endpoint snitch options
+  if [ "$ENDPOINT_SNITCH" == "SimpleSnitch" ]; then
+    rm -f /etc/cassandra/cassandra-rackdc.properties
+    rm -f /etc/cassandra/cassandra-topology.properties
+  fi
+  if [ "$ENDPOINT_SNITCH" == "GossipingPropertyFileSnitch" ]; then
+    rm -f /etc/cassandra/cassandra-topology.properties
+    echo "dc=${DATACENTER}" > /etc/cassandra/cassandra-rackdc.properties
+    echo "rack=${RACK}" >> /etc/cassandra/cassandra-rackdc.properties
+    if [ -n "$DC_SUFFIX" ]; then
+      echo "dc_sffix=${DC_SUFFIX}" >> /etc/cassandra/cassandra-rackdc.properties 
+    fi
+    if [ "$PREFER_LOCAL" = "true" ]; then
+      echo "pefer_local=true" >> /etc/cassandra/cassandra-rackdc.properties 
+    fi
+  else
+    rm -f /etc/cassandra/cassandra-rackdc.properties
   fi
 
   ## Storage configuration
