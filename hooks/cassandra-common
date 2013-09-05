@@ -229,7 +229,7 @@ configure_cassandra () {
       echo "dc_sffix=${DC_SUFFIX}" >> /etc/cassandra/cassandra-rackdc.properties 
     fi
     if [ "$PREFER_LOCAL" = "true" ]; then
-      echo "pefer_local=true" >> /etc/cassandra/cassandra-rackdc.properties 
+      echo "prefer_local=true" >> /etc/cassandra/cassandra-rackdc.properties 
     fi
   else
     rm -f /etc/cassandra/cassandra-rackdc.properties
