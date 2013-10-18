@@ -276,15 +276,17 @@ configure_cassandra () {
     sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/#MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
            -e "s/^[#]HEAP_NEWSIZE=.*/#HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
   fi 
-  local use_simple_auth=$(config-get use-simpleauth)
-  if [[ ${use_simple_auth} == True ]];then
+  local use_simpleauth=$(config-get use-simpleauth)
+  if [[ ${use_simpleauth} == True ]];then
       local auth_opts
       config-get auth-passwd64|base64 -d > /etc/cassandra/passwd.properties
       config-get auth-access64|base64 -d > /etc/cassandra/access.properties
       auth_opts="-Dpasswd.properties=/etc/cassandra/passwd.properties -Daccess.properties=/etc/cassandra/access.properties"
       add_JVM_OPTS_line "Daccess.properties" "$auth_opts"
+      replace_YAML_key authenticator org.apache.cassandra.auth.SimpleAuthenticator
   else
       del_JVM_OPTS_line "Daccess.properties"
+      replace_YAML_key authenticator org.apache.cassandra.auth.AllowAllAuthenticator
   fi
   local extra_jvm_opts=$(config-get extra-jvm-opts)
   if [[ ${extra_jvm_opts} != "" ]];then
@@ -294,15 +296,24 @@ configure_cassandra () {
   fi
 }
 
+# Remove JVM_OPTS line by regex
 del_JVM_OPTS_line() {
   local regex="${1?}"
-  sed -ri "!${regex}!d" /etc/cassandra/cassandra-env.sh
+  sed -ri "!^JVM_OPTS=.*${regex}!d" /etc/cassandra/cassandra-env.sh || true
 }
 
+# Add JVM_OPTS line, use regex remove it before, if already present
 add_JVM_OPTS_line() {
   local regex="${1?}" line="${2?}"
   del_JVM_OPTS_line "${regex}"
   echo "JVM_OPTS=\"\$JVM_OPTS ${line}\"" >> /etc/cassandra/cassandra-env.sh
+}
+
+# Replace an *existent* YAML key: value
+# Note that key will be treated as a regex
+replace_YAML_key() {
+  local key="${1?}" value="${2?}"
+  sed -ri -e "s!^(${key}): .*!\1: ${value}!" /etc/cassandra/cassandra.yaml
 }
 
 # Service Control Commands

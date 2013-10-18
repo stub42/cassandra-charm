@@ -100,6 +100,7 @@ options:
             (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
             -Dpasswd.properties=/etc/casssandra/passwd.properties \
             -Daccess.properties=/etc/casssandra/access.properties
+            See http://www.datastax.com/docs/1.0/configuration/authentication
     auth-passwd64:
         type: string
         default: ""
