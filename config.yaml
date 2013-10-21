@@ -120,7 +120,7 @@ options:
         default: ""
         description: |
             string to be appended to JVM_OPTS, e.g.:
-            -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+            -Djavaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
 
     #------------------------------------------------------------------------
     # Volume management
