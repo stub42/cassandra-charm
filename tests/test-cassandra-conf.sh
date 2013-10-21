@@ -53,10 +53,10 @@ echo_yml_entry() {
     echo_yml_expression "[\"$1\"]"
 }
 exp_ok() {
-    "$@" && exit 0 || { echo "INFO: $@ (exit: $?!=0)"; exit 1;}
+    "$@" && return 0 || { echo "INFO: $@ (${FUNCNAME[1]}: $?!=0)"; return 1;}
 }
 exp_nok() {
-    "$@" || exit 0 && { echo "INFO: $@ (exit: 0!=nonzero)"; exit 1 ;}
+    "$@" || return 0 && { echo "INFO: $@ (${FUNCNAME[1]}: 0!=nonzero)"; return 1 ;}
 }
 # Tests BEGIN
 simple_validate_files() {
@@ -74,6 +74,7 @@ test_simpleauth() {
     exp_ok echo_var JVM_OPTS | egrep -q -- "-D(access|passwd).properties"
     exp_ok cmp -s <(echo "${passwd_value}") $CASSANDRA_PASSWD
     exp_ok cmp -s <(echo "${access_value}") $CASSANDRA_ACCESS
+    exp_ok test $(stat -c %a "${CASSANDRA_ACCESS}") -eq 600
     exp_ok simple_validate_files
     # False
     test_set_config use-simpleauth False
@@ -113,7 +114,7 @@ test_force_seed_nodes() {
     # and un-setting
     test_set_config force-seed-nodes ""
     configure_cassandra 2>&1 || exit 1
-    exp_ok test $(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = ""
+    exp_ok test x$(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = x
 }
 test_jmx_port() {
     local value="12345"
@@ -124,6 +125,8 @@ test_jmx_port() {
 }
 test_srv_root() {
     local value="${WORKDIR}/srv/path/root"
+    # Charm does chown cassandra:cassandra
+    chown() { true; }
     srv_root_save "${value}"
     exp_ok test -d "${value}"
     exp_ok test "['${value}/data']" = $(echo_yml_entry data_file_directories)
