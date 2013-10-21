@@ -178,7 +178,7 @@ options:
         description:
             The cassandra partitioner to use
     endpoint_snitch:
-        default: "SimpleSnitch"
+        default: "org.apache.cassandra.locator.SimpleSnitch"
         type: string
         description:
             The cassandra endpoint snitch to use. Currently supported by the
