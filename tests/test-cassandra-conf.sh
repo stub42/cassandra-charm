@@ -46,6 +46,10 @@ echo_var() {
     local varname="${1?}"
     bash -c "(. ${CASSANDRA_ENV} >/dev/null; echo \"\$${varname}\")"
 }
+grep_var() {
+    local varname="${1?}" value="${2?}"
+    echo_var "${varname}" | egrep -q -- "${value}"
+}
 echo_yml_expression() {
     python -c "import yaml,sys;print yaml.load(sys.stdin)$1" < ${CASSANDRA_YML}
 }
@@ -53,10 +57,10 @@ echo_yml_entry() {
     echo_yml_expression "[\"$1\"]"
 }
 exp_ok() {
-    "$@" && return 0 || { echo "INFO: $@ (${FUNCNAME[1]}: $?!=0)"; return 1;}
+    "$@" && return 0 || { echo "INFO: ${FUNCNAME[1]}: $@ -> $?!=0)" >&2; exit 1;}
 }
 exp_nok() {
-    "$@" || return 0 && { echo "INFO: $@ (${FUNCNAME[1]}: 0!=nonzero)"; return 1 ;}
+    "$@" || return 0 && { echo "INFO: ${FUNCNAME[1]}: $@ -> 0!=nonzero)" >&2; exit 1;}
 }
 # Tests BEGIN
 simple_validate_files() {
@@ -71,15 +75,15 @@ test_simpleauth() {
     test_set_config auth-passwd64 "$(echo "${passwd_value}"|base64)"
     test_set_config auth-access64 "$(echo "${access_value}"|base64)"
     configure_cassandra 2>&1 || exit 1
-    exp_ok echo_var JVM_OPTS | egrep -q -- "-D(access|passwd).properties"
+    exp_ok grep_var JVM_OPTS "-D(access|passwd).properties"
     exp_ok cmp -s <(echo "${passwd_value}") $CASSANDRA_PASSWD
     exp_ok cmp -s <(echo "${access_value}") $CASSANDRA_ACCESS
-    exp_ok test $(stat -c %a "${CASSANDRA_ACCESS}") -eq 600
+    exp_ok test $(stat -c %a "${CASSANDRA_PASSWD}") -eq 600
     exp_ok simple_validate_files
     # False
     test_set_config use-simpleauth False
     configure_cassandra 2>&1 || exit 1
-    exp_nok echo_var JVM_OPTS | egrep -q -- "-D(access|passwd).properties"
+    exp_nok grep_var JVM_OPTS "-D(access|passwd).properties"
     exp_nok test -f $CASSANDRA_PASSWD
     exp_nok test -f $CASSANDRA_ACCESS
     exp_ok simple_validate_files
@@ -90,15 +94,15 @@ test_extra_jvm_opts() {
     test_set_config extra-jvm-opts "${value}"
     configure_cassandra 2>&1 || exit 1
     # grep for $value addition to JVM_OPTS
-    exp_ok echo_var JVM_OPTS |fgrep -q -- "${value}"
+    exp_ok grep_var JVM_OPTS "${value}"
     # unsetting must remove extra opts
     test_set_config extra-jvm-opts ""
     configure_cassandra 2>&1 || exit 1
-    exp_nok echo_var JVM_OPTS |fgrep -q -- "${value}"
+    exp_nok grep_var JVM_OPTS "${value}"
     exp_ok simple_validate_files
 }
 test_endpoint_snitch() {
-    test_set_config endpoint_snitch GossipingPropertyFileSnitch
+    test_set_config endpoint_snitch org.apache.cassandra.locator.GossipingPropertyFileSnitch
     configure_cassandra 2>&1 || exit 1
     exp_ok test -f ${CASSANDRA_RACKDC}
     exp_ok egrep -q dc= ${CASSANDRA_RACKDC}
@@ -115,6 +119,26 @@ test_force_seed_nodes() {
     test_set_config force-seed-nodes ""
     configure_cassandra 2>&1 || exit 1
     exp_ok test x$(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = x
+}
+test_units_to_update() {
+    # Change something
+    local value1="-DFOO=BAR"
+    local value2="-DBAZ=ZOO"
+    JUJU_UNIT_NAME="cassandra-test/0"
+    # Test my unitnum not to be updated
+    test_set_config extra-jvm-opts "${value1}"
+    test_set_config units-to-update "1,2"
+    configure_cassandra 2>&1 || exit 1
+    exp_nok grep_var JVM_OPTS "${value1}"
+    # Test my unitnum to be updated
+    test_set_config units-to-update "0,5"
+    configure_cassandra 2>&1 || exit 1
+    exp_ok grep_var JVM_OPTS "${value1}"
+    # Test "all", with a new value
+    test_set_config extra-jvm-opts "${value2}"
+    test_set_config units-to-update "all"
+    configure_cassandra 2>&1 || exit 1
+    exp_ok grep_var JVM_OPTS "${value2}"
 }
 test_jmx_port() {
     local value="12345"
@@ -142,7 +166,7 @@ shift 2
 TESTS="$@"
 [[ $TESTS == all ]] && \
 TESTS=(test_simpleauth test_extra_jvm_opts test_jmx_port test_srv_root
-       test_endpoint_snitch test_force_seed_nodes)
+       test_units_to_update test_endpoint_snitch test_force_seed_nodes)
 case "$ACTION" in
     clean)  rm -rf ${TMPDIR:-/tmp}/${USER}-test-cassandra.*; exit $?;;
     test)   ;; # Let it thru
@@ -170,7 +194,7 @@ for t in ${TESTS[@]}
         init_test_files
         logfile=${WORKDIR}/${t}.log
         echo -n "$t: ..."
-        if (echo "Running $t";$t) >& ${logfile};then
+        if (echo "Running $t";$t) > ${logfile};then
             echo -e "\rPASS: $VERSION $t"
             rm -f ${logfile}
         else
