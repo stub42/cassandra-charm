@@ -471,11 +471,11 @@ check_units_to_update() {
     IFS=" ,"
     for unit in ${units_to_update}; do
       if [[ $unit == $unitnum ]];then
-        juju-log "check_units_to_update: ${unitnum} in ${units_to_update}, updating."
+        juju-log "check_units_to_update: \"${unitnum}\" in \"${units_to_update}\", updating."
         exit 0
       fi
     done
-    juju-log "check_units_to_update: ${unitnum} not in ${units_to_update}, skipping."
+    juju-log "check_units_to_update: \"${unitnum}\" not in \"${units_to_update}\", skipping."
     exit 1
   )
   return $?
