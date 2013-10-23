@@ -74,7 +74,7 @@ test_simpleauth() {
     test_set_config use-simpleauth True
     test_set_config auth-passwd64 "$(echo "${passwd_value}"|base64)"
     test_set_config auth-access64 "$(echo "${access_value}"|base64)"
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_ok grep_var JVM_OPTS "-D(access|passwd).properties"
     exp_ok cmp -s <(echo "${passwd_value}") $CASSANDRA_PASSWD
     exp_ok cmp -s <(echo "${access_value}") $CASSANDRA_ACCESS
@@ -82,7 +82,7 @@ test_simpleauth() {
     exp_ok simple_validate_files
     # False
     test_set_config use-simpleauth False
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_nok grep_var JVM_OPTS "-D(access|passwd).properties"
     exp_nok test -f $CASSANDRA_PASSWD
     exp_nok test -f $CASSANDRA_ACCESS
@@ -92,18 +92,18 @@ test_extra_jvm_opts() {
     # Test adding something
     local value="-DFOO=bar -DBAR=baz"
     test_set_config extra-jvm-opts "${value}"
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     # grep for $value addition to JVM_OPTS
     exp_ok grep_var JVM_OPTS "${value}"
     # unsetting must remove extra opts
     test_set_config extra-jvm-opts ""
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_nok grep_var JVM_OPTS "${value}"
     exp_ok simple_validate_files
 }
 test_endpoint_snitch() {
     test_set_config endpoint_snitch org.apache.cassandra.locator.GossipingPropertyFileSnitch
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_ok test -f ${CASSANDRA_RACKDC}
     exp_ok egrep -q dc= ${CASSANDRA_RACKDC}
     exp_ok egrep -q rack= ${CASSANDRA_RACKDC}
@@ -113,11 +113,11 @@ test_force_seed_nodes() {
     local value=some.forced-node
     # Check setting it
     test_set_config force-seed-nodes "${value}"
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_ok test $(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = "${value}"
     # and un-setting
     test_set_config force-seed-nodes ""
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_ok test x$(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = x
 }
 test_units_to_update() {
@@ -128,16 +128,16 @@ test_units_to_update() {
     # Test my unitnum not to be updated
     test_set_config extra-jvm-opts "${value1}"
     test_set_config units-to-update "1,2"
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_nok grep_var JVM_OPTS "${value1}"
     # Test my unitnum to be updated
     test_set_config units-to-update "0,5"
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_ok grep_var JVM_OPTS "${value1}"
     # Test "all", with a new value
     test_set_config extra-jvm-opts "${value2}"
     test_set_config units-to-update "all"
-    configure_cassandra 2>&1 || exit 1
+    hook_main config-changed 2>&1 || exit 1
     exp_ok grep_var JVM_OPTS "${value2}"
 }
 test_jmx_port() {
@@ -184,6 +184,7 @@ unit-get()     { echo "$JUJU_UNIT_NAME"; }
 juju-log()     { echo "$@" ;}
 relation-get() { echo "" ;}
 install()      { echo "DRY: install $@"; }
+bzr()          { echo "DRY: bzr $@"; }
 dig()          { [[ ${FUNCNAME[1]} == get_private_ip ]] && echo "127.0.0.99" ;}
 source_charm_code
 init_config

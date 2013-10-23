@@ -481,11 +481,9 @@ check_units_to_update() {
   return $?
 }
 
-# Actual processing
-COMMAND=${0##*/}
-
+hook_main() {
+local COMMAND="$1"
 export BZR_HOME=/root
-
 case $COMMAND in
   install)
     run_exec_d_hooks "pre-install"
@@ -551,7 +549,9 @@ case $COMMAND in
     update_nagios_checks
     ;;
   *)
-    test -n "$CASSANDRA_TESTING" || juju-log "Command not recognised: $COMMAND"
+    juju-log "Command not recognised: $COMMAND"
     ;;
 esac
-
+}
+# Actual processing, if not unittesting
+test -n "$CASSANDRA_TESTING" || hook_main ${0##*/}
