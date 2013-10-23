@@ -287,7 +287,8 @@ configure_cassandra () {
   local use_simpleauth=$(config-get use-simpleauth)
   if [[ ${use_simpleauth} == True ]];then
       local auth_opts
-      config-get auth-passwd64|(umask 077; base64 -d > ${CASSANDRA_PASSWD})
+      install -o cassandra -m 700 /dev/null ${CASSANDRA_PASSWD}
+      config-get auth-passwd64|base64 -d > ${CASSANDRA_PASSWD}
       config-get auth-access64|base64 -d > ${CASSANDRA_ACCESS}
       auth_opts="-Dpasswd.properties=${CASSANDRA_PASSWD} -Daccess.properties=${CASSANDRA_ACCESS}"
       add_JVM_OPTS_line "Daccess.properties" "$auth_opts"
