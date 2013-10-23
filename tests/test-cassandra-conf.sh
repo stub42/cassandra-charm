@@ -183,10 +183,11 @@ config-get()   { eval echo "\${CONFIG[$1]}"; }
 unit-get()     { echo "$JUJU_UNIT_NAME"; }
 juju-log()     { echo "$@" ;}
 relation-get() { echo "" ;}
-install()      { echo "DRY: install $@"; }
 bzr()          { echo "DRY: bzr $@"; }
 dig()          { [[ ${FUNCNAME[1]} == get_private_ip ]] && echo "127.0.0.99" ;}
 source_charm_code
+CASSANDRA_USER=$(id -nu)
+CASSANDRA_GROUP=$(id -ng)
 cd ${WORKDIR} || exit 1
 typeset -i n=0
 for t in ${TESTS[@]}

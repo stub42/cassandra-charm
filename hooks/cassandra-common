@@ -9,6 +9,8 @@ CASSANDRA_ACCESS="${ETC_CASSANDRA}/access.properties"
 CASSANDRA_PASSWD="${ETC_CASSANDRA}/passwd.properties"
 CASSANDRA_RACKDC="${ETC_CASSANDRA}/cassandra-rackdc.properties"
 CASSANDRA_TOPOLOGY="${ETC_CASSANDRA}/cassandra-topology.properties"
+CASSANDRA_USER="cassandra"
+CASSANDRA_GROUP="cassandra"
 
 set -e
 
@@ -132,7 +134,7 @@ srv_root_save() {
          ${CASSANDRA_YML}
   test -d "${srv_root}" || {
     mkdir -p "${srv_root}"
-    chown -R cassandra:cassandra "${srv_root}"
+    chown -R ${CASSANDRA_USER}:${CASSANDRA_GROUP} "${srv_root}"
   }
 }
 disable_cassandra_start() {
@@ -289,7 +291,7 @@ configure_cassandra () {
   local use_simpleauth=$(config-get use-simpleauth)
   if [[ ${use_simpleauth} == True ]];then
       local auth_opts
-      install -o cassandra -m 700 /dev/null ${CASSANDRA_PASSWD}
+      install -o ${CASSANDRA_USER} -m 600 /dev/null ${CASSANDRA_PASSWD}
       config-get auth-passwd64|base64 -d > ${CASSANDRA_PASSWD}
       config-get auth-access64|base64 -d > ${CASSANDRA_ACCESS}
       auth_opts="-Dpasswd.properties=${CASSANDRA_PASSWD} -Daccess.properties=${CASSANDRA_ACCESS}"
