@@ -2,6 +2,13 @@
 # vim: set tabstop=2 expandtab:
 
 . ./scripts/volume-common.sh
+ETC_CASSANDRA="${ETC_CASSANDRA:-/etc/cassandra}"
+CASSANDRA_ENV="${ETC_CASSANDRA}/cassandra-env.sh"
+CASSANDRA_YML="${ETC_CASSANDRA}/cassandra.yaml"
+CASSANDRA_ACCESS="${ETC_CASSANDRA}/access.properties"
+CASSANDRA_PASSWD="${ETC_CASSANDRA}/passwd.properties"
+CASSANDRA_RACKDC="${ETC_CASSANDRA}/cassandra-rackdc.properties"
+CASSANDRA_TOPOLOGY="${ETC_CASSANDRA}/cassandra-topology.properties"
 
 set -e
 
@@ -29,8 +36,8 @@ am_i_the_leader () {
 bzr_ci () {
   local msg=${FUNCNAME[1]}
   test -n "$1" && msg="$1"
-  bzr st /etc/cassandra|egrep -q '^modified|added' || return 1
-  bzr ci -m "[$(date "+%Y-%m-%d %H:%M:%S")] ${JUJU_UNIT_NAME}: ${msg} auto-commit" /etc/cassandra || return 1
+  bzr st ${ETC_CASSANDRA}|egrep -q '^modified|added' || return 1
+  bzr ci -m "[$(date "+%Y-%m-%d %H:%M:%S")] ${JUJU_UNIT_NAME}: ${msg} auto-commit" ${ETC_CASSANDRA} || return 1
   return 0
 }
 
@@ -71,7 +78,7 @@ configure_jmx_port () {
   JMX_PORT=$(config-get jmx-port)
   test -n "${JMX_PORT}" || return 1
   test ${JMX_PORT} -gt 0 -a ${JMX_PORT} -lt 65535 || return 1
-  sed -i -e "s/^JMX_PORT=.*/JMX_PORT=\"${JMX_PORT}\"/" /etc/cassandra/cassandra-env.sh
+  sed -i -e "s/^JMX_PORT=.*/JMX_PORT=\"${JMX_PORT}\"/" ${CASSANDRA_ENV}
   # Open port ready for expose
   open-port ${JMX_PORT}/TCP
 }
@@ -105,7 +112,7 @@ set_seed_nodes () {
 }
 
 srv_root_get() {
-  sed -r -n 's,commitlog_directory: *([^ ]+)/commitlog.*,\1,p' /etc/cassandra/cassandra.yaml
+  sed -r -n 's,commitlog_directory: *([^ ]+)/commitlog.*,\1,p' ${CASSANDRA_YML}
 }
 srv_root_from_volid() {
   local volid=${1?missing volid}
@@ -121,7 +128,7 @@ srv_root_save() {
   sed -i -r -e $'/data_file_directories:/{\nN;s|- /.*|- '"${srv_root}/data"'|}' \
          -e "s|^(commitlog_directory):.*|\1: ${srv_root}/commitlog|" \
          -e "s|^(saved_caches_directory):.*|\1: ${srv_root}/savedcache_dir|" \
-         /etc/cassandra/cassandra.yaml
+         ${CASSANDRA_YML}
   test -d "${srv_root}" || {
     mkdir -p "${srv_root}"
     chown -R cassandra:cassandra "${srv_root}"
@@ -199,17 +206,17 @@ configure_cassandra () {
          -e "s/^(compaction_throughput_mb_per_sec):.*/\1: ${COMPACTION_THROUGHPUT}/" \
          -e "s/^(partitioner):.*/\1: ${PARTITIONER}/" \
          -e "s/^(endpoint_snitch):.*/\1: ${ENDPOINT_SNITCH}/" \
-         /etc/cassandra/cassandra.yaml
+         ${CASSANDRA_YML}
 
   ## Number of tokens or initial token
   if [ $NUM_TOKENS -eq 0 ] && [ -n "$INITIAL_TOKEN" ]; then
       sed -i -r -e "s/^(# )?(num_tokens):.*/#\2: ${NUM_TOKENS}/" \
          -e "s/^(# )?(initial_token):.*/\2: ${INITIAL_TOKEN}/" \
-         /etc/cassandra/cassandra.yaml
+         ${CASSANDRA_YML}
   elif [ $NUM_TOKENS -gt 0 ] && [ -z "$INITIAL_TOKEN" ]; then 
       sed -i -r -e "s/^(# )?(num_tokens):.*/\2: ${NUM_TOKENS}/" \
          -e "s/^(# )?(initial_token):.*/# \2: ${INITIAL_TOKEN}/" \
-         /etc/cassandra/cassandra.yaml
+         ${CASSANDRA_YML}
   else
         juju-log "ERROR: cannot specify num_tokens and initial_token"
         exit 1
@@ -218,21 +225,22 @@ configure_cassandra () {
   ## Enpoint Snitch configuration
   # XXX Handle more endpoint snitch options
   if [ "$ENDPOINT_SNITCH" == "SimpleSnitch" ]; then
-    rm -f /etc/cassandra/cassandra-rackdc.properties
-    rm -f /etc/cassandra/cassandra-topology.properties
+    rm -f ${CASSANDRA_RACKDC} ${CASSANDRA_TOPOLOGY}
   fi
   if [ "$ENDPOINT_SNITCH" == "GossipingPropertyFileSnitch" ]; then
-    rm -f /etc/cassandra/cassandra-topology.properties
-    echo "dc=${DATACENTER}" > /etc/cassandra/cassandra-rackdc.properties
-    echo "rack=${RACK}" >> /etc/cassandra/cassandra-rackdc.properties
-    if [ -n "$DC_SUFFIX" ]; then
-      echo "dc_sffix=${DC_SUFFIX}" >> /etc/cassandra/cassandra-rackdc.properties 
-    fi
-    if [ "$PREFER_LOCAL" = "true" ]; then
-      echo "prefer_local=true" >> /etc/cassandra/cassandra-rackdc.properties 
-    fi
+    rm -f ${CASSANDRA_TOPOLOGY}
+    (
+        echo "dc=${DATACENTER}"
+        echo "rack=${RACK}"
+        if [ -n "$DC_SUFFIX" ]; then
+          echo "dc_suffix=${DC_SUFFIX}"
+        fi
+        if [ "$PREFER_LOCAL" = "true" ]; then
+          echo "prefer_local=true"
+        fi
+    ) > ${CASSANDRA_RACKDC}
   else
-    rm -f /etc/cassandra/cassandra-rackdc.properties
+    rm -f ${CASSANDRA_RACKDC}
   fi
 
   ## Storage configuration
@@ -266,54 +274,55 @@ configure_cassandra () {
 
   # Default cassandra-env.sh for some cassandra 1.0.x specifies -Xss128k
   # while 160k min is required
-  sed -i -e "s/-Xss128k/-Xss256k/" /etc/cassandra/cassandra-env.sh
+  sed -i -e "s/-Xss128k/-Xss256k/" ${CASSANDRA_ENV}
   # Configure memory settings as specified in configuration
   if [ "$AUTO_MEMORY" = "False" ]; then
     juju-log "Configuring Manual Memory Setttings"
     sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
-           -e "s/^[#]HEAP_NEWSIZE=.*/HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+           -e "s/^[#]HEAP_NEWSIZE=.*/HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" ${CASSANDRA_ENV}
   else
     sed -i -e "s/^[#]MAX_HEAP_SIZE=.*/#MAX_HEAP_SIZE=\"${HEAP_SIZE}\"/" \
-           -e "s/^[#]HEAP_NEWSIZE=.*/#HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" /etc/cassandra/cassandra-env.sh
+           -e "s/^[#]HEAP_NEWSIZE=.*/#HEAP_NEWSIZE=\"${NEW_GEN_SIZE}\"/" ${CASSANDRA_ENV}
   fi 
   local use_simpleauth=$(config-get use-simpleauth)
   if [[ ${use_simpleauth} == True ]];then
       local auth_opts
-      config-get auth-passwd64|base64 -d > /etc/cassandra/passwd.properties
-      config-get auth-access64|base64 -d > /etc/cassandra/access.properties
-      auth_opts="-Dpasswd.properties=/etc/cassandra/passwd.properties -Daccess.properties=/etc/cassandra/access.properties"
+      config-get auth-passwd64|(umask 077; base64 -d > ${CASSANDRA_PASSWD})
+      config-get auth-access64|base64 -d > ${CASSANDRA_ACCESS}
+      auth_opts="-Dpasswd.properties=${CASSANDRA_PASSWD} -Daccess.properties=${CASSANDRA_ACCESS}"
       add_JVM_OPTS_line "Daccess.properties" "$auth_opts"
       replace_YAML_key authenticator org.apache.cassandra.auth.SimpleAuthenticator
   else
+      rm -f ${CASSANDRA_PASSWD} ${CASSANDRA_ACCESS}
       del_JVM_OPTS_line "Daccess.properties"
       replace_YAML_key authenticator org.apache.cassandra.auth.AllowAllAuthenticator
   fi
   local extra_jvm_opts=$(config-get extra-jvm-opts)
   if [[ ${extra_jvm_opts} != "" ]];then
-      add_JVM_OPTS_line "JUJU_extra_jvm_opts" "$extra_jvm_opts # JUJU_extra_jvm_opts "
+      add_JVM_OPTS_line "JUJU_extra-jvm-opts" "$extra_jvm_opts"
   else
-      del_JVM_OPTS_line "JUJU_extra_jvm_opts"
+      del_JVM_OPTS_line "JUJU_extra-jvm-opts"
   fi
 }
 
 # Remove JVM_OPTS line by regex
 del_JVM_OPTS_line() {
   local regex="${1?}"
-  sed -ri "!^JVM_OPTS=.*${regex}!d" /etc/cassandra/cassandra-env.sh || true
+  sed -ri "\!^JVM_OPTS=.*${regex}!d" ${CASSANDRA_ENV} || true
 }
 
 # Add JVM_OPTS line, use regex remove it before, if already present
 add_JVM_OPTS_line() {
   local regex="${1?}" line="${2?}"
   del_JVM_OPTS_line "${regex}"
-  echo "JVM_OPTS=\"\$JVM_OPTS ${line}\"" >> /etc/cassandra/cassandra-env.sh
+  echo "JVM_OPTS=\"\$JVM_OPTS ${line}\" ## ${regex} " >> ${CASSANDRA_ENV}
 }
 
 # Replace an *existent* YAML key: value
 # Note that key will be treated as a regex
 replace_YAML_key() {
   local key="${1?}" value="${2?}"
-  sed -ri -e "s!^(${key}): .*!\1: ${value}!" /etc/cassandra/cassandra.yaml
+  sed -ri -e "s!^(${key}): .*!\1: ${value}!" ${CASSANDRA_YML}
 }
 
 # Service Control Commands
@@ -348,10 +357,10 @@ reconfigure_cluster_seeds () {
   IP=`get_private_ip`
   if [ -z "${seeds}" ] && am_i_the_leader; then
     juju-log "Configuring myself locally as a seed node"
-    sed -i -e "s/\- seeds:.*/\- seeds: \"${IP}\"/" /etc/cassandra/cassandra.yaml
+    sed -i -e "s/\- seeds:.*/\- seeds: \"${IP}\"/" ${CASSANDRA_YML}
   else
     juju-log "Setting seeds node to be ${seeds}"
-    sed -i -e "s/\- seeds:.*/\- seeds: \"${seeds}\"/" /etc/cassandra/cassandra.yaml
+    sed -i -e "s/\- seeds:.*/\- seeds: \"${seeds}\"/" ${CASSANDRA_YML}
   fi
   juju-log "$JUJU_REMOTE_UNIT modified its settings or departed"
   bzr_ci || :
@@ -457,8 +466,8 @@ case $COMMAND in
     [[ -d /usr/share/cassandra ]] || install_cassandra
     # Initialize /etc/cassandra bzr
     bzr whoami "${JUJU_UNIT_NAME} <juju@${HOSTNAME}>"
-    test -d /etc/cassandra/.bzr || bzr init /etc/cassandra && bzr add /etc/cassandra
-    bzr_ci "main:${COMMAND}" /etc/cassandra || :
+    test -d ${ETC_CASSANDRA}/.bzr || bzr init ${ETC_CASSANDRA} && bzr add ${ETC_CASSANDRA}
+    bzr_ci "main:${COMMAND}" ${ETC_CASSANDRA} || :
     # Update the cassandra environment with the appropriate JMX port
     configure_jmx_port 
     bzr_ci || :
@@ -514,7 +523,7 @@ case $COMMAND in
     update_nagios_checks
     ;;
   *)
-    juju-log "Command not recognised"
+    test -n "$CASSANDRA_TESTING" || juju-log "Command not recognised: $COMMAND"
     ;;
 esac
 
