@@ -122,6 +122,14 @@ options:
             string to be appended to JVM_OPTS, e.g.:
             -Djavaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
 
+    units-to-update:
+        type: string
+        default: "all"
+        description: >
+            Comma separated list of unit numbers to update (i.e. modify
+            /etc setup and trigger cassandra restart on config-change or
+            upgrade-charm), or "all".
+
     #------------------------------------------------------------------------
     # Volume management
     #   volume-map, volume-dev_regexp are only used 

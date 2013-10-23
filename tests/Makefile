@@ -21,3 +21,5 @@ clean:
 	rm -rf cassandra-[0-9].*
 
 .PHONY: all test clean
+
+.PRECIOUS: cassandra-%/conf
