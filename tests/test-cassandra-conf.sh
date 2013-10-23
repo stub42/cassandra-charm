@@ -34,7 +34,7 @@ init_config() {
 import yaml, sys
 opts=yaml.load(sys.stdin)["options"]
 print "\n".join(["{} {}".format(o, opts[o].get("default")) for o in opts])' \
-            < ../config.yaml)
+            < ${BASEDIR}/../config.yaml)
 }
 source_charm_code() {
     export CASSANDRA_TESTING=True
@@ -187,11 +187,11 @@ install()      { echo "DRY: install $@"; }
 bzr()          { echo "DRY: bzr $@"; }
 dig()          { [[ ${FUNCNAME[1]} == get_private_ip ]] && echo "127.0.0.99" ;}
 source_charm_code
-init_config
 cd ${WORKDIR} || exit 1
 typeset -i n=0
 for t in ${TESTS[@]}
     do
+        init_config
         init_test_files
         logfile=${WORKDIR}/${t}.log
         echo -n "$t: ..."
