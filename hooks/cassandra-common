@@ -228,10 +228,9 @@ configure_cassandra () {
 
   ## Enpoint Snitch configuration
   # XXX Handle more endpoint snitch options
-  if [ "$ENDPOINT_SNITCH" == "org.apache.cassandra.locator.SimpleSnitch" ]; then
+  if [[ "$ENDPOINT_SNITCH" =~ .*SimpleSnitch ]]; then
     rm -f ${CASSANDRA_RACKDC} ${CASSANDRA_TOPOLOGY}
-  fi
-  if [ "$ENDPOINT_SNITCH" == "org.apache.cassandra.locator.GossipingPropertyFileSnitch" ]; then
+  elif [[ "$ENDPOINT_SNITCH" =~ .*GossipingPropertyFileSnitch ]]; then
     rm -f ${CASSANDRA_TOPOLOGY}
     (
         echo "dc=${DATACENTER}"

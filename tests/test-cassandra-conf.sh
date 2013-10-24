@@ -57,10 +57,10 @@ echo_yml_entry() {
     echo_yml_expression "[\"$1\"]"
 }
 exp_ok() {
-    "$@" && return 0 || { echo "INFO: ${FUNCNAME[1]}: $@ -> $?!=0)" >&2; exit 1;}
+    "$@" && return 0 || { echo "ERROR: ${FUNCNAME[1]}: $@ -> $?!=0)" >&2; exit 1;}
 }
 exp_nok() {
-    "$@" || return 0 && { echo "INFO: ${FUNCNAME[1]}: $@ -> 0!=nonzero)" >&2; exit 1;}
+    "$@" || return 0 && { echo "ERROR: ${FUNCNAME[1]}: $@ -> 0!=nonzero)" >&2; exit 1;}
 }
 # Tests BEGIN
 simple_validate_files() {
@@ -103,6 +103,13 @@ test_extra_jvm_opts() {
 }
 test_endpoint_snitch() {
     test_set_config endpoint_snitch org.apache.cassandra.locator.GossipingPropertyFileSnitch
+    hook_main config-changed 2>&1 || exit 1
+    exp_ok test -f ${CASSANDRA_RACKDC}
+    exp_ok egrep -q dc= ${CASSANDRA_RACKDC}
+    exp_ok egrep -q rack= ${CASSANDRA_RACKDC}
+    # Test above, with short names
+    test_set_config endpoint_snitch SimpleSnitch
+    test_set_config endpoint_snitch GossipingPropertyFileSnitch
     hook_main config-changed 2>&1 || exit 1
     exp_ok test -f ${CASSANDRA_RACKDC}
     exp_ok egrep -q dc= ${CASSANDRA_RACKDC}
@@ -195,8 +202,9 @@ for t in ${TESTS[@]}
         init_config
         init_test_files
         logfile=${WORKDIR}/${t}.log
+        logerr=${WORKDIR}/${t}.err
         echo -n "$t: ..."
-        if (echo "Running $t";$t) > ${logfile};then
+        if (echo "Running $t";$t) > ${logfile} 2> ${logerr} ;then
             echo -e "\rPASS: $VERSION $t"
             rm -f ${logfile}
         else
@@ -204,7 +212,7 @@ for t in ${TESTS[@]}
             etc_saved=${WORKDIR}/${t}.etc-saved
             mkdir ${etc_saved}
             cp -p ${ETC_CASSANDRA}/* ${etc_saved}
-            echo -e "\rFAIL: $VERSION $t (see ${logfile} ${etc_saved})"
+            echo -e "\rFAIL: $VERSION $t: $(egrep ^ERROR: ${logerr}|tail -1)\nSee: ${logfile} ${logerr} ${etc_saved})"
         fi
         remove_test_files
 done
