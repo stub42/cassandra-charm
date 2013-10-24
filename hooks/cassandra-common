@@ -9,6 +9,8 @@ CASSANDRA_ACCESS="${ETC_CASSANDRA}/access.properties"
 CASSANDRA_PASSWD="${ETC_CASSANDRA}/passwd.properties"
 CASSANDRA_RACKDC="${ETC_CASSANDRA}/cassandra-rackdc.properties"
 CASSANDRA_TOPOLOGY="${ETC_CASSANDRA}/cassandra-topology.properties"
+CASSANDRA_USER="cassandra"
+CASSANDRA_GROUP="cassandra"
 
 set -e
 
@@ -74,6 +76,7 @@ install_cassandra () {
 
 # Update the cassandra environment with the appropriate JMX port
 configure_jmx_port () {
+  check_units_to_update || return 0
   juju-log "Configuring JMX port"
   JMX_PORT=$(config-get jmx-port)
   test -n "${JMX_PORT}" || return 1
@@ -131,7 +134,7 @@ srv_root_save() {
          ${CASSANDRA_YML}
   test -d "${srv_root}" || {
     mkdir -p "${srv_root}"
-    chown -R cassandra:cassandra "${srv_root}"
+    chown -R ${CASSANDRA_USER}:${CASSANDRA_GROUP} "${srv_root}"
   }
 }
 disable_cassandra_start() {
@@ -174,6 +177,7 @@ get_initial_token() {
 
 # Construct the cassandra.yaml file from the appropriate information above
 configure_cassandra () {
+  check_units_to_update || return 0
   juju-log "Configuring Cassandra"
   local LISTEN_ADDRESS=$(get_private_ip)
   local CLUSTER_PORT=$(config-get cluster-port)
@@ -224,10 +228,9 @@ configure_cassandra () {
 
   ## Enpoint Snitch configuration
   # XXX Handle more endpoint snitch options
-  if [ "$ENDPOINT_SNITCH" == "SimpleSnitch" ]; then
+  if [[ "$ENDPOINT_SNITCH" =~ .*SimpleSnitch ]]; then
     rm -f ${CASSANDRA_RACKDC} ${CASSANDRA_TOPOLOGY}
-  fi
-  if [ "$ENDPOINT_SNITCH" == "GossipingPropertyFileSnitch" ]; then
+  elif [[ "$ENDPOINT_SNITCH" =~ .*GossipingPropertyFileSnitch ]]; then
     rm -f ${CASSANDRA_TOPOLOGY}
     (
         echo "dc=${DATACENTER}"
@@ -287,7 +290,7 @@ configure_cassandra () {
   local use_simpleauth=$(config-get use-simpleauth)
   if [[ ${use_simpleauth} == True ]];then
       local auth_opts
-      install -o cassandra -m 700 /dev/null ${CASSANDRA_PASSWD}
+      install -o ${CASSANDRA_USER} -m 600 /dev/null ${CASSANDRA_PASSWD}
       config-get auth-passwd64|base64 -d > ${CASSANDRA_PASSWD}
       config-get auth-access64|base64 -d > ${CASSANDRA_ACCESS}
       auth_opts="-Dpasswd.properties=${CASSANDRA_PASSWD} -Daccess.properties=${CASSANDRA_ACCESS}"
@@ -309,6 +312,7 @@ configure_cassandra () {
 # Remove JVM_OPTS line by regex
 del_JVM_OPTS_line() {
   local regex="${1?}"
+  juju-log "Deleting from JVM_OPTS: key=${regex}"
   sed -ri "\!^JVM_OPTS=.*${regex}!d" ${CASSANDRA_ENV} || true
 }
 
@@ -316,6 +320,7 @@ del_JVM_OPTS_line() {
 add_JVM_OPTS_line() {
   local regex="${1?}" line="${2?}"
   del_JVM_OPTS_line "${regex}"
+  juju-log "Adding to JVM_OPTS: ${line} (key=${regex})"
   echo "JVM_OPTS=\"\$JVM_OPTS ${line}\" ## ${regex} " >> ${CASSANDRA_ENV}
 }
 
@@ -323,6 +328,7 @@ add_JVM_OPTS_line() {
 # Note that key will be treated as a regex
 replace_YAML_key() {
   local key="${1?}" value="${2?}"
+  juju-log "Replacing YAML: key=${key} value=${value}"
   sed -ri -e "s!^(${key}): .*!\1: ${value}!" ${CASSANDRA_YML}
 }
 
@@ -455,11 +461,31 @@ update_nagios_checks() {
   fi
 }
 
-# Actual processing
-COMMAND=${0##*/}
+# Check if units-to-update comma separated list contains my number, or "all",
+# returns 0 if this unit should be updated
+check_units_to_update() {
+  local unit
+  local units_to_update=$(config-get units-to-update)
+  local unitnum=${JUJU_UNIT_NAME##*/}
+  [[ $units_to_update == "all" ]] && return 0
+  (
+    OLDIFS="$IFS"
+    IFS=" ,"
+    for unit in ${units_to_update}; do
+      if [[ $unit == $unitnum ]];then
+        juju-log "check_units_to_update: \"${unitnum}\" in \"${units_to_update}\", updating."
+        exit 0
+      fi
+    done
+    juju-log "check_units_to_update: \"${unitnum}\" not in \"${units_to_update}\", skipping."
+    exit 1
+  )
+  return $?
+}
 
+hook_main() {
+local COMMAND="$1"
 export BZR_HOME=/root
-
 case $COMMAND in
   install)
     run_exec_d_hooks "pre-install"
@@ -493,6 +519,7 @@ case $COMMAND in
     update_nagios_checks
     ;;
   upgrade-charm)
+    check_units_to_update || exit 0
     juju-log "Updating this charm - currently no-op"
     ;;
   stop)
@@ -524,7 +551,9 @@ case $COMMAND in
     update_nagios_checks
     ;;
   *)
-    test -n "$CASSANDRA_TESTING" || juju-log "Command not recognised: $COMMAND"
+    juju-log "Command not recognised: $COMMAND"
     ;;
 esac
-
+}
+# Actual processing, if not unittesting
+test -n "$CASSANDRA_TESTING" || hook_main ${0##*/}
