@@ -29,7 +29,7 @@ options:
         default: 256
         description: >
             Number of tokens per node for Cassandra 1.2+. Ignored for earlier
-            versions.
+            versions. 0 disables.
     auto-memory:
         type: boolean
         default: true
@@ -92,6 +92,44 @@ options:
             Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
             and cannot be used if token-map-by-unitname is also set. 
             Useful when rebalancing a ring by hand
+    use-simpleauth:
+        type: boolean
+        default: false
+        description: |
+            If True, it will use passwd-prop64 and access-prop64 configs
+            (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
+            -Dpasswd.properties=/etc/casssandra/passwd.properties \
+            -Daccess.properties=/etc/casssandra/access.properties
+            See http://www.datastax.com/docs/1.0/configuration/authentication
+    auth-passwd64:
+        type: string
+        default: ""
+        description: |
+            base64 encoded content to be written to /etc/casssandra/passwd.properties
+            created by e.g.:
+                juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
+    auth-access64:
+        type: string
+        default: ""
+        description: |
+            base64 encoded content to be written to /etc/casssandra/access.properties
+            created by e.g.:
+                juju set cassandra auth-access64="$(base64 ./access.props)"
+    extra-jvm-opts:
+        type: string
+        default: ""
+        description: |
+            string to be appended to JVM_OPTS, e.g.:
+            -Djavaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+
+    units-to-update:
+        type: string
+        default: "all"
+        description: >
+            Comma separated list of unit numbers to update (i.e. modify
+            /etc setup and trigger cassandra restart on config-change or
+            upgrade-charm), or "all".
+
     #------------------------------------------------------------------------
     # Volume management
     #   volume-map, volume-dev_regexp are only used 
@@ -142,10 +180,38 @@ options:
         type: int
         description: |
             The pct of heap used to trigger a nagios critcal alert
-
     extra_packages:
-	type: string
-	default: ""
-	description: |
-            Extra packages to install. A space delimited list of packages.
-
+        type: string
+        default: ""
+        description: |
+                Extra packages to install. A space delimited list of packages.
+    partitioner:
+        default: "org.apache.cassandra.dht.RandomPartitioner"
+        type: string
+        description:
+            The cassandra partitioner to use
+    endpoint_snitch:
+        default: "org.apache.cassandra.locator.SimpleSnitch"
+        type: string
+        description:
+            The cassandra endpoint snitch to use. Currently supported by the
+            charm, SimpleSnitch and GossipingPropertyFileSnitch.
+    prefer_local:
+        default: False
+        type: boolean
+        description:
+            Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
+            possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
+    dc_suffix:
+        type: string
+        description:
+            Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
+            append a string to the EC2 region name. Used with cassandra >= 1.2.x
+    datacenter:
+        type: string
+        description:
+            The datacenter used by the enpoint_snitch. i.e. "DC1"
+    rack: 
+        type: string
+        description:
+            The rack used by the enpoint_snitch. i.e. "Rack1"
