@@ -109,7 +109,7 @@ set_seed_nodes () {
   FORCE_SEED_NODES=$(config-get force-seed-nodes)
   if [[ -n $FORCE_SEED_NODES ]]; then
     juju-log "Setting seed_node to $FORCE_SEED_NODES"
-    relation-set seed-nodes=$FORCE_SEED_NODES
+    relation-set seed-nodes="$FORCE_SEED_NODES"
   else
     juju-log "Setting seed_node to $(running_nodes)"
     relation-set seed-nodes="$(running_nodes)"
