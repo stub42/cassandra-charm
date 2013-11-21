@@ -165,6 +165,19 @@ test_srv_root() {
     exp_ok test "${value}/commitlog" = $(echo_yml_entry commitlog_directory)
     exp_ok test "${value}" = "$(srv_root_get)"
 }
+test_compaction_throughput() {
+    local value=0
+    test_set_config compaction-throughput ${value}
+    hook_main config-changed 2>&1 || exit 1
+    exp_ok test $(echo_yml_entry compaction_throughput_mb_per_sec) = ${value}
+}
+test_stream_throughput() {
+    local value=0
+    test_set_config stream-throughput ${value}
+    hook_main config-changed 2>&1 || exit 1
+    exp_ok test $(echo_yml_entry stream_throughput_outbound_megabits_per_sec) = ${value}
+}
+
 # Tests END
 # main():
 ACTION=${1:?}
@@ -173,7 +186,8 @@ shift 2
 TESTS="$@"
 [[ $TESTS == all ]] && \
 TESTS=(test_simpleauth test_extra_jvm_opts test_jmx_port test_srv_root
-       test_units_to_update test_endpoint_snitch test_force_seed_nodes)
+       test_units_to_update test_endpoint_snitch test_force_seed_nodes
+       test_compaction_throughput test_stream_throughput)
 case "$ACTION" in
     clean)  rm -rf ${TMPDIR:-/tmp}/${USER}-test-cassandra.*; exit $?;;
     test)   ;; # Let it thru
