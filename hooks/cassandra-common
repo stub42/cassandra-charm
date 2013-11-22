@@ -190,6 +190,7 @@ configure_cassandra () {
   local NEW_GEN_SIZE=$(config-get new-gen-size)
   local SRV_ROOT=$(config-get srv-root)
   local COMPACTION_THROUGHPUT=$(config-get compaction-throughput)
+  local STREAM_THROUGHPUT=$(config-get stream-throughput)
   local NUM_TOKENS=$(config-get num-tokens)
   local SEED_ADDRESSES=$(get_seed_nodes)
   local INITIAL_TOKEN=$(get_initial_token)
@@ -210,6 +211,7 @@ configure_cassandra () {
          -e "s/^(rpc_address):.*/\1: ${LISTEN_ADDRESS}/" \
          -e "s/^(rpc_port):.*/\1: ${CLIENT_PORT}/" \
          -e "s/^(compaction_throughput_mb_per_sec):.*/\1: ${COMPACTION_THROUGHPUT}/" \
+         -e "s/^(# )?(stream_throughput_outbound_megabits_per_sec):.*/\2: ${STREAM_THROUGHPUT}/" \
          -e "s/^(partitioner):.*/\1: ${PARTITIONER}/" \
          -e "s/^(endpoint_snitch):.*/\1: ${ENDPOINT_SNITCH}/" \
          ${CASSANDRA_YML}
@@ -250,6 +252,7 @@ configure_cassandra () {
 
   ## Storage configuration
   local volid
+  local IO_SCHEDULER=$(config-get io-scheduler)
   if volid=$(volume_get_volume_id);then
     juju-log "INFO: volid=${volid}"
   else
@@ -270,6 +273,13 @@ configure_cassandra () {
         migrate_cassandra_data ${srv_root_curr} ${srv_root_new}
       fi
       srv_root_save ${srv_root_new}
+    fi
+    # Set the kernel block scheduler
+    if [[ -n "$IO_SCHEDULER" ]]; then
+        DEV=$(df $srv_root_new | awk '{print $1}' |tail -n 1)
+        DEV=${DEV#\/dev\/}
+        DEV=${DEV%[0-9]}
+        echo "$IO_SCHEDULER" > /sys/block/${DEV}/queue/scheduler
     fi
   fi
   ) && enable_cassandra_start || disable_cassandra_start
