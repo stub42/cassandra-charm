@@ -59,6 +59,16 @@ options:
             are inserting data is more than sufficient.  Setting this to
             0 disables throttling. Note that this account for all types
             of compaction, including validation compaction.
+    stream-throughput:
+        type: int
+        default: 200
+        description: >
+           Throttles all outbound streaming file transfers on nodes to the
+           given total throughput in Mbps. This is necessary because Cassandra
+           does mostly sequential IO when streaming data during bootstrap or 
+           repair, which can lead to saturating the network connection and 
+           degrading rpc performance. When unset, the default is 200 Mbps or 25
+           MB/s. 0 to disable throttling.
     apt-repo-spec:
         type: string
         default: deb http://www.apache.org/dist/cassandra/debian 12x main
@@ -120,7 +130,7 @@ options:
         default: ""
         description: |
             string to be appended to JVM_OPTS, e.g.:
-            -Djavaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+            -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
 
     units-to-update:
         type: string
@@ -161,6 +171,13 @@ options:
         description: >
             Block device for attached volumes as seen by the VM, will be "scanned"
             for an unused device when "volume-map" is valid for the unit.
+    io-scheduler:
+        type: string
+        default: "cfq"
+        description: >
+            Set kernel io scheduler for persistent storage. Only used when
+            volume-ephemeral-storage is False.
+            https://www.kernel.org/doc/Documentation/block/switching-sched.txt
     nagios_context:
         default: "juju"
         type: string
