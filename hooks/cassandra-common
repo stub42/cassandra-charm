@@ -11,6 +11,7 @@ CASSANDRA_RACKDC="${ETC_CASSANDRA}/cassandra-rackdc.properties"
 CASSANDRA_TOPOLOGY="${ETC_CASSANDRA}/cassandra-topology.properties"
 CASSANDRA_USER="cassandra"
 CASSANDRA_GROUP="cassandra"
+NAGIOS_EXPORT_DIR="/var/lib/nagios/export"
 
 set -e
 
@@ -468,8 +469,11 @@ update_nagios_checks() {
     export SERVICE_DESCRIPTION="Cassandra server heap usage"
     export NRPE_CMD_NAME="check_${NAGIOS_CONTEXT}_cassandra_heap"
     export NRPE_CMD="/usr/lib/nagios/plugins/check_cassandra_heap.sh ${IP} ${WARN_PCT} ${CRIT_PCT}"
+    if [ ! -d "${NAGIOS_EXPORT_DIR}" ]; then
+        mkdir -p "${NAGIOS_EXPORT_DIR}"
+    fi
     cheetah fill --env -p templates/nrpe_cmd_file.tmpl > /etc/nagios/nrpe.d/${NRPE_CMD_NAME}.cfg
-    cheetah fill --env -p templates/nrpe_service_file.tmpl > /var/lib/nagios/export/service__${NAGIOS_HOSTNAME}_${NRPE_CMD_NAME}.cfg
+    cheetah fill --env -p templates/nrpe_service_file.tmpl > ${NAGIOS_EXPORT_DIR}/service__${NAGIOS_HOSTNAME}_${NRPE_CMD_NAME}.cfg
   fi
 }
 
