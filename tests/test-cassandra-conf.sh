@@ -122,10 +122,10 @@ test_force_seed_nodes() {
     test_set_config force-seed-nodes "${value}"
     hook_main config-changed 2>&1 || exit 1
     exp_ok test $(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = "${value}"
-    # and un-setting
+    # and un-setting while bring back MY_IP
     test_set_config force-seed-nodes ""
     hook_main config-changed 2>&1 || exit 1
-    exp_ok test x$(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = x
+    exp_ok test $(echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]') = "$MY_IP"
 }
 test_units_to_update() {
     # Change something
@@ -198,14 +198,20 @@ export ETC_CASSANDRA=$WORKDIR/etc
 mkdir -p ${ETC_CASSANDRA}
 # Create fake environment (juju and other cmds)
 declare -A CONFIG
-JUJU_UNIT_NAME="cassandra-test/0"
+MY_IP="127.0.0.99"
+export JUJU_UNIT_NAME="cassandra-test/0"
+export JUJU_RELATION_ID=foo:1
 open-port()    { echo "DRY: open-port $@"; }
+service()      { echo "DRY: service $@"; }
 config-get()   { eval echo "\${CONFIG[$1]}"; }
+running_nodes(){ echo "$MY_IP"; }
 unit-get()     { echo "$JUJU_UNIT_NAME"; }
-juju-log()     { echo "$@" ;}
+juju-log()     { echo "juju-log: $@" >&2 ;}
 relation-get() { echo "" ;}
+relation-list(){ echo "" ;}
+relation-set() { : ;}
 bzr()          { echo "DRY: bzr $@"; }
-dig()          { [[ ${FUNCNAME[1]} == get_private_ip ]] && echo "127.0.0.99" ;}
+dig()          { [[ ${FUNCNAME[1]} == get_private_ip ]] && echo "$MY_IP" ;}
 source_charm_code
 CASSANDRA_USER=$(id -nu)
 CASSANDRA_GROUP=$(id -ng)
