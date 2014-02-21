@@ -109,10 +109,16 @@ configure_jmx_port () {
 
 get_private_ip () {
   # Make sure that we use the resolvable private address
-  # dig deals with both hostnames and ip addresses in a nice
-  # way - this has been tested in local and ec2 providers
-  # with ec2 and openstack
-  dig +short `unit-get private-address`
+  # some dig versions dealxs with both hostnames and ip
+  # addresses, but don't depend on that.
+  local address=$(unit-get private-address)
+  if [[ ${address} =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      # already an IP
+      echo "${address}"
+  else
+      # not an IP (some providers return hostnames), resolve it
+      dig +short "${address}"
+  fi
 }
 
 relation-get-all() {
