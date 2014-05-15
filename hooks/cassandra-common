@@ -617,6 +617,21 @@ check_units_to_update() {
   return $?
 }
 
+# Setup regular maintenance
+maintenance() {
+    local unit_no=${JUJU_UNIT_NAME##*/}
+    local repair_day=$((unit_no%7))
+    local cleanup_day=$(((unit_no+1)%7))
+    local cron_location=/etc/cron.d/cassandra-maintenance
+    cat > $cron_location <<EOM
+# Cassandra maintenance
+# Weekly repairs and cleanups
+# m h  dom mon dow user  command
+0 1 * * $repair_day cassandra nodetool -h localhost repair
+0 1 * * $cleanup_day cassandra nodetool -h localhost cleanup
+EOM
+}
+
 hook_main() {
 local COMMAND="$1"
 export BZR_HOME=/root
@@ -654,6 +669,7 @@ case $COMMAND in
     fi
     # Fill in nagios checks
     update_nagios_checks
+    maintenance
     ;;
   upgrade-charm)
     check_units_to_update || exit 0
