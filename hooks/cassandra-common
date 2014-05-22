@@ -581,17 +581,31 @@ update_nagios_checks() {
     export NAGIOS_CONTEXT="$(config-get nagios_context)"
     export NAGIOS_HOSTNAME="${NAGIOS_CONTEXT}-${JUJU_UNIT_NAME//\//-}"
     export NAGIOS_SERVICEGROUP=${NAGIOS_CONTEXT}
+    export NAGIOS_CHECK_CONTEXT=$(echo $NAGIOS_CONTEXT| awk -F, '{print $1}')
 
     export WARN_PCT="$(config-get nagios_heapchk_warn_pct)"
     export CRIT_PCT="$(config-get nagios_heapchk_crit_pct)"
     export SERVICE_DESCRIPTION="Cassandra server heap usage"
-    export NRPE_CMD_NAME="check_${NAGIOS_CONTEXT}_cassandra_heap"
+    export NRPE_CMD_NAME="check_${NAGIOS_CHECK_CONTEXT}_cassandra_heap"
     export NRPE_CMD="/usr/lib/nagios/plugins/check_cassandra_heap.sh ${IP} ${WARN_PCT} ${CRIT_PCT}"
     if [ ! -d "${NAGIOS_EXPORT_DIR}" ]; then
         mkdir -p "${NAGIOS_EXPORT_DIR}"
     fi
     cheetah fill --env -p templates/nrpe_cmd_file.tmpl > /etc/nagios/nrpe.d/${NRPE_CMD_NAME}.cfg
     cheetah fill --env -p templates/nrpe_service_file.tmpl > ${NAGIOS_EXPORT_DIR}/service__${NAGIOS_HOSTNAME}_${NRPE_CMD_NAME}.cfg
+
+    export WARN_PCT="$(config-get nagios_disk_warn_pct)"
+    export CRIT_PCT="$(config-get nagios_disk_crit_pct)"
+    CASSANDRA_DISKS=$(grep data_file_directories /etc/cassandra/cassandra.yaml -A 10 |grep "^ *-" | awk '{ print $2}')
+    for CASSANDRA_DISK in $CASSANDRA_DISKS; do
+        CHECK_NAME=${CASSANDRA_DISK/\//_/}
+        CHECK_NAME=${CASSANDRA_DISK//\//_}
+        export SERVICE_DESCRIPTION="Cassandra $CHECK_NAME Disk Check"
+        export NRPE_CMD_NAME="check_${NAGIOS_CHECK_CONTEXT}_cassandra_${CHECK_NAME}_disk_check"
+        export NRPE_CMD="/usr/lib/nagios/plugins/check_disk.sh -u GB -w ${WARN_PCT}% -c ${CRIT_PCT}% -K 5% -p $CASSANDRA_DISK"
+        cheetah fill --env -p templates/nrpe_cmd_file.tmpl > /etc/nagios/nrpe.d/${NRPE_CMD_NAME}.cfg
+        cheetah fill --env -p templates/nrpe_service_file.tmpl > ${NAGIOS_EXPORT_DIR}/service__${NAGIOS_HOSTNAME}_${NRPE_CMD_NAME}.cfg
+    done
   fi
 }
 
@@ -615,6 +629,19 @@ check_units_to_update() {
     exit 1
   )
   return $?
+}
+
+# Setup regular maintenance
+maintenance() {
+    local unit_no=${JUJU_UNIT_NAME##*/}
+    local repair_day=$((unit_no%7))
+    local cron_location=/etc/cron.d/cassandra-maintenance
+    cat > $cron_location <<EOM
+# Cassandra maintenance
+# Weekly repairs
+# m h  dom mon dow user  command
+0 1 * * $repair_day cassandra nodetool -h localhost repair
+EOM
 }
 
 hook_main() {
@@ -654,6 +681,7 @@ case $COMMAND in
     fi
     # Fill in nagios checks
     update_nagios_checks
+    maintenance
     ;;
   upgrade-charm)
     check_units_to_update || exit 0

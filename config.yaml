@@ -197,6 +197,16 @@ options:
         type: int
         description: |
             The pct of heap used to trigger a nagios critcal alert
+    nagios_disk_warn_pct:
+        default: 50 
+        type: int
+        description: |
+            The pct of data disk used to trigger a nagios warning
+    nagios_disk_crit_pct:
+        default: 75
+        type: int
+        description: |
+            The pct of data disk used to trigger a nagios critcal alert
     extra_packages:
         type: string
         default: ""
