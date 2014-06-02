@@ -87,6 +87,7 @@ install_cassandra () {
     echo "${APT_REPO_SPEC}" > /etc/apt/sources.list.d/cassandra.list
   fi
   # Update the repositories
+
   apt-get update
   # Ensure that cassandra does not startup before we have configured it
   disable_cassandra_start
