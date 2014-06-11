@@ -1,5 +1,5 @@
 #!/bin/bash
-# vim: set tabstop=2 expandtab:
+# vim: set ts=4 sw=4 et si:
 
 . ./scripts/volume-common.sh
 ETC_CASSANDRA="${ETC_CASSANDRA:-/etc/cassandra}"
@@ -11,6 +11,7 @@ CASSANDRA_RACKDC="${ETC_CASSANDRA}/cassandra-rackdc.properties"
 CASSANDRA_TOPOLOGY="${ETC_CASSANDRA}/cassandra-topology.properties"
 CASSANDRA_USER="cassandra"
 CASSANDRA_GROUP="cassandra"
+NAGIOS_EXPORT_DIR="/var/lib/nagios/export"
 
 set -e
 
@@ -19,9 +20,18 @@ export LANG=en_US.UTF-8
 # Comms-less leader determination
 # Picks the unit with the lowest id.
 am_i_the_leader () {
+  # FWIW this is race-prone (as not all units have the same 'relation-list'
+  # view at the same point in time), so am_i_the_leader it's kinda ~best-effort.
+  # Until juju-core provides facilities for master election, keep this
+  # nasty workaround.
   # Leader is the lowest unit number and won't be in the
   # list of relation peers
+  if [ -z "${JUJU_RELATION_ID}" ]; then
+    juju-log "${FUNCNAME[1]}: ${FUNCNAME[0]}: not running under relation context"
+    return 2
+  fi
   local units=$(relation-list)
+  juju-log "related units seen: ${units}"
   local unit_no=${JUJU_UNIT_NAME##*/}
   local unit
   for unit in ${units}; do
@@ -50,6 +60,15 @@ migrate_cassandra_data() {
   /etc/init.d/cassandra stop
   rsync -vaP "$from/" "$to/"
   mv "$from" "$from.migrated_${JUJU_UNIT_NAME//\//-}@$(date +%s)"
+}
+
+# When the volume is mounted by another (fresh) unit, getent passwd
+# entry *can* get a different UID (depending e.g. on user order
+# creation and/or other role accounts present), thus the need
+# to fix permissions (ownership) over cassandra data dir.
+fix_cassandra_perms() {
+    local data_dir=${1?}
+    chown -R cassandra:cassandra ${data_dir}
 }
 
 # Install cassandra source and install packages
@@ -91,35 +110,78 @@ configure_jmx_port () {
 
 get_private_ip () {
   # Make sure that we use the resolvable private address
-  # dig deals with both hostnames and ip addresses in a nice
-  # way - this has been tested in local and ec2 providers
-  # with ec2 and openstack
-  dig +short `unit-get private-address`
+  # some dig versions dealxs with both hostnames and ip
+  # addresses, but don't depend on that.
+  local address=$(unit-get private-address)
+  if [[ ${address} =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      # already an IP
+      echo "${address}"
+  else
+      # not an IP (some providers return hostnames), resolve it
+      dig +short "${address}"
+  fi
 }
 
-get_seed_nodes () {
-  FORCE_SEED_NODES=$(config-get force-seed-nodes)
-  if [[ -n $FORCE_SEED_NODES ]]; then
-    echo $FORCE_SEED_NODES
-  else
-    relation-get seed-nodes | sed -e 's!\s\+!,!g'
-  fi 
+relation-get-all() {
+    # reltype is e.g. 'cluster'
+    # relkey is e.g. 'seed-nodes'
+    # default separator is space
+    local reltype=${1:?} relkey=${2:?} separator="${3:- }"
+    local rid unit value=
+    # aggregate all values from every related unit
+    value=$(
+        for rid in $(relation-ids ${reltype});do
+            for unit in $(relation-list -r ${rid});do
+                relation-get -r ${rid} ${relkey} ${unit}
+            done
+        done
+    )
+    echo "${value}" | sort -u | paste -d "${separator}" -s
 }
 
-set_seed_nodes () {
-  FORCE_SEED_NODES=$(config-get force-seed-nodes)
-  if [[ -n $FORCE_SEED_NODES ]]; then
-    juju-log "Setting seed_node to $FORCE_SEED_NODES"
-    relation-set seed-nodes="$FORCE_SEED_NODES"
-  else
-    juju-log "Setting seed_node to $(running_nodes)"
-    relation-set seed-nodes="$(running_nodes)"
-  fi 
+write_seed_nodes() {
+    local seeds="${1?}"
+    # write to config if non-null seeds, or seed value coming from
+    if [ -n "${seeds}" ] || [ "$(config-get force-seed-nodes)" != "" ] || \
+        [ "$(config-get allow-single-node)" = "True" ]; then
+        local seeds_comma=$(echo "$seeds" | sed -r 's/ +/,/g')
+        juju-log "Setting seeds node to be '${seeds_comma}'"
+        sed -i -e "s/\- seeds:.*/\- seeds: \"${seeds_comma}\"/" ${CASSANDRA_YML}
+    else
+        # This happens when e.g. the unit relates to a non-leader
+        juju-log "Skipping seeds node setting (no seeds)"
+    fi
+}
+
+get_seed_nodes() {
+    local force_seed_nodes="$(config-get force-seed-nodes)"
+    local allow_single_node="$(config-get allow-single-node)"
+    local seeds
+
+    if [ -n "${force_seed_nodes}" ]; then
+        seeds="${force_seed_nodes}"
+    elif [ "${allow_single_node}" == "True" ]; then
+        seeds="$(get_private_ip)"
+        # If running under relation context ...
+    elif [ -n "${JUJU_RELATION_ID}" ]; then
+        if am_i_the_leader; then
+            seeds="$(running_nodes)"
+            # Too early, maybe bootstraping the whole cluster ...
+            if [ -z "${seeds}" ]; then
+                seeds=$(get_private_ip)
+            fi
+        else
+            seeds=$(relation-get-all cluster seed-nodes)
+        fi
+    fi
+    juju-log "${FUNCNAME[1]}: ${FUNCNAME[0]}: seeds='$seeds'"
+    echo "${seeds}"
 }
 
 srv_root_get() {
   sed -r -n 's,commitlog_directory: *([^ ]+)/commitlog.*,\1,p' ${CASSANDRA_YML}
 }
+
 srv_root_from_volid() {
   local volid=${1?missing volid}
   local mntpoint
@@ -193,7 +255,6 @@ configure_cassandra () {
   local COMPACTION_THROUGHPUT=$(config-get compaction-throughput)
   local STREAM_THROUGHPUT=$(config-get stream-throughput)
   local NUM_TOKENS=$(config-get num-tokens)
-  local SEED_ADDRESSES=$(get_seed_nodes)
   local INITIAL_TOKEN=$(get_initial_token)
   local PARTITIONER=$(config-get partitioner)
   local ENDPOINT_SNITCH=$(config-get endpoint_snitch)
@@ -206,7 +267,6 @@ configure_cassandra () {
   # specify this as a configuration parameter
   # non-trivial sed to edit data_file_directories (has its value in the line following it)
   sed -i -r -e "s/^cluster_name:.*/cluster_name: \'${CLUSTER_NAME}\'/" \
-         -e "s/(- seeds):.*/\1: \"${SEED_ADDRESSES}\"/" \
          -e "s/^(storage_port):.*/\1: ${CLUSTER_PORT}/" \
          -e "s/^(listen_address):.*/\1: ${LISTEN_ADDRESS}/" \
          -e "s/^(rpc_address):.*/\1: ${LISTEN_ADDRESS}/" \
@@ -273,6 +333,7 @@ configure_cassandra () {
         juju-log "WARNING: found already existing cassandra data, migrating ${srv_root_curr} -> ${srv_root_new}"
         migrate_cassandra_data ${srv_root_curr} ${srv_root_new}
       fi
+      fix_cassandra_perms ${srv_root_new}
       srv_root_save ${srv_root_new}
     fi
     # Set the kernel block scheduler
@@ -320,6 +381,7 @@ configure_cassandra () {
   else
       del_JVM_OPTS_line "JUJU_extra-jvm-opts"
   fi
+  reconfigure_cluster_seeds
 }
 
 # Remove JVM_OPTS line by regex
@@ -346,19 +408,60 @@ replace_YAML_key() {
 }
 
 # Service Control Commands
+cassandra_is_running() {
+    juju-log "${FUNCNAME[1]}: ${FUNCNAME[0]} $@"
+    service cassandra status
+}
+
+# wait until "$func $*" OK, loop $times sleeping $secs (default: 1)
+wait_until() {
+    local secs=${1:?} times=${2:?} func=${3:?}
+    shift 3
+    juju-log "${FUNCNAME[1]}: ${FUNCNAME[0]} $@"
+    while let times=times-1; do
+        if ${func} ${*}; then
+            juju-log "${FUNCNAME[0]} $func $*: OK (times=$times left)"
+            return 0
+        fi
+        juju-log "${FUNCNAME[0]} $func $*: sleep ${secs}, times=$times left"
+        sleep ${secs}
+    done
+    return 1
+}
+
+# ditto wait_until, with opposite logic
+wait_until_not() {
+    local secs=${1:?} times=${2:?} func=${3:?}
+    juju-log "${FUNCNAME[1]}: ${FUNCNAME[0]} $@"
+    while let times=times-1; do
+        if ${func} ${*}; then
+            :
+        else
+            juju-log "${FUNCNAME[0]} $func $*: OK (times=$times left)"
+            return 0
+        fi
+        juju-log "${FUNCNAME[0]} $func $*: sleep ${secs}, times=$times left"
+        sleep ${secs}
+    done
+    return 1
+}
+
 restart_cassandra () {
   juju-log "Restarting Cassandra"
-  service cassandra status && service cassandra restart || :
+  service cassandra restart
+  wait_until 1 60 cassandra_is_running
 }
 
 start_cassandra() {
   juju-log "Starting Cassandra"
   service cassandra status || service cassandra start
+  wait_until 1 60 cassandra_is_running
 }
 
 stop_cassandra() {
   juju-log "Stopping Cassandra"
   service cassandra stop || :
+  wait_until_not 1 60 cassandra_is_running
 }
 
 setup_database_interface () {
@@ -371,19 +474,23 @@ setup_jmx_interface () {
   relation-set port="$(config-get jmx-port)"
 }
 
-reconfigure_cluster_seeds () {
-  juju-log "Reconfiguring cluster seeds"
-  seeds=$(get_seed_nodes)
-  IP=`get_private_ip`
-  if [ -z "${seeds}" ] && am_i_the_leader; then
-    juju-log "Configuring myself locally as a seed node"
-    sed -i -e "s/\- seeds:.*/\- seeds: \"${IP}\"/" ${CASSANDRA_YML}
-  else
-    juju-log "Setting seeds node to be ${seeds}"
-    sed -i -e "s/\- seeds:.*/\- seeds: \"${seeds}\"/" ${CASSANDRA_YML}
-  fi
-  juju-log "$JUJU_REMOTE_UNIT modified its settings or departed"
-  bzr_ci || :
+reconfigure_cluster_seeds() {
+    juju-log "Reconfiguring cluster seeds"
+    local seeds=$(get_seed_nodes)
+    write_seed_nodes "${seeds}"
+    # If under relation context, and I'm leader => propagate seed-nodes to other units.
+    if [ -n "${seeds}" -a -n "${JUJU_RELATION_ID}" ] && am_i_the_leader; then
+        juju-log "Setting relation seed-nodes to ${seeds}"
+        relation-set seed-nodes="${seeds}"
+    fi
+}
+
+nodestatus_is() {
+    local ip="${1:?}" wanted_status="${2:?}"
+    local nodestatus="$(nodestatus ${ip})"
+    juju-log "nodestatus='${nodestatus}' wanted_status='${wanted_status}'"
+    [[ ${nodestatus} =~ ${wanted_status} ]]
+    return $?
 }
 
 nodestatus() {
@@ -410,31 +517,43 @@ running_nodes() {
         paste -d " " -s
 }
 
+echo_yml_expression() {
+    python -c "import yaml,sys;print yaml.load(sys.stdin)$1" < ${CASSANDRA_YML}
+}
+
+current_file_seeds() {
+    echo_yml_expression '["seed_provider"][0]["parameters"][0]["seeds"]'
+}
+
 bootstrap () {
-  service cassandra status && return 0
-  seeds=$(get_seed_nodes)
-  if [ -n "${seeds}" ] || am_i_the_leader; then
-    start_cassandra
-    juju-log "Waiting for this node to join the cluster"
-    IP=`get_private_ip`
-    count=0
-    status="$(nodestatus $IP)"
-    while [ "${status}" != "UpNormal" ] && [ $count -lt 40 ]; do
-      sleep 30
-      status="$(nodestatus $IP)"
-      count=$((count + 1))
-      juju-log "Waited $((count * 30)) seconds so far...(nodestatus=${status})"
-    done
-    if [ $count -eq 40 ]; then
-      juju-log "Timed out waiting for node"
-      exit 2
+    local IP
+    local count status
+    if am_i_the_leader; then
+        :
+    else
+        local file_seeds=$(current_file_seeds)
+        case "${file_seeds}" in
+            ""|127.*)
+                juju-log "Returning soft-fail on not-yet received external seeds"
+                return 0;;
+        esac
     fi
-    set_seed_nodes
-  fi
+    juju-log "Waiting for this node to join the cluster"
+    # wait until cassandra is UP ok, 3 retries
+    # start_cassandra will no-op if already running
+    count=3
+    while let count=count-1; do
+        start_cassandra
+        if wait_until 60 2 nodestatus_is $(get_private_ip) "Up(Joining|Normal)"; then
+            return 0
+        fi
+    done
+    juju-log "Timed out waiting for Up Normal/Joining"
+    exit 2
 }
 
 remove_down_nodes () {
-    set_seed_nodes
+    reconfigure_cluster_seeds
 }
 
 decommission_node () {
@@ -469,8 +588,11 @@ update_nagios_checks() {
     export SERVICE_DESCRIPTION="Cassandra server heap usage"
     export NRPE_CMD_NAME="check_${NAGIOS_CONTEXT}_cassandra_heap"
     export NRPE_CMD="/usr/lib/nagios/plugins/check_cassandra_heap.sh ${IP} ${WARN_PCT} ${CRIT_PCT}"
+    if [ ! -d "${NAGIOS_EXPORT_DIR}" ]; then
+        mkdir -p "${NAGIOS_EXPORT_DIR}"
+    fi
     cheetah fill --env -p templates/nrpe_cmd_file.tmpl > /etc/nagios/nrpe.d/${NRPE_CMD_NAME}.cfg
-    cheetah fill --env -p templates/nrpe_service_file.tmpl > /var/lib/nagios/export/service__${NAGIOS_HOSTNAME}_${NRPE_CMD_NAME}.cfg
+    cheetah fill --env -p templates/nrpe_service_file.tmpl > ${NAGIOS_EXPORT_DIR}/service__${NAGIOS_HOSTNAME}_${NRPE_CMD_NAME}.cfg
   fi
 }
 
@@ -524,6 +646,9 @@ case $COMMAND in
     # Construct the cassandra.yaml file from the appropriate information above
     configure_cassandra
     bzr_ci && needs_restart=:
+    # be sure to kick a cassandra restart if not
+    # running yet
+    cassandra_is_running || needs_restart=:
     if [ $needs_restart ]; then
       # Restart as required
       restart_cassandra
@@ -548,13 +673,18 @@ case $COMMAND in
     ;;
   cluster-relation-joined)
     juju-log "Joining cassandra cluster..."
+    am_i_the_leader || sleep $(( 30 + RANDOM%15 ))
     ;;
   cluster-relation-changed)
     reconfigure_cluster_seeds
+    # if there were config changes, restart cassandra
+    bzr_ci && restart_cassandra
     bootstrap
     ;;
   cluster-relation-departed)
     reconfigure_cluster_seeds
+    # if there were config changes, restart cassandra
+    bzr_ci && restart_cassandra
     remove_down_nodes
     ;;
   jmx-relation-joined)
