@@ -242,3 +242,24 @@ options:
         type: string
         description:
             The rack used by the enpoint_snitch. i.e. "Rack1"
+    dse:
+        type: boolean
+        default: False
+        description:
+            True if using DataStax Enterprise. False if community Cassandra.
+    authenticator:
+        type: string
+        default: AllowAllAuthenticator
+    authorizer:
+        type: string
+        default: AllowAllAuthorizer
+    data_file_directories:
+         type: string
+         default: /var/lib/cassandra/data
+         descritpion: Space delimited data directories
+    commitlog_directory:
+         type: string
+         default: /var/lib/cassandra/commitlog
+    saved_caches_directory:
+         type: string
+         default: /var/lib/cassandra/saved_caches
