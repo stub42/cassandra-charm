@@ -263,3 +263,16 @@ options:
     saved_caches_directory:
          type: string
          default: /var/lib/cassandra/saved_caches
+    private_jna_url:
+        type: string
+        description: >
+            URL for the private jna tar file. DSE requires JNA >= 3.4
+    private_jre_url:
+        type: string
+        description: >
+            URL for the private jre tar file. DSE requires Oracle java JRE >= 1.7
+    private_dse_url:
+        type: string
+        description: >
+            URL for the private dse tar file. Tar file of all the dse deb packages.
+            Used when external apt repositories are not allowed or available.
