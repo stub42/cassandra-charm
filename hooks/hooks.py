@@ -56,16 +56,25 @@ def _get_cassandra_rackdc_file():
 
 
 def _get_seeds(config_data=None):
+    ''' Return a list of seed nodes'''
+    # XXX Do we *need* leader election,
+    # "bootstrapping", etc
+
     if config_data is None:
         config_data = hookenv.config()
 
     if config_data['force-seed-nodes']:
         return config_data['force-seed-nodes'].split(',')
 
-    # XXX Peer relation nodes
-
-    else:
+    if config_data['allow-single-node']:
         return [hookenv.unit_private_ip()]
+
+    seeds = []
+    for peer in hookenv.relations_of_type(reltype="cluster"):
+       seeds.append(peer['private-address'])
+
+    seeds.append(hookenv.unit_private_ip())
+    return seeds
 
 
 def _cassandra_is_running():
@@ -269,7 +278,11 @@ def install():
         fetch.apt_install(packages, fatal=True)
 
 
-@hooks.hook('config-changed','upgrade-charm')
+@hooks.hook('config-changed','upgrade-charm',
+            'cluster-relation-joined',
+            'cluster-relation-changed',
+            'cluster-relation-departed',
+            'cluster-relation-broken')
 def config_changed():
     config_data = hookenv.config()
     update_nrpe_checks()
