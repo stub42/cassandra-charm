@@ -8,6 +8,7 @@ import socket
 import glob
 import subprocess
 import shutil
+import time
 
 import _pythonpath
 _ = _pythonpath
@@ -49,8 +50,10 @@ def _get_cassandra_yaml_file():
 def _get_cassandra_env_file():
     return os.path.join(_get_cassandra_config_dir(), "cassandra-env.sh")
 
+
 def _get_cassandra_rackdc_file():
     return os.path.join(_get_cassandra_config_dir(), "cassandra-rackdc.properties")
+
 
 def _get_seeds(config_data=None):
     if config_data is None:
@@ -63,6 +66,75 @@ def _get_seeds(config_data=None):
 
     else:
         return [hookenv.unit_private_ip()]
+
+
+def _cassandra_is_running():
+    if hookenv.config('dse'):
+        pid_file = "/var/run/dse/dse.pid"
+    else:
+        pid_file = "/var/run/cassandra.pid"
+
+    # XXX Too simplistic and racey
+    if not os.path.exists(pid_file):
+        hookenv.log("Cassandra is stopped", 'INFO')
+        return False
+    else:
+        f=open (pid_file,"r")
+        for line in f:
+            pid = int(line.strip())
+        if not pid > 1:
+            raise RuntimeError("Cassandra pid is less than or equal to 1. Aborting")
+        try:
+            # This does not kill the process but checks for its existence
+            os.kill(pid, 0)
+            hookenv.log("Cassandra PID {} is running".format(pid), 'INFO')
+        except OSError:
+            raise RuntimeError("Cassandra pid file exists but PID {} is not running. Please manually check on the state of Cassandra".format(pid) )
+        # Wait for full up state with binary backoff
+        # up to 256 seconds
+        for i in range(9):
+            try:
+                subprocess.check_call(["nodetool", "-h", hookenv.unit_private_ip(), "info"], stderr=open(os.devnull, 'wb'))
+                hookenv.log("Cassandra is running", 'INFO')
+                return True
+            except:
+                hookenv.log("Cassandra is still not fully up at attempt {}".format(i), 'INFO')
+                time.sleep(2**i)
+        raise RuntimeError("Cassandra PID {} is running but not responding to nodetool. Please manually check on the state of Cassandra".format(pid) )
+
+
+def _stop_cassandra():
+    if hookenv.config('dse'):
+        cassandra = "/etc/init.d/dse"
+    else:
+        cassandra = "/etc/init.d/cassandra"
+
+    hookenv.log("Stopping Cassandra", 'INFO')
+    subprocess.check_call([cassandra, "stop"])
+
+    # XXX wait time for cassandra to process
+    if _cassandra_is_running():
+        raise RuntimeError("Cassandra failed to stop")
+    
+
+def _start_cassandra():
+    if hookenv.config('dse'):
+        cassandra = "/etc/init.d/dse"
+    else:
+        cassandra = "/etc/init.d/cassandra"
+
+    hookenv.log("Starting Cassandra", 'INFO')
+    subprocess.check_call([cassandra, "start"])
+
+    if not _cassandra_is_running():
+        raise RuntimeError("Cassandra failed to start")
+
+
+def _restart_cassandra():
+    # XXX Peer aware restarts
+    hookenv.log("Restarting Cassandra", 'INFO')
+    _stop_cassandra()
+    _start_cassandra()
 
 
 def cassandra_yaml_template(config_data=None):
@@ -132,6 +204,7 @@ def update_nrpe_checks():
         )
     nrpe_compat.write()
 
+
 def install_dse():
     java_jna_jar = os.path.join("/usr", "share", "java", "jna.jar")
     
@@ -194,10 +267,7 @@ def install():
         # XXX disable cassandra start?
         packages = ['cassandra']
         fetch.apt_install(packages, fatal=True)
-    
 
-# XXX restart cassandra? bash used bzr 
-# XXX wait for cassandra up
 
 @hooks.hook('config-changed','upgrade-charm')
 def config_changed():
@@ -206,6 +276,8 @@ def config_changed():
     cassandra_yaml_template(config_data)
     cassandra_rackdc_template(config_data)
     cassandra_env_template(config_data)
+    # XXX restart cassandra? bash used bzr 
+    _restart_cassandra()
 
 
 hook_name = os.path.basename(sys.argv[0])
