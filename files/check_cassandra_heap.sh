@@ -1,4 +1,8 @@
 #!/bin/bash
+#---------------------------------------------------
+# This file is Juju managed
+#---------------------------------------------------
+
 # Copyright (C) 2012 Canonical Ltd.
 # Author: Liam Young
 #
