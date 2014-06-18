@@ -71,7 +71,7 @@ options:
            MB/s. 0 to disable throttling.
     apt-repo-spec:
         type: string
-        default: deb http://www.apache.org/dist/cassandra/debian 12x main
+        default: deb http://www.apache.org/dist/cassandra/debian 20x main
         description: >
             Apt repository to install cassandra package(s) from.
     apt-repo-key:
@@ -213,10 +213,10 @@ options:
         description: |
                 Extra packages to install. A space delimited list of packages.
     partitioner:
-        default: "org.apache.cassandra.dht.RandomPartitioner"
+        default: org.apache.cassandra.dht.Murmur3Partitioner
         type: string
         description:
-            The cassandra partitioner to use
+            The cassandra partitioner to use. i.e. org.apache.cassandra.dht.RandomPartitioner
     endpoint_snitch:
         default: "org.apache.cassandra.locator.SimpleSnitch"
         type: string
@@ -276,3 +276,23 @@ options:
         description: >
             URL for the private dse tar file. Tar file of all the dse deb packages.
             Used when external apt repositories are not allowed or available.
+    commit_failure_policy: 
+        type: string
+        default: stop 
+        description: >
+             policy for commit disk failures. stop, stop_commit, ignore
+    tombstone_warn_threshold:
+        type: int
+        default: 1000
+    tombstone_failure_threshold:
+        type: int
+        default: 100000
+    batch_size_warn_threshold_in_kb:
+        type: int
+        default: 5
+    cas_contention_timeout_in_ms:
+        type: int
+        default: 1000
+    preheat_kernel_page_cache:
+         type: string
+         default: "false"

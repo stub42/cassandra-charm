@@ -11,7 +11,7 @@
 
 # The name of the cluster. This is mainly used to prevent machines in
 # one logical cluster from joining another.
-cluster_name: {{config_dict['cluster-name']}}
+cluster_name: '{{config_dict['cluster-name']}}'
 
 # This defines the number of tokens randomly assigned to this node on the ring
 # The more tokens, relative to other nodes, the larger the proportion of data
@@ -72,6 +72,7 @@ batchlog_replay_throttle_in_kb: 1024
 #   Please increase system_auth keyspace replication factor if you use this authenticator.
 # - com.datastax.bdp.cassandra.auth.KerberosAuthenticator For external authentication 
 #   through Kerberos. Additional configuration is required in dse.yaml
+#authenticator: com.datastax.bdp.cassandra.auth.KerberosAuthenticator
 authenticator: {{authenticator}}
 
 # Authorization backend, implementing IAuthorizer; used to limit access/provide permissions
@@ -126,7 +127,9 @@ disk_failure_policy: stop
 # stop_commit: shutdown the commit log, letting writes collect but 
 #              continuing to service reads, as in pre-2.0.5 Cassandra
 # ignore: ignore fatal errors and let the batches fail
+{% if commit_failure_policy %}
 commit_failure_policy: stop
+{% endif %}
 
 # Maximum size of the key cache in memory.
 #
@@ -429,8 +432,12 @@ auto_snapshot: true
 # Adjust the thresholds here if you understand the dangers and want to
 # scan more tombstones anyway.  These thresholds may also be adjusted at runtime
 # using the StorageService mbean.
-tombstone_warn_threshold: 1000
-tombstone_failure_threshold: 100000
+{% if tombstone_warn_threshold %}
+tombstone_warn_threshold: {{tombstone_warn_threshold}}
+{% endif %}
+{% if tombstone_failure_threshold %}
+tombstone_failure_threshold: {{tombstone_failure_threshold}}
+{% endif %}
 
 # Add column indexes to a row after its contents reach this size.
 # Increase if your column values are large, or if you have a very large
@@ -440,6 +447,12 @@ tombstone_failure_threshold: 100000
 # the index data is read for each access, so you don't want to generate
 # that wastefully either.
 column_index_size_in_kb: 64
+
+# Log WARN on any batch size exceeding this value. 5kb per batch by default.
+# Caution should be taken on increasing the size of this threshold as it can lead to node instability.
+{% if batch_size_warn_threshold_in_kb %}
+batch_size_warn_threshold_in_kb: {{batch_size_warn_threshold_in_kb}}
+{% endif %}
 
 # Size limit for rows being compacted in memory.  Larger rows will spill
 # over to disk and use a slower two-pass compaction process.  A message
@@ -494,7 +507,9 @@ range_request_timeout_in_ms: 10000
 write_request_timeout_in_ms: 10000
 # How long a coordinator should continue to retry a CAS operation
 # that contends with other proposals for the same row
-cas_contention_timeout_in_ms: 1000
+{% if cas_contention_timeout_in_ms %}
+cas_contention_timeout_in_ms: {{cas_contention_timeout_in_ms}}
+{% endif %}
 # How long the coordinator should wait for truncates to complete
 # (This can be much longer, because unless auto_snapshot is disabled
 # we need to flush first so we can snapshot before removing the data.)
@@ -655,9 +670,9 @@ request_scheduler: org.apache.cassandra.scheduler.NoScheduler
 #
 server_encryption_options:
     internode_encryption: none
-    keystore: resources/dse/conf/.keystore
+    keystore: {% if dse %}resources/dse/conf/.keystore {% else %}conf/.keystore{% endif %}
     keystore_password: cassandra
-    truststore: resources/dse/conf/.truststore
+    truststore: {% if dse %}resources/dse/conf/.truststore {% else %}conf/.truststore{% endif %}
     truststore_password: cassandra
     # More advanced defaults below:
     # protocol: TLS
@@ -669,11 +684,11 @@ server_encryption_options:
 # enable or disable client/server encryption.
 client_encryption_options:
     enabled: false
-    keystore: resources/dse/conf/.keystore
+    keystore: {% if dse %}resources/dse/conf/.keystore {% else %}conf/.keystore{% endif %}
     keystore_password: cassandra
     # require_client_auth: false
     # Set trustore and truststore_password if require_client_auth is true
-    # truststore: resources/dse/conf/.truststore
+    # truststore: {% if dse %}resources/dse/conf/.truststore {% else %}conf/.truststore{% endif %}
     # truststore_password: cassandra
     # More advanced defaults below:
     # protocol: TLS
@@ -698,4 +713,6 @@ inter_dc_tcp_nodelay: false
 # When enabled it would preheat only first "page" (4KB) of each row to optimize
 # for sequential access. Note: This could be harmful for fat rows, see CASSANDRA-4937
 # for further details on that topic.
-preheat_kernel_page_cache: false
+{% if preheat_kernel_page_cache %}
+preheat_kernel_page_cache: {{preheat_kernel_page_cache}}
+{% endif %}
