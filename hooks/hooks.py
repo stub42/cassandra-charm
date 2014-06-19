@@ -26,6 +26,10 @@ from charmhelpers.payload.archive import extract
 hooks = hookenv.Hooks()
 
 # XXX juju logging
+# XXX cron mantenance
+# XXX io-scheduler
+# XXX volume management
+# XXX Units to update
 
 
 def Template(*args, **kw):
@@ -37,11 +41,17 @@ def Template(*args, **kw):
     from jinja2 import Template
     return Template(*args, **kw)
 
+
 def get_cassandra_version():
     apt_pkg.init()
     cache = apt_pkg.Cache()
     pkgver=cache['cassandra'].current_ver
-    return pkgver.ver_str
+    if pkgver is None and hookenv.config('dse'):
+        version_string = "2.0"
+    else:
+        version_string = pkgver.ver_str
+    return version_string
+
 
 
 def disable_cassandra_start():
@@ -81,18 +91,17 @@ def get_cassandra_rackdc_file():
     return os.path.join(get_cassandra_config_dir(), "cassandra-rackdc.properties")
 
 
-def get_seeds(config_data=None):
+def get_seeds():
     ''' Return a list of seed nodes'''
     # XXX Do we *need* leader election,
     # "bootstrapping", etc
 
-    if config_data is None:
-        config_data = hookenv.config()
+    config_dict = hookenv.config()
 
-    if config_data['force-seed-nodes']:
-        return config_data['force-seed-nodes'].split(',')
+    if config_dict['force-seed-nodes']:
+        return config_dict['force-seed-nodes'].split(',')
 
-    if config_data['allow-single-node']:
+    if config_dict['allow-single-node']:
         return [hookenv.unit_private_ip()]
 
     seeds = []
@@ -106,6 +115,8 @@ def get_seeds(config_data=None):
 def cassandra_is_running():
     if hookenv.config('dse'):
         pid_file = "/var/run/dse/dse.pid"
+    elif apt_pkg.version_compare(get_cassandra_version(), "2.0") >= 0:
+        pid_file = "/var/run/cassandra/cassandra.pid"
     else:
         pid_file = "/var/run/cassandra.pid"
 
@@ -124,10 +135,16 @@ def cassandra_is_running():
             os.kill(pid, 0)
             hookenv.log("Cassandra PID {} is running".format(pid), 'INFO')
         except OSError:
-            raise RuntimeError("Cassandra pid file exists but PID {} is not running. Please manually check on the state of Cassandra".format(pid) )
+            raise RuntimeError("Cassandra PID file exists but PID {} is not running. Please manually check on the state of Cassandra".format(pid) )
         # Wait for full up state with binary backoff
         # up to 256 seconds
         for i in range(9):
+            try:
+                # This does not kill the process but checks for its existence
+                os.kill(pid, 0)
+                hookenv.log("Cassandra PID {} is still running".format(pid), 'INFO')
+            except OSError:
+                raise RuntimeError("Cassandra PID {} is no longer running. Please manually check on the state of Cassandra".format(pid) )
             try:
                 subprocess.check_call(["nodetool", "-h", hookenv.unit_private_ip(), "info"], stderr=open(os.devnull, 'wb'))
                 hookenv.log("Cassandra is running", 'INFO')
@@ -172,43 +189,77 @@ def restart_cassandra():
     start_cassandra()
 
 
-def cassandra_yaml_template(config_data=None):
-    if config_data is None:
-        config_data = hookenv.config()
+def cassandra_restart_needed(options):
+
+    config_dict = hookenv.config()
+    restart = False
+    for option in options:
+        if config_dict.changed(option):
+            hookenv.log("Config option {} has changed from {} to {}. "
+                        "Cassandra needs to restart"
+                        "".format(option, config_dict.previous(option),
+                                  config_dict.get(option)))
+            restart = True
+    return restart
+
+
+def cassandra_yaml_template():
+    '''
+    Configure the cassandra.yaml file. Return restart value.
+    True: Cassandra needs to restart False: Cassandra does not need to restart.
+    '''
+
+    config_dict = hookenv.config()
 
     # XXX Add num_tokens vs initial token check
     # XXX Handle initial tokens if needed
     # XXX DSE vs cassandra and different versions
     # i.e. exception=Cannot create property=commit_failure_policy 
-    version_string = get_cassandra_version()
-    if version_string is None and hookenv.config('dse'):
-        version_string = "2.0"
-    if apt_pkg.version_compare(version_string, "2.0") < 1:
-        config_data['commit_failure_policy'] = None
-        config_data['tombstone_warn_threshold'] = None
-        config_data['tombstone_failure_threshold'] = None
-        config_data['batch_size_warn_threshold_in_kb'] = None
-        config_data['cas_contention_timeout_in_ms'] = None
-        config_data['preheat_kernel_page_cache'] = None
+
+    # If any of these options change Cassandra must be restarted
+    # config.yaml options
+    options = [ 'cluster-name', 'cluster-port', 'client-port', 'partitioner',
+                'endpoint_snitch', 'dse', 'authenticator', 'authorizer',
+                'data_file_directories', 'commitlog_directory',
+                'saved_caches_directory', 'num-tokens', 'allow-single-node',
+                'force-seed-nodes', 'token-map-by-unitname',
+                'token-map-by-volid', 'volume-ephemeral-storage', 'volume-map',
+                'volume-dev-regexp', 'compaction-throughput',
+                'stream-throughput', 'use-simpleauth', 'auth-passwd64',
+                'auth-access64', 'commit_failure_policy',
+                'tombstone_warn_threshold', 'tombstone_failure_threshold',
+                'batch_size_warn_threshold_in_kb',
+                'cas_contention_timeout_in_ms', 'preheat_kernel_page_cache']
+
+    # Additional options
+    options = options + ['private_address', 'seeds']
 
     # This bit of insanity sends the full dictionary as a dict member
     # to overcome the use of VAR-NAME rather than VAR_NAME in
     # config.yaml
-    config_data.update({"config_dict": config_data,
-                        "private_address": hookenv.unit_private_ip(),
-                        "seeds": get_seeds(config_data),
-                        "data_file_directories": config_data['data_file_directories'].split()
-                       })
+    config = {}
+    for key, value in config_dict.iteritems():
+        config[key] = value
+    config['config'] = config
 
     template_file = "{}/templates/cassandra.yaml.tmpl".format(hookenv.charm_dir())
-    contents = Template(open(template_file).read()).render(config_data)
+    contents = Template(open(template_file).read()).render(config)
     host.write_file(get_cassandra_yaml_file(), contents )
 
+    return cassandra_restart_needed(options)
 
-def cassandra_env_template(config_data=None):
-    if config_data is None:
-        config_data = hookenv.config()
 
+def cassandra_env_template():
+    '''
+    Configure the cassandra-env.sh file. Return restart value.
+    True: Cassandra needs to restart False: Cassandra does not need to restart.
+    '''
+
+    config_dict = hookenv.config()
+
+    # If any of these options change Cassandra must be restarted
+    options = [ 'auto-memory', 'heap-size', 'new-gen-size', 'jmx-port',
+                'extra-jvm-opts']
     # XXX Handle simple auth for 1.0.x
     # -Dpasswd.properties=${CASSANDRA_PASSWD}
     # -Daccess.properties=${CASSANDRA_ACCESS}
@@ -216,30 +267,41 @@ def cassandra_env_template(config_data=None):
     # This bit of insanity sends the full dictionary as a dict member
     # to overcome the use of VAR-NAME rather than VAR_NAME in
     # config.yaml
-    config_data.update({"config_dict": config_data})
+    config = {}
+    for key, value in config_dict.iteritems():
+        config[key] = value
+    config['config'] = config
 
     template_file = "{}/templates/cassandra-env.tmpl".format(hookenv.charm_dir())
-    contents = Template(open(template_file).read()).render(config_data)
+    contents = Template(open(template_file).read()).render(config)
     host.write_file(get_cassandra_env_file(), contents )
 
+    return cassandra_restart_needed(options)
 
-def cassandra_rackdc_template(config_data=None):
-    if config_data is None:
-        config_data = hookenv.config()
 
-    # This bit of insanity sends the full dictionary as a dict member
-    # to overcome the use of VAR-NAME rather than VAR_NAME in
-    # config.yaml
-    config_data.update({"config_dict": config_data})
+def cassandra_rackdc_template():
+    '''
+    Configure the cassandra-rackdc.properties file. Return restart value.
+    True: Cassandra needs to restart False: Cassandra does not need to restart.
+    '''
+
+    config_dict = hookenv.config()
+
+    # If any of these options change Cassandra must be restarted
+    options = [ 'prefer_local', 'dc_suffix', 'datacenter', 'rack' ]
 
     template_file = "{}/templates/cassandra-rackdc.tmpl".format(hookenv.charm_dir())
-    contents = Template(open(template_file).read()).render(config_data)
+    contents = Template(open(template_file).read()).render(config_dict)
     host.write_file(get_cassandra_rackdc_file(), contents )
+
+    return cassandra_restart_needed(options)
 
 
 @hooks.hook('nrpe-external-master-relation-joined',
             'nrpe-external-master-relation-changed')
 def nrpe_external_master_relation():
+    ''' Configure the nrpe-external-master relation '''
+
     local_plugins = os.path.join("/", "usr", "local", "lib", "nagios", "plugins")
     if os.path.exists(local_plugins):
         shutil.copyfile(os.path.join(hookenv.charm_dir(), "files", "check_cassandra_heap.sh"),
@@ -263,7 +325,7 @@ def nrpe_external_master_relation():
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
-    for disk in conf.get('data_file_directories').split():
+    for disk in conf.get('data_file_directories'):
         check_name = re.sub('/', '_', disk)
         if cassandra_disk_warn and cassandra_disk_crit:
             nrpe_compat.add_check(
@@ -307,15 +369,18 @@ def install_dse():
 
     # Install DSE
     if hookenv.config('private_dse_url'):
-        source = fetch.install_remote(hookenv.config('private_dse_url'))
-        cmd = ['dpkg', "--install" ] + glob.glob(os.path.join(source, "dse", "*"))
-        subprocess.check_call(cmd)
+        # DSE deb install is not amenable to upgrade
+        if hookenv.hook_name() == "install":
+            source = fetch.install_remote(hookenv.config('private_dse_url'))
+            cmd = ['dpkg', "--install" ] + glob.glob(os.path.join(source, "dse", "*"))
+            subprocess.check_call(cmd)
     else:
+        # XXX package hold
         packages = ['dse-full']
         fetch.apt_install(packages, fatal=True)
 
 
-@hooks.hook()
+@hooks.hook('install', 'upgrade-charm')
 def install():
     # Pre-exec
     for f in glob.glob('exec.d/*/charm-pre-install'):
@@ -334,31 +399,56 @@ def install():
         packages = [hookenv.config('extra_packages')]
         fetch.apt_install(packages, fatal=True)
 
-    disable_cassandra_start()
     if hookenv.config('dse'):
         install_dse() 
     else:
-        # XXX disable cassandra start?
+        # The Cassandra package starts Cassandra with default options
+        # which may conflict with the soon to be configured options.
+        # So stop Cassandra from starting on package install
+        disable_cassandra_start()
         packages = ['cassandra']
+        # XXX package hold
         fetch.apt_install(packages, fatal=True)
-    enable_cassandra_start()
+        enable_cassandra_start()
 
 
-@hooks.hook('config-changed','upgrade-charm',
+@hooks.hook('config-changed',
             'cluster-relation-joined',
-            'cluster-relation-changed',
-            'cluster-relation-departed',
-            'cluster-relation-broken')
+            'cluster-relation-departed')
 def config_changed():
-    config_data = hookenv.config()
+
+    config_dict = hookenv.config()
+
+    if apt_pkg.version_compare(get_cassandra_version(), "2.0") < 1:
+        config_dict['commit_failure_policy'] = None
+        config_dict['tombstone_warn_threshold'] = None
+        config_dict['tombstone_failure_threshold'] = None
+        config_dict['batch_size_warn_threshold_in_kb'] = None
+        config_dict['cas_contention_timeout_in_ms'] = None
+        config_dict['preheat_kernel_page_cache'] = None
+
+    config_dict['private_address'] =  hookenv.unit_private_ip()
+    config_dict['seeds'] = get_seeds()
+    config_dict['data_file_directories'] = config_dict['data_file_directories'].split()
+    config_dict.save()
+
+    restart = False
+    # This will always start with false
+    # doing this for consistency
+    restart = cassandra_yaml_template() or restart
+    restart = cassandra_env_template() or restart
+    # XXX use regex for long and short value
+    if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch":
+        restart = cassandra_rackdc_template() or restart
+
     nrpe_external_master_relation()
-    cassandra_yaml_template(config_data)
-    cassandra_rackdc_template(config_data)
-    cassandra_env_template(config_data)
+    # XXX set_io_scheduler()
+
     # XXX restart cassandra? bash used bzr 
     # See postgresql local_state
-    # XXX do not restart on upgrade-charm and config-hook
-    restart_cassandra()
+    # if something has changed
+    if restart:
+        restart_cassandra()
 
 
 @hooks.hook('database-relation-joined', 'database-relation-changed')
@@ -371,6 +461,7 @@ def datbase_relation():
 def jmx_relation():
     hookenv.log("Setup Cassandra JMX interface")
     hookenv.relation_set(relation_settings={"port": hookenv.config('jmx-port')})
+
 
 
 hook_name = os.path.basename(sys.argv[0])

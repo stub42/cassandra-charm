@@ -11,7 +11,7 @@
 
 # The name of the cluster. This is mainly used to prevent machines in
 # one logical cluster from joining another.
-cluster_name: '{{config_dict['cluster-name']}}'
+cluster_name: '{{config['cluster-name']}}'
 
 # This defines the number of tokens randomly assigned to this node on the ring
 # The more tokens, relative to other nodes, the larger the proportion of data
@@ -25,8 +25,8 @@ cluster_name: '{{config_dict['cluster-name']}}'
 #
 # If you already have a cluster with 1 token per node, and wish to migrate to 
 # multiple tokens per node, see http://wiki.apache.org/cassandra/Operations
-{% if config_dict['num-tokens'] %}
-num_tokens: {{config_dict['num-tokens']}}
+{% if config['num-tokens'] %}
+num_tokens: {{config['num-tokens']}}
 {% endif %}
 
 # initial_token allows you to specify tokens manually.  While you can use # it with
@@ -293,7 +293,7 @@ trickle_fsync: false
 trickle_fsync_interval_in_kb: 10240
 
 # TCP port, for commands and data
-storage_port: {{config_dict['cluster-port']}}
+storage_port: {{config['cluster-port']}}
 
 # SSL port, for encrypted communication.  Unused unless enabled in
 # encryption_options
@@ -349,7 +349,7 @@ start_rpc: true
 # that rely on node auto-discovery.
 rpc_address: {{private_address}}
 # port for Thrift to listen for clients on
-rpc_port: {{config_dict['client-port']}}
+rpc_port: {{config['client-port']}}
 
 # enable or disable keepalive on rpc connections
 rpc_keepalive: true
@@ -485,7 +485,7 @@ multithreaded_compaction: false
 # 16 to 32 times the rate you are inserting data is more than sufficient.
 # Setting this to 0 disables throttling. Note that this account for all types
 # of compaction, including validation compaction.
-compaction_throughput_mb_per_sec: {{config_dict['compaction-throughput']}}
+compaction_throughput_mb_per_sec: {{config['compaction-throughput']}}
 
 # Track cached row keys during compaction, and re-cache their new
 # positions in the compacted sstable.  Disable if you use really large
@@ -497,7 +497,7 @@ compaction_preheat_key_cache: true
 # mostly sequential IO when streaming data during bootstrap or repair, which
 # can lead to saturating the network connection and degrading rpc performance.
 # When unset, the default is 200 Mbps or 25 MB/s.
-stream_throughput_outbound_megabits_per_sec: {{config_dict['stream-throughput']}}
+stream_throughput_outbound_megabits_per_sec: {{config['stream-throughput']}}
 
 # How long the coordinator should wait for read operations to complete
 read_request_timeout_in_ms: 10000

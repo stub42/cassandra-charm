@@ -133,9 +133,9 @@ esac
 # times. If in doubt, and if you do not particularly want to tweak, go with
 # 100 MB per physical CPU core.
 
-{% if not config_dict['auto-memory'] %}
-MAX_HEAP_SIZE="{{config_dict['heap-size']}}"
-HEAP_NEWSIZE="{{config_dict['new-gen-size']}}"
+{% if not config['auto-memory'] %}
+MAX_HEAP_SIZE="{{config['heap-size']}}"
+HEAP_NEWSIZE="{{config['new-gen-size']}}"
 {% endif %}
 
 # Set this to control the amount of arenas per-thread in glibc
@@ -157,7 +157,7 @@ fi
 
 # Specifies the default port over which Cassandra will be available for
 # JMX connections.
-JMX_PORT="{{config_dict['jmx-port']}}"
+JMX_PORT="{{config['jmx-port']}}"
 
 
 # Here we create the arguments that will get passed to the jvm when

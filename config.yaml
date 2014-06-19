@@ -1,74 +1,8 @@
 # vim: sw=4 ts=4 et ai tw=80
 options:
     # http://wiki.apache.org/cassandra/FAQ#ports
-    allow-single-node:
-        type: boolean
-        default: False
-        description: Allow cassandra to start in a single-node configuration.
-            When deploying a new service with more than one initial unit (i.e.
-            juju deploy -n 2), this should be set to false.
-    jmx-port:
-        type: int
-        default: 7199
-        description: JMX management port
-    cluster-port:
-        type: int
-        default: 7000
-        description: Cluster communication port
-    client-port:
-        type: int
-        default: 9160
-        description: Thrift clients port
-    cluster-name:
-        type: string
-        default: "Cassandra Cluster"
-        description: >
-            Name of the Cassandra Cluster - don't change yet!
-    num-tokens:
-        type: int
-        default: 256
-        description: >
-            Number of tokens per node for Cassandra 1.2+. Ignored for earlier
-            versions. 0 disables.
-    auto-memory:
-        type: boolean
-        default: true
-        description: >
-            Automatically configure memory options based on specification
-            of the server infrastructure its running on.
-    heap-size:
-        type: string
-        default: 1G
-        description: >
-            Total size of Java memory heap, for example 1G or 512M.
-            Only used if auto-memory = false.
-    new-gen-size:
-        type: string
-        default: 100M
-        description: >
-            Size of Java new generation memory, for example 100M.  Only used
-            if auto-memory = false.
-    compaction-throughput:
-        type: int
-        default: 16
-        description: >
-            Throttles compaction to the given total throughput (in MB/sec)
-            across the entire system. The faster you insert data, the faster
-            you need to compact in order to keep the sstable count down,
-            but in general, setting this to 16 to 32 times the rate you
-            are inserting data is more than sufficient.  Setting this to
-            0 disables throttling. Note that this account for all types
-            of compaction, including validation compaction.
-    stream-throughput:
-        type: int
-        default: 200
-        description: >
-           Throttles all outbound streaming file transfers on nodes to the
-           given total throughput in Mbps. This is necessary because Cassandra
-           does mostly sequential IO when streaming data during bootstrap or 
-           repair, which can lead to saturating the network connection and 
-           degrading rpc performance. When unset, the default is 200 Mbps or 25
-           MB/s. 0 to disable throttling.
+
+    # Install and upgrade charm relatied options
     apt-repo-spec:
         type: string
         default: deb http://www.apache.org/dist/cassandra/debian 20x main
@@ -79,59 +13,24 @@ options:
         default: 4BD736A82B5C1B00
         description: >
             Apt repository key, typically needed for apt-repo-spec.
-    force-seed-nodes:
+    private_jna_url:
         type: string
-        default: ""
         description: >
-            A comma separated list of seed nodes. This is useful if the cluster
-            being created in this juju environment is part of a larger cluser
-            and the seed nodes are remote.
-    token-map-by-unitname:
+            URL for the private jna tar file. DSE requires JNA >= 3.4
+    private_jre_url:
         type: string
-        default: ""
         description: >
-            YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
-            Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set. If persistent storage
-            is being used then use token-map-by-volid instead.
-            Useful when rebalancing a ring by hand
-    token-map-by-volid:
+            URL for the private jre tar file. DSE requires Oracle java JRE >= 1.7
+    private_dse_url:
         type: string
-        default: ""
         description: >
-            YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
-            Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
-            and cannot be used if token-map-by-unitname is also set. 
-            Useful when rebalancing a ring by hand
-    use-simpleauth:
-        type: boolean
-        default: false
-        description: |
-            If True, it will use passwd-prop64 and access-prop64 configs
-            (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
-            -Dpasswd.properties=/etc/casssandra/passwd.properties \
-            -Daccess.properties=/etc/casssandra/access.properties
-            See http://www.datastax.com/docs/1.0/configuration/authentication
-    auth-passwd64:
+            URL for the private dse tar file. Tar file of all the dse deb packages.
+            Used when external apt repositories are not allowed or available.
+    extra_packages:
         type: string
         default: ""
         description: |
-            base64 encoded content to be written to /etc/casssandra/passwd.properties
-            created by e.g.:
-                juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
-    auth-access64:
-        type: string
-        default: ""
-        description: |
-            base64 encoded content to be written to /etc/casssandra/access.properties
-            created by e.g.:
-                juju set cassandra auth-access64="$(base64 ./access.props)"
-    extra-jvm-opts:
-        type: string
-        default: ""
-        description: |
-            string to be appended to JVM_OPTS, e.g.:
-            -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
-
+                Extra packages to install. A space delimited list of packages.
     units-to-update:
         type: string
         default: "all"
@@ -139,38 +38,6 @@ options:
             Comma separated list of unit numbers to update (i.e. modify
             /etc setup and trigger cassandra restart on config-change or
             upgrade-charm), or "all".
-
-    #------------------------------------------------------------------------
-    # Volume management
-    #   volume-map, volume-dev_regexp are only used 
-    #   if volume-ephemeral-storage == False
-    #------------------------------------------------------------------------
-    volume-ephemeral-storage:
-        type: boolean
-        default: True
-        description: |
-            If False, a configure-error state will be raised if
-               volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
-               below) - see "volume-map" below.
-            If True, service units won't try to use "volume-map" (and
-               related variables) to mount and use external (EBS) volumes,
-               thus storage lifetime will equal VM, thus ephemeral.
-               YOU'VE BEEN WARNED.
-            
-    volume-map:
-        type: string
-        default: ""
-        description: >
-            YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
-            Service units will raise a "configure-error" condition if no volume-map
-            value is set for it - it's expected a human to set it properly to resolve it.
-
-    volume-dev-regexp:
-        type: string
-        default: "/dev/vd[b-z]"
-        description: >
-            Block device for attached volumes as seen by the VM, will be "scanned"
-            for an unused device when "volume-map" is valid for the unit.
     io-scheduler:
         type: string
         default: "cfq"
@@ -178,6 +45,9 @@ options:
             Set kernel io scheduler for persistent storage. Only used when
             volume-ephemeral-storage is False.
             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
+
+
+    # nrpe-external-master relation related options
     nagios_context:
         default: "juju"
         type: string
@@ -207,22 +77,41 @@ options:
         type: int
         description: |
             The pct of data disk used to trigger a nagios critcal alert
-    extra_packages:
+
+
+    # cassandra-env.sh related options
+    auto-memory:
+        type: boolean
+        default: true
+        description: >
+            Automatically configure memory options based on specification
+            of the server infrastructure its running on.
+    heap-size:
+        type: string
+        default: 1G
+        description: >
+            Total size of Java memory heap, for example 1G or 512M.
+            Only used if auto-memory = false.
+    new-gen-size:
+        type: string
+        default: 100M
+        description: >
+            Size of Java new generation memory, for example 100M.  Only used
+            if auto-memory = false.
+    jmx-port:
+        type: int
+        default: 7199
+        description: JMX management port
+    extra-jvm-opts:
         type: string
         default: ""
         description: |
-                Extra packages to install. A space delimited list of packages.
-    partitioner:
-        default: org.apache.cassandra.dht.Murmur3Partitioner
-        type: string
-        description:
-            The cassandra partitioner to use. i.e. org.apache.cassandra.dht.RandomPartitioner
-    endpoint_snitch:
-        default: "org.apache.cassandra.locator.SimpleSnitch"
-        type: string
-        description:
-            The cassandra endpoint snitch to use. Currently supported by the
-            charm, SimpleSnitch and GossipingPropertyFileSnitch.
+            string to be appended to JVM_OPTS, e.g.:
+            -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+
+
+    # cassandra-rackdc.properties for GossipingPropertyFileSnitch related
+    # options
     prefer_local:
         default: False
         type: boolean
@@ -242,6 +131,33 @@ options:
         type: string
         description:
             The rack used by the enpoint_snitch. i.e. "Rack1"
+
+
+    # Cassandra.yaml related options
+    cluster-name:
+        type: string
+        default: "Cassandra Cluster"
+        description: >
+            Name of the Cassandra Cluster - don't change yet!
+    cluster-port:
+        type: int
+        default: 7000
+        description: Cluster communication port
+    client-port:
+        type: int
+        default: 9160
+        description: Thrift clients port
+    partitioner:
+        default: org.apache.cassandra.dht.Murmur3Partitioner
+        type: string
+        description:
+            The cassandra partitioner to use. i.e. org.apache.cassandra.dht.RandomPartitioner
+    endpoint_snitch:
+        default: "org.apache.cassandra.locator.SimpleSnitch"
+        type: string
+        description:
+            The cassandra endpoint snitch to use. Currently supported by the
+            charm, SimpleSnitch and GossipingPropertyFileSnitch.
     dse:
         type: boolean
         default: False
@@ -263,19 +179,117 @@ options:
     saved_caches_directory:
          type: string
          default: /var/lib/cassandra/saved_caches
-    private_jna_url:
-        type: string
+
+    num-tokens:
+        type: int
+        default: 256
         description: >
-            URL for the private jna tar file. DSE requires JNA >= 3.4
-    private_jre_url:
+            Number of tokens per node for Cassandra 1.2+. Ignored for earlier
+            versions. 0 disables.
+    # Using initial tokens
+    allow-single-node:
+        type: boolean
+        default: False
+        description: Allow cassandra to start in a single-node configuration.
+            When deploying a new service with more than one initial unit (i.e.
+            juju deploy -n 2), this should be set to false.
+    force-seed-nodes:
         type: string
+        default: ""
         description: >
-            URL for the private jre tar file. DSE requires Oracle java JRE >= 1.7
-    private_dse_url:
+            A comma separated list of seed nodes. This is useful if the cluster
+            being created in this juju environment is part of a larger cluser
+            and the seed nodes are remote.
+    token-map-by-unitname:
         type: string
+        default: ""
         description: >
-            URL for the private dse tar file. Tar file of all the dse deb packages.
-            Used when external apt repositories are not allowed or available.
+            YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
+            Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set. If persistent storage
+            is being used then use token-map-by-volid instead.
+            Useful when rebalancing a ring by hand
+    token-map-by-volid:
+        type: string
+        default: ""
+        description: >
+            YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
+            Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
+            and cannot be used if token-map-by-unitname is also set. 
+            Useful when rebalancing a ring by hand
+    #------------------------------------------------------------------------
+    # Volume management
+    #   volume-map, volume-dev_regexp are only used 
+    #   if volume-ephemeral-storage == False
+    #------------------------------------------------------------------------
+    volume-ephemeral-storage:
+        type: boolean
+        default: True
+        description: |
+            If False, a configure-error state will be raised if
+               volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
+               below) - see "volume-map" below.
+            If True, service units won't try to use "volume-map" (and
+               related variables) to mount and use external (EBS) volumes,
+               thus storage lifetime will equal VM, thus ephemeral.
+               YOU'VE BEEN WARNED.
+    volume-map:
+        type: string
+        default: ""
+        description: >
+            YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
+            Service units will raise a "configure-error" condition if no volume-map
+            value is set for it - it's expected a human to set it properly to resolve it.
+    volume-dev-regexp:
+        type: string
+        default: "/dev/vd[b-z]"
+        description: >
+            Block device for attached volumes as seen by the VM, will be "scanned"
+            for an unused device when "volume-map" is valid for the unit.
+    compaction-throughput:
+        type: int
+        default: 16
+        description: >
+            Throttles compaction to the given total throughput (in MB/sec)
+            across the entire system. The faster you insert data, the faster
+            you need to compact in order to keep the sstable count down,
+            but in general, setting this to 16 to 32 times the rate you
+            are inserting data is more than sufficient.  Setting this to
+            0 disables throttling. Note that this account for all types
+            of compaction, including validation compaction.
+    stream-throughput:
+        type: int
+        default: 200
+        description: >
+           Throttles all outbound streaming file transfers on nodes to the
+           given total throughput in Mbps. This is necessary because Cassandra
+           does mostly sequential IO when streaming data during bootstrap or 
+           repair, which can lead to saturating the network connection and 
+           degrading rpc performance. When unset, the default is 200 Mbps or 25
+           MB/s. 0 to disable throttling.
+    use-simpleauth:
+        type: boolean
+        default: false
+        description: |
+            If True, it will use passwd-prop64 and access-prop64 configs
+            (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
+            -Dpasswd.properties=/etc/casssandra/passwd.properties \
+            -Daccess.properties=/etc/casssandra/access.properties
+            See http://www.datastax.com/docs/1.0/configuration/authentication
+    auth-passwd64:
+        type: string
+        default: ""
+        description: |
+            base64 encoded content to be written to /etc/casssandra/passwd.properties
+            created by e.g.:
+                juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
+    auth-access64:
+        type: string
+        default: ""
+        description: |
+            base64 encoded content to be written to /etc/casssandra/access.properties
+            created by e.g.:
+                juju set cassandra auth-access64="$(base64 ./access.props)"
+
     commit_failure_policy: 
         type: string
         default: stop 
