@@ -11,6 +11,7 @@ import shutil
 import time
 import re
 import apt_pkg
+import json
 
 import _pythonpath
 _ = _pythonpath
@@ -25,7 +26,7 @@ from charmhelpers.payload.archive import extract
 
 hooks = hookenv.Hooks()
 
-# XXX juju logging
+# XXX more juju logging
 # XXX cron mantenance
 # XXX io-scheduler
 # XXX volume management
@@ -51,7 +52,6 @@ def get_cassandra_version():
     else:
         version_string = pkgver.ver_str
     return version_string
-
 
 
 def disable_cassandra_start():
@@ -93,8 +93,6 @@ def get_cassandra_rackdc_file():
 
 def get_seeds():
     ''' Return a list of seed nodes'''
-    # XXX Do we *need* leader election,
-    # "bootstrapping", etc
 
     config_dict = hookenv.config()
 
@@ -112,7 +110,7 @@ def get_seeds():
     return seeds
 
 
-def cassandra_is_running():
+def is_cassandra_running():
     if hookenv.config('dse'):
         pid_file = "/var/run/dse/dse.pid"
     elif apt_pkg.version_compare(get_cassandra_version(), "2.0") >= 0:
@@ -165,7 +163,7 @@ def stop_cassandra():
     subprocess.check_call([cassandra, "stop"])
 
     # XXX wait time for cassandra to process
-    if cassandra_is_running():
+    if is_cassandra_running():
         raise RuntimeError("Cassandra failed to stop")
     
 
@@ -178,7 +176,7 @@ def start_cassandra():
     hookenv.log("Starting Cassandra", 'INFO')
     subprocess.check_call([cassandra, "start"])
 
-    if not cassandra_is_running():
+    if not is_cassandra_running():
         raise RuntimeError("Cassandra failed to start")
 
 
@@ -189,18 +187,127 @@ def restart_cassandra():
     start_cassandra()
 
 
-def cassandra_restart_needed(options):
+def does_cassandra_need_to_restart(options = [None]):
+    ''' Determine if Cassandra needs to restart
+        Check critical options for changes
+        Set config_dict['restart_needed'] True or False
+        Return True or False
+    '''
 
     config_dict = hookenv.config()
     restart = False
+    # Manually read restart request
+    restart_request_dict = read_restart_request()
+    if restart_request_dict.get('restart_needed'):
+        hookenv.log("Cassandra restart previously requested. "
+                    "Cassandra needs to restart")
+        restart = True
+    # Run through options even if the above is true for logging
     for option in options:
         if config_dict.changed(option):
             hookenv.log("Config option {} has changed from {} to {}. "
                         "Cassandra needs to restart"
                         "".format(option, config_dict.previous(option),
                                   config_dict.get(option)))
+            # Manually write restart request
+            write_restart_request({'restart_needed': True})
             restart = True
+
     return restart
+
+
+def read_restart_request():
+    # Manually read previous config as hookenv.config().load_previous()
+    # has a bug when changing hook contexts
+    # config_dict.load_previous()
+    restart_request_file = '.restart_request'
+    path = os.path.join(hookenv.charm_dir(), restart_request_file)
+    if os.path.exists(path):
+        with open(path) as f:
+            restart_request_dict = json.load(f)
+        return restart_request_dict
+    else:
+        return {}
+
+
+def write_restart_request(restart_request_dict):
+    restart_request_file = '.restart_request'
+    path = os.path.join(hookenv.charm_dir(), restart_request_file)
+    if restart_request_dict:
+        with open(path, 'w') as f:
+            json.dump(restart_request_dict, f)
+
+
+def request_cassandra_restart():
+    ''' Make peers aware of restart request. 
+        Restart if mine is the oldest request '''
+
+    restart_request_dict = read_restart_request()
+
+    restart_needed = restart_request_dict.get('restart_needed')
+    restart_request_time = restart_request_dict.get('restart_request_time')
+
+    if restart_needed:
+        hookenv.log("Cassandra restart is requested")
+        if not restart_request_time:
+            restart_request_time = time.time()
+            # Not in a relation hook. Need to set relation id
+            for peer in hookenv.relations_of_type(reltype="cluster"):
+                hookenv.relation_set(relation_id = peer['__relid__'],
+                                     relation_settings = {"restart_request_time": restart_request_time})
+            restart_request_dict['restart_request_time'] = restart_request_time 
+            write_restart_request(restart_request_dict)
+            hookenv.log("Setting my restart request time on the peer relation, {}. "
+                        "Exiting cleanly to wait my turn.".format(restart_request_time))
+            return
+        hookenv.log("Cassandra restart request time {}".format(restart_request_time))
+    else:
+        hookenv.log("Cassandra does not need a restart. Exiting cleanly")
+        return
+
+    restart_request_times = []
+    for peer in hookenv.relations_of_type(reltype="cluster"):
+        if peer.get('restart_request_time'):
+            restart_request_times.append(peer.get('restart_request_time'))
+
+    if restart_request_times:
+        # Need to cast type as a float.
+        # Comparing to a unicode string gives unexpected results
+        oldest_request = float(sorted(restart_request_times)[0])
+    else:
+        oldest_request = 999999999999999.9
+
+    if restart_request_time == oldest_request:
+        hookenv.log("My restart request time equals the oldest_request time. "
+                    "{} == {}. Starting over to break the deadlock"
+                    "".format(restart_request_time, oldest_request))
+        restart_request_time = time.time()
+        # Reset on on all peer relations so others don't get stuck 
+        # waiting on a restart that will never happen
+        for peer in hookenv.relations_of_type(reltype="cluster"):
+            hookenv.relation_set(relation_id = peer['__relid__'],
+                                 relation_settings = {"restart_request_time": restart_request_time})
+
+        hookenv.relation_set(relation_settings={"restart_request_time": restart_request_time})
+        restart_request_dict['restart_request_time'] = restart_request_time 
+        write_restart_request(restart_request_dict)
+    elif restart_request_time < oldest_request:
+        hookenv.log("My restart request time is the oldest, {} compared to {}. "
+                    "Out of {} "
+                    "Restarting".format(restart_request_time, oldest_request, restart_request_times))
+        restart_cassandra()
+        # Tell all peers restart is no longer needed
+        hookenv.log("Restart complete. Inform peers")
+        for peer in hookenv.relations_of_type(reltype="cluster"):
+            hookenv.log("Restart complete. Informing {} ".format(peer['__relid__']))
+            hookenv.relation_set(relation_id = peer['__relid__'],
+                                 relation_settings = {"restart_request_time": None})
+        restart_request_dict['restart_needed'] = False
+        restart_request_dict['restart_request_time'] = False
+        write_restart_request(restart_request_dict)
+    else:
+        hookenv.log("My restart request time is not the oldest, {}. "
+                    "Exiting cleanly to wait my turn.".format(restart_request_time))
 
 
 def cassandra_yaml_template():
@@ -247,7 +354,7 @@ def cassandra_yaml_template():
     contents = Template(open(template_file).read()).render(config)
     host.write_file(get_cassandra_yaml_file(), contents )
 
-    return cassandra_restart_needed(options)
+    return does_cassandra_need_to_restart(options = options)
 
 
 def cassandra_env_template():
@@ -277,7 +384,7 @@ def cassandra_env_template():
     contents = Template(open(template_file).read()).render(config)
     host.write_file(get_cassandra_env_file(), contents )
 
-    return cassandra_restart_needed(options)
+    return does_cassandra_need_to_restart(options = options)
 
 
 def cassandra_rackdc_template():
@@ -295,7 +402,7 @@ def cassandra_rackdc_template():
     contents = Template(open(template_file).read()).render(config_dict)
     host.write_file(get_cassandra_rackdc_file(), contents )
 
-    return cassandra_restart_needed(options)
+    return does_cassandra_need_to_restart(options = options)
 
 
 @hooks.hook('nrpe-external-master-relation-joined',
@@ -389,6 +496,8 @@ def install_dse():
 
 @hooks.hook('install', 'upgrade-charm')
 def install():
+    ''' Install and upgrade-charm '''
+
     # Pre-exec
     for f in glob.glob('exec.d/*/charm-pre-install'):
         if os.path.isfile(f) and os.access(f, os.X_OK):
@@ -438,21 +547,25 @@ def config_changed():
     config_dict['seeds'] = get_seeds()
     config_dict.save()
 
-    restart = False
-    restart = cassandra_yaml_template() or restart
-    restart = cassandra_env_template() or restart
+    cassandra_yaml_template()
+    cassandra_env_template()
     # XXX use regex for long and short value
     if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch":
-        restart = cassandra_rackdc_template() or restart
+        cassandra_rackdc_template()
 
     nrpe_external_master_relation()
     # XXX set_io_scheduler()
 
-    # XXX restart cassandra? bash used bzr 
-    # See postgresql local_state
-    # if something has changed
-    if restart:
-        restart_cassandra()
+    # Manually read restart request
+    restart_request_dict = read_restart_request()
+    if restart_request_dict.get('restart_needed'):
+        request_cassandra_restart()
+
+
+@hooks.hook('cluster-relation-changed')
+def cluster_relation():
+    # XXX Leader election
+    request_cassandra_restart()
 
 
 @hooks.hook('database-relation-joined', 'database-relation-changed')
@@ -465,7 +578,6 @@ def datbase_relation():
 def jmx_relation():
     hookenv.log("Setup Cassandra JMX interface")
     hookenv.relation_set(relation_settings={"port": hookenv.config('jmx-port')})
-
 
 
 hook_name = os.path.basename(sys.argv[0])
