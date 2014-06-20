@@ -40,7 +40,7 @@ options:
             upgrade-charm), or "all".
     io-scheduler:
         type: string
-        default: "cfq"
+        default: "noop"
         description: >
             Set kernel io scheduler for persistent storage. Only used when
             volume-ephemeral-storage is False.
@@ -73,7 +73,7 @@ options:
         description: |
             The pct of data disk used to trigger a nagios warning
     nagios_disk_crit_pct:
-        default: 75
+        default: 25 
         type: int
         description: |
             The pct of data disk used to trigger a nagios critcal alert

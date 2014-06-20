@@ -28,9 +28,9 @@ hooks = hookenv.Hooks()
 
 # XXX more juju logging
 # XXX cron mantenance
-# XXX io-scheduler
 # XXX volume management
 # XXX Units to update
+# XXX package hold
 
 
 def Template(*args, **kw):
@@ -109,6 +109,21 @@ def get_seeds():
     seeds.append(hookenv.unit_private_ip())
     return seeds
 
+def set_io_scheduler():
+    '''
+        Set the block device io scheduler
+    '''
+    config_dict = hookenv.config()
+    regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
+
+    for directory in config_dict['data_file_directories'].split(' '):
+        hookenv.log("Setting block device of {} to IO scheduler {}"
+                    "".format(directory, config_dict['io-scheduler']))
+        output = subprocess.check_output(['df', directory])
+        block_dev = re.findall(regex, output)[0]
+        sys_file = os.path.join("/", "sys", "block", block_dev, "queue", "scheduler")
+        host.write_file(sys_file, config_dict['io-scheduler'], perms=0644)
+
 
 def is_cassandra_running():
     if hookenv.config('dse'):
@@ -118,7 +133,7 @@ def is_cassandra_running():
     else:
         pid_file = "/var/run/cassandra.pid"
 
-    # XXX Too simplistic and racey
+    # XXX needs to wait after a stop somehow
     if not os.path.exists(pid_file):
         hookenv.log("Cassandra is stopped", 'INFO')
         return False
@@ -181,7 +196,6 @@ def start_cassandra():
 
 
 def restart_cassandra():
-    # XXX Peer aware restarts
     hookenv.log("Restarting Cassandra", 'INFO')
     stop_cassandra()
     start_cassandra()
@@ -320,8 +334,6 @@ def cassandra_yaml_template():
 
     # XXX Add num_tokens vs initial token check
     # XXX Handle initial tokens if needed
-    # XXX DSE vs cassandra and different versions
-    # i.e. exception=Cannot create property=commit_failure_policy 
 
     # If any of these options change Cassandra must be restarted
     # config.yaml options
@@ -554,7 +566,7 @@ def config_changed():
         cassandra_rackdc_template()
 
     nrpe_external_master_relation()
-    # XXX set_io_scheduler()
+    set_io_scheduler()
 
     # Manually read restart request
     restart_request_dict = read_restart_request()
