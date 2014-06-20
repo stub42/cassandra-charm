@@ -240,6 +240,7 @@ def cassandra_yaml_template():
     config = {}
     for key, value in config_dict.iteritems():
         config[key] = value
+    config['data_file_directories'] = config['data_file_directories'].split(' ')
     config['config'] = config
 
     template_file = "{}/templates/cassandra.yaml.tmpl".format(hookenv.charm_dir())
@@ -325,7 +326,7 @@ def nrpe_external_master_relation():
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
-    for disk in conf.get('data_file_directories'):
+    for disk in conf.get('data_file_directories').split(' '):
         check_name = re.sub('/', '_', disk)
         if cassandra_disk_warn and cassandra_disk_crit:
             nrpe_compat.add_check(
@@ -341,6 +342,8 @@ def nrpe_external_master_relation():
 
 
 def install_dse():
+    java_jre_dir = os.path.join("/", "usr", "lib", "jvm", "oracle-jre")
+    java_jna_dir = os.path.join("/", "usr", "share", "java", "jna")
     java_jna_jar = os.path.join("/", "usr", "share", "java", "jna.jar")
     
     # Install prerequisites
@@ -352,8 +355,10 @@ def install_dse():
     # XXX Install from package?
     if hookenv.config('private_jre_url'):
         source = fetch.install_remote(hookenv.config('private_jre_url'))
+        if os.path.exists(java_jre_dir):
+            shutil.rmtree(java_jre_dir)
         shutil.move(" ".join(glob.glob(os.path.join(source, "*"))),
-                    os.path.join("/", "usr", "lib", "jvm", "oracle-jre"))
+                    java_jre_dir)
 
         subprocess.check_call(["update-alternatives", "--install", "/usr/bin/java",
                                "java", "/usr/lib/jvm/oracle-jre/bin/java", "1"])
@@ -363,9 +368,11 @@ def install_dse():
     # Use modern JNA
     if hookenv.config('private_jna_url'):
         source = fetch.install_remote(hookenv.config('private_jna_url'))
-        shutil.move(os.path.join(source, "jna"), os.path.join("/", "usr", "share", "java"))
+        if os.path.exists(java_jna_dir):
+            shutil.rmtree(java_jna_dir)
+        shutil.move(os.path.join(source, "jna"), java_jna_dir)
         subprocess.check_call(["rm", "-f", java_jna_jar])
-        host.symlink(os.path.join("/", "usr", "share", "java", "jna", "dist", "jna.jar"), java_jna_jar)
+        host.symlink(os.path.join(java_jna_dir, "dist", "jna.jar"), java_jna_jar)
 
     # Install DSE
     if hookenv.config('private_dse_url'):
@@ -429,12 +436,9 @@ def config_changed():
 
     config_dict['private_address'] =  hookenv.unit_private_ip()
     config_dict['seeds'] = get_seeds()
-    config_dict['data_file_directories'] = config_dict['data_file_directories'].split()
     config_dict.save()
 
     restart = False
-    # This will always start with false
-    # doing this for consistency
     restart = cassandra_yaml_template() or restart
     restart = cassandra_env_template() or restart
     # XXX use regex for long and short value
