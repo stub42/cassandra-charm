@@ -27,10 +27,8 @@ from charmhelpers.payload.archive import extract
 hooks = hookenv.Hooks()
 
 # XXX more juju logging
-# XXX cron mantenance
 # XXX volume management
 # XXX Units to update
-# XXX package hold
 
 
 def Template(*args, **kw):
@@ -432,6 +430,44 @@ def cassandra_rackdc_template():
     return does_cassandra_need_to_restart(options = options)
 
 
+def maintenance():
+    '''
+    Configure weekly staggered nodetool repair crons
+    '''
+
+    cron_location = os.path.join("/", "etc", "cron.d", "cassandra-maintenance")
+    node_id = int(hookenv.local_unit().split('/')[1])
+    repair_day = node_id % 7
+
+    template_dict = { "repair_day": repair_day }
+    template_file = "{}/templates/cassandra_maintenance_cron.tmpl".format(hookenv.charm_dir())
+    contents = Template(open(template_file).read()).render(template_dict)
+    host.write_file(cron_location, contents )
+
+
+def ensure_package_status():
+
+    config_dict = hookenv.config()
+
+    package_status = config_dict['package_status']
+    if config_dict['dse']:
+        packages = ['dse']
+    else:
+        packages = ['cassandra']
+
+    if package_status not in ['install', 'hold']:
+        valid = False
+        RuntimeError("package_status must be 'install' or 'hold' not '{}'"
+            "".format(package_status))
+
+    for package in packages:
+        selections = ''.join(['{} {}\n'.format(package, package_status)])
+        dpkg = subprocess.Popen(['dpkg', '--set-selections'],
+                                    stdin=subprocess.PIPE)
+        dpkg.communicate(input=selections)
+
+
+
 @hooks.hook('nrpe-external-master-relation-joined',
             'nrpe-external-master-relation-changed')
 def nrpe_external_master_relation():
@@ -516,7 +552,6 @@ def install_dse():
             cmd = ['dpkg', "--install" ] + glob.glob(os.path.join(source, "dse", "*"))
             subprocess.check_call(cmd)
     else:
-        # XXX package hold
         packages = ['dse-full']
         fetch.apt_install(packages, fatal=True)
 
@@ -550,7 +585,6 @@ def install():
         # So stop Cassandra from starting on package install
         disable_cassandra_start()
         packages = ['cassandra']
-        # XXX package hold
         fetch.apt_install(packages, fatal=True)
         enable_cassandra_start()
 
@@ -582,6 +616,8 @@ def config_changed():
 
     nrpe_external_master_relation()
     set_io_scheduler()
+    maintenance()
+    ensure_package_status()
 
     # Manually read restart request
     restart_request_dict = read_restart_request()

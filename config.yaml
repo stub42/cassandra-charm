@@ -38,12 +38,6 @@ options:
             Comma separated list of unit numbers to update (i.e. modify
             /etc setup and trigger cassandra restart on config-change or
             upgrade-charm), or "all".
-    io-scheduler:
-        type: string
-        default: "noop"
-        description: >
-            Set kernel io scheduler for persistent storage. Only used when
-            volume-ephemeral-storage is False.
             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
 
 
@@ -310,3 +304,17 @@ options:
     preheat_kernel_page_cache:
          type: string
          default: "false"
+
+    # Config changed options that do not require a restart
+    io-scheduler:
+        type: string
+        default: "noop"
+        description: >
+            Set kernel io scheduler for persistent storage. Only used when
+            volume-ephemeral-storage is False.
+    package_status:
+        default: "install"
+        type: string
+        description: |
+            The status of service-affecting packages will be set to this value in the dpkg database.
+            Useful valid values are "install" and "hold".
