@@ -119,6 +119,7 @@ def set_io_scheduler():
     for directory in config_dict['data_file_directories'].split(' '):
         # XXX Will this get run on initial setup or take another
         # config-changed hook run?
+        directory = os.path.dirname(directory)
         if os.path.exists(directory):
             hookenv.log("Setting block device of {} to IO scheduler {}"
                         "".format(directory, config_dict['io-scheduler']))
@@ -126,6 +127,9 @@ def set_io_scheduler():
             block_dev = re.findall(regex, output)[0]
             sys_file = os.path.join("/", "sys", "block", block_dev, "queue", "scheduler")
             host.write_file(sys_file, config_dict['io-scheduler'], perms=0644)
+        else:
+            hookenv.log("Directory {} does not exist. Cannot set io scheduler {}"
+                        "".format(directory, config_dict['io-scheduler']))
 
 
 def is_cassandra_running():
