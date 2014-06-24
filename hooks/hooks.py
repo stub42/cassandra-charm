@@ -117,12 +117,15 @@ def set_io_scheduler():
     regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
 
     for directory in config_dict['data_file_directories'].split(' '):
-        hookenv.log("Setting block device of {} to IO scheduler {}"
-                    "".format(directory, config_dict['io-scheduler']))
-        output = subprocess.check_output(['df', directory])
-        block_dev = re.findall(regex, output)[0]
-        sys_file = os.path.join("/", "sys", "block", block_dev, "queue", "scheduler")
-        host.write_file(sys_file, config_dict['io-scheduler'], perms=0644)
+        # XXX Will this get run on initial setup or take another
+        # config-changed hook run?
+        if os.path.exists(directory):
+            hookenv.log("Setting block device of {} to IO scheduler {}"
+                        "".format(directory, config_dict['io-scheduler']))
+            output = subprocess.check_output(['df', directory])
+            block_dev = re.findall(regex, output)[0]
+            sys_file = os.path.join("/", "sys", "block", block_dev, "queue", "scheduler")
+            host.write_file(sys_file, config_dict['io-scheduler'], perms=0644)
 
 
 def is_cassandra_running():
@@ -261,10 +264,13 @@ def request_cassandra_restart():
     restart_needed = restart_request_dict.get('restart_needed')
     restart_request_time = restart_request_dict.get('restart_request_time')
 
+    node_id = int(hookenv.local_unit().split('/')[1])
+    factor = 100
+
     if restart_needed:
         hookenv.log("Cassandra restart is requested")
         if not restart_request_time:
-            restart_request_time = time.time()
+            restart_request_time = int(time.time() * factor)
             # Not in a relation hook. Need to set relation id
             for peer in hookenv.relations_of_type(reltype="cluster"):
                 hookenv.relation_set(relation_id = peer['__relid__'],
@@ -274,7 +280,9 @@ def request_cassandra_restart():
             hookenv.log("Setting my restart request time on the peer relation, {}. "
                         "Exiting cleanly to wait my turn.".format(restart_request_time))
             return
-        hookenv.log("Cassandra restart request time {}".format(restart_request_time))
+        else:
+            restart_request_time = int(restart_request_time)
+            hookenv.log("Cassandra restart request time {}".format(restart_request_time))
     else:
         hookenv.log("Cassandra does not need a restart. Exiting cleanly")
         return
@@ -284,18 +292,18 @@ def request_cassandra_restart():
         if peer.get('restart_request_time'):
             restart_request_times.append(peer.get('restart_request_time'))
 
-    if restart_request_times:
-        # Need to cast type as a float.
+    if len(restart_request_times) > 0:
+        # Need to cast type as a int.
         # Comparing to a unicode string gives unexpected results
-        oldest_request = float(sorted(restart_request_times)[0])
+        oldest_request = int(sorted(restart_request_times)[0])
     else:
-        oldest_request = 999999999999999.9
+        oldest_request = int(9999999999999)
 
     if restart_request_time == oldest_request:
         hookenv.log("My restart request time equals the oldest_request time. "
                     "{} == {}. Starting over to break the deadlock"
                     "".format(restart_request_time, oldest_request))
-        restart_request_time = time.time()
+        restart_request_time = int((time.time() + node_id) * factor)
         # Reset on on all peer relations so others don't get stuck 
         # waiting on a restart that will never happen
         for peer in hookenv.relations_of_type(reltype="cluster"):
@@ -306,22 +314,25 @@ def request_cassandra_restart():
         restart_request_dict['restart_request_time'] = restart_request_time 
         write_restart_request(restart_request_dict)
     elif restart_request_time < oldest_request:
-        hookenv.log("My restart request time is the oldest, {} compared to {}. "
-                    "Out of {} "
-                    "Restarting".format(restart_request_time, oldest_request, restart_request_times))
+        hookenv.log("My restart request time is the oldest, {}. Less than {}. Out of {}.  {}. "
+                    "Restarting".format(restart_request_time, oldest_request,
+                                        len(restart_request_times),
+                                        sorted(restart_request_times)))
         restart_cassandra()
         # Tell all peers restart is no longer needed
         hookenv.log("Restart complete. Inform peers")
         for peer in hookenv.relations_of_type(reltype="cluster"):
-            hookenv.log("Restart complete. Informing {} ".format(peer['__relid__']))
             hookenv.relation_set(relation_id = peer['__relid__'],
                                  relation_settings = {"restart_request_time": None})
         restart_request_dict['restart_needed'] = False
         restart_request_dict['restart_request_time'] = False
         write_restart_request(restart_request_dict)
     else:
-        hookenv.log("My restart request time is not the oldest, {}. "
-                    "Exiting cleanly to wait my turn.".format(restart_request_time))
+        hookenv.log("My restart request time is NOT the oldest, {}. Greater than {}. "
+                    "Out of {}. {} Exiting cleanly to wait my turn."
+                    "".format(restart_request_time, oldest_request,
+                              len(restart_request_times),
+                              sorted(restart_request_times)))
 
 
 def cassandra_yaml_template():
