@@ -26,9 +26,14 @@ from charmhelpers.payload.archive import extract
 
 hooks = hookenv.Hooks()
 
-# XXX more juju logging
+# XXX RuntimeError does not log
 # XXX volume management
-# XXX Units to update
+# XXX leader election
+# XXX hooekenv.config() cross hook bug
+# XXX units to update
+# XXX more juju logging
+# XXX Testing with existing data
+# XXX Test replacing a node with persistant storage
 
 
 def Template(*args, **kw):
@@ -107,16 +112,14 @@ def get_seeds():
     seeds.append(hookenv.unit_private_ip())
     return seeds
 
+
 def set_io_scheduler():
-    '''
-        Set the block device io scheduler
-    '''
+    ''' Set the block device io scheduler '''
+
     config_dict = hookenv.config()
     regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
 
     for directory in config_dict['data_file_directories'].split(' '):
-        # XXX Will this get run on initial setup or take another
-        # config-changed hook run?
         directory = os.path.dirname(directory)
         if os.path.exists(directory):
             hookenv.log("Setting block device of {} to IO scheduler {}"
@@ -261,6 +264,7 @@ def request_cassandra_restart():
     ''' Make peers aware of restart request. 
         Restart if mine is the oldest request '''
 
+    config_dict = hookenv.config()
     restart_request_dict = read_restart_request()
 
     restart_needed = restart_request_dict.get('restart_needed')
@@ -271,6 +275,11 @@ def request_cassandra_restart():
 
     if restart_needed:
         hookenv.log("Cassandra restart is requested")
+        if config_dict['allow-single-node']:
+            hookenv.log("This is the only node. Restarting.")
+            restart_cassandra()
+            return
+
         if not restart_request_time:
             restart_request_time = int(time.time() * factor)
             # Not in a relation hook. Need to set relation id
@@ -510,6 +519,29 @@ def nrpe_external_master_relation():
 
     nrpe_compat.write()
 
+def setup_directories():
+
+    config_dict = hookenv.config()
+
+    for directory in config_dict['data_file_directories'].split(' '):
+        directory = os.path.dirname(directory)
+        if not os.path.exists(directory):
+            hookenv.log("Creating cassandra data top directory {}".format(directory))
+            host.mkdir(directory, owner='cassandra', group='cassandra',
+            perms=0755, force=True)
+            
+    directory = os.path.dirname(config_dict['commitlog_directory'])
+    if not os.path.exists(directory):
+        hookenv.log("Creating cassandra commitlog top directory {}".format(directory))
+        host.mkdir(directory, owner='cassandra', group='cassandra',
+        perms=0755, force=True)
+
+    directory = os.path.dirname(config_dict['saved_caches_directory'])
+    if not os.path.exists(directory):
+        hookenv.log("Creating cassandra saved_caches top directory {}".format(directory))
+        host.mkdir(directory, owner='cassandra', group='cassandra',
+        perms=0755, force=True)
+
 
 def install_dse():
     java_jre_dir = os.path.join("/", "usr", "lib", "jvm", "oracle-jre")
@@ -610,9 +642,10 @@ def config_changed():
 
     cassandra_yaml_template()
     cassandra_env_template()
-    # XXX use regex for long and short value
-    if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch":
+    if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch" or config_dict['endpoint_snitch'] == "org.apache.cassandra.locator.SimpleSnitch":
         cassandra_rackdc_template()
+
+    setup_directories()
 
     nrpe_external_master_relation()
     set_io_scheduler()
