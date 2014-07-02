@@ -390,6 +390,25 @@ def cassandra_yaml_template():
 
     return does_cassandra_need_to_restart(options = options)
 
+def dse_yaml_template():
+    '''
+    Configure the dse.yaml file. Return restart value.
+    True: Cassandra needs to restart False: Cassandra does not need to restart.
+    '''
+
+    config_dict = hookenv.config()
+    dse_yaml_file = os.path.join("/", "etc", "dse", "dse.yaml")
+
+    # If any of these options change Cassandra must be restarted
+    # config.yaml options
+    options = [ 'endpoint_snitch' ]
+
+    template_file = "{}/templates/dse.yaml.tmpl".format(hookenv.charm_dir())
+    contents = Template(open(template_file).read()).render(config_dict)
+    host.write_file(dse_yaml_file, contents)
+
+    return does_cassandra_need_to_restart(options = options)
+
 
 def cassandra_env_template():
     '''
@@ -519,6 +538,7 @@ def nrpe_external_master_relation():
 
     nrpe_compat.write()
 
+
 def setup_directories():
 
     config_dict = hookenv.config()
@@ -642,7 +662,9 @@ def config_changed():
 
     cassandra_yaml_template()
     cassandra_env_template()
-    if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch" or config_dict['endpoint_snitch'] == "org.apache.cassandra.locator.SimpleSnitch":
+    if hookenv.config('dse'):
+        dse_yaml_template() 
+    if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch" or config_dict['endpoint_snitch'] == "org.apache.cassandra.locator.GossipingPropertyFileSnitch":
         cassandra_rackdc_template()
 
     setup_directories()

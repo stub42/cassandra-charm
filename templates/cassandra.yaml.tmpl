@@ -596,7 +596,11 @@ cross_node_timeout: false
 # NOTE: To choose a different snitch, please change the delegated_snitch
 #       option in the dse.yaml file. For DSE installations do NOT change
 #       the endpoint_snitch setting here directly.
+{% if dse %}
+endpoint_snitch: com.datastax.bdp.snitch.DseDelegateSnitch
+{% else %}
 endpoint_snitch: {{endpoint_snitch}}
+{% endif %}
 
 # controls how often to perform the more expensive part of host score
 # calculation
