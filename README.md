@@ -63,7 +63,7 @@ changing these options.
 
 Cassandra sets both is minimum and maximum heap size on startup so will
 pre-allocate all memory to avoid freezes during operation (this happens
-during normal operation as more memory is allocated to heap.
+during normal operation as more memory is allocated to heap).
 
 # Contact Information
 
