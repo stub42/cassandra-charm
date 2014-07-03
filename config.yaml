@@ -166,13 +166,31 @@ options:
     data_file_directories:
          type: string
          default: /var/lib/cassandra/data
-         descritpion: Space delimited data directories
+         descritpion: >
+             Space delimited data directories
+             For use with phyiscal hardware drive partitions
+             Note: Overriden by external_volume_mount
     commitlog_directory:
          type: string
          default: /var/lib/cassandra/commitlog
+         descritpion: >
+             Commit log directory
+             Note: Overriden by external_volume_mount
     saved_caches_directory:
          type: string
          default: /var/lib/cassandra/saved_caches
+         descritpion: >
+             Saved caches directory
+             Note: Overriden by external_volume_mount
+    external_volume_mount:
+         type: string
+         default: ""
+         description: >
+             Used with storage charm for external storage
+             i.e. /srv/data
+             Overrides data_file_directories, commitlog_directory and
+             saved_caches_directory.
+             Note: There is only support for a single external mount
 
     num-tokens:
         type: int

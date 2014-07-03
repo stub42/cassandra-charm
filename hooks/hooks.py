@@ -26,7 +26,6 @@ from charmhelpers.payload.archive import extract
 
 hooks = hookenv.Hooks()
 
-# XXX RuntimeError does not log
 # XXX volume management
 # XXX leader election
 # XXX hooekenv.config() cross hook bug
@@ -117,6 +116,10 @@ def set_io_scheduler():
     ''' Set the block device io scheduler '''
 
     config_dict = hookenv.config()
+    # For now force directories if using external volume
+    if config_dict.get('external_volume_mount'):
+        config_dict['data_file_directories'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'data')
+
     regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
 
     for directory in config_dict['data_file_directories'].split(' '):
@@ -275,6 +278,11 @@ def request_cassandra_restart():
 
     if restart_needed:
         hookenv.log("Cassandra restart is requested")
+
+        if config_dict.get('external_volume_mount') and not is_external_volume_mounted():
+            hookenv.log("Do not restart Cassandra, we are waiting on an external volume to mount")
+            return
+
         if config_dict['allow-single-node']:
             hookenv.log("This is the only node. Restarting.")
             restart_cassandra()
@@ -331,7 +339,7 @@ def request_cassandra_restart():
                                         sorted(restart_request_times)))
         restart_cassandra()
         # Tell all peers restart is no longer needed
-        hookenv.log("Restart complete. Inform peers")
+        hookenv.log("Restart complete. Informing peers.")
         for peer in hookenv.relations_of_type(reltype="cluster"):
             hookenv.relation_set(relation_id = peer['__relid__'],
                                  relation_settings = {"restart_request_time": None})
@@ -540,9 +548,71 @@ def nrpe_external_master_relation():
     nrpe_compat.write()
 
 
+def is_external_volume_mounted():
+    ''' Check if the external volume is mounted '''
+
+    config_dict = hookenv.config()
+    related = False
+    mounted = False
+    regex = re.compile(config_dict.get('external_volume_mount'))
+
+    for peer in hookenv.relations_of_type(reltype="data"):
+        if hookenv.relation_get(attribute = "mountpoint", unit = peer['__unit__'], rid = peer['__relid__']):
+             related = True
+
+    if related:
+        output = subprocess.check_output(['mount'])
+        mounted = re.findall(regex, output)
+        if mounted:
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+@hooks.hook('data-relation-changed')
+def data_relation_changed():
+    ''' Setup external volume after confirming it is mounted '''
+
+    if is_external_volume_mounted():
+        hookenv.log("External volume is mounted")
+        setup_directories()
+        set_io_scheduler()
+        request_cassandra_restart()
+    else:
+        hookenv.log("External volume is not yet mounted")
+
+
+@hooks.hook('data-relation-joined')
+def data_relation_joined():
+    ''' Request external volume from storage subordinate by setting mountpoint '''
+
+    config_dict = hookenv.config()
+
+    if not config_dict.get('external_volume_mount'):
+        raise RuntimeError("No external_volume_mount set. Aborting")
+
+    stop_cassandra()
+
+    hookenv.log("Setting mountpoint in the storage data relation: {}"
+                "".format(config_dict.get('external_volume_mount')))
+    for peer in hookenv.relations_of_type(reltype="data"):
+        hookenv.relation_set(relation_id = peer['__relid__'],
+                             relation_settings = {"mountpoint": config_dict.get('external_volume_mount')})
+
+
 def setup_directories():
 
     config_dict = hookenv.config()
+
+    # For now force directories if using external volume
+    if config_dict.get('external_volume_mount'):
+        config_dict['data_file_directories'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'data')
+        config_dict['commitlog_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'commitlog')
+        config_dict['saved_caches_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'saved_caches')
+
+    # XXX recursive chown to cassandra:cassandra
 
     for directory in config_dict['data_file_directories'].split(' '):
         directory = os.path.dirname(directory)
@@ -657,6 +727,12 @@ def config_changed():
         config_dict['cas_contention_timeout_in_ms'] = None
         config_dict['preheat_kernel_page_cache'] = None
 
+    # For now force directories if using external volume
+    if config_dict.get('external_volume_mount'):
+        config_dict['data_file_directories'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'data')
+        config_dict['commitlog_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'commitlog')
+        config_dict['saved_caches_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'saved_caches')
+
     config_dict['private_address'] =  hookenv.unit_private_ip()
     config_dict['seeds'] = get_seeds()
     config_dict.save()
@@ -668,12 +744,14 @@ def config_changed():
     if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch" or config_dict['endpoint_snitch'] == "org.apache.cassandra.locator.GossipingPropertyFileSnitch":
         cassandra_rackdc_template()
 
-    setup_directories()
-
     nrpe_external_master_relation()
-    set_io_scheduler()
     maintenance()
     ensure_package_status()
+
+    # Handle use of an external volume
+    if not config_dict.get('external_volume_mount') or is_external_volume_mounted():
+        setup_directories()
+        set_io_scheduler()
 
     # Manually read restart request
     restart_request_dict = read_restart_request()
