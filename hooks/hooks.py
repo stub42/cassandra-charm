@@ -390,6 +390,7 @@ def cassandra_yaml_template():
 
     return does_cassandra_need_to_restart(options = options)
 
+
 def dse_yaml_template():
     '''
     Configure the dse.yaml file. Return restart value.

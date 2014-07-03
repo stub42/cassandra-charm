@@ -2,7 +2,7 @@
 options:
     # http://wiki.apache.org/cassandra/FAQ#ports
 
-    # Install and upgrade charm relatied options
+    # Install and upgrade charm related options
     apt-repo-spec:
         type: string
         default: deb http://www.apache.org/dist/cassandra/debian 20x main
@@ -120,11 +120,11 @@ options:
     datacenter:
         type: string
         description:
-            The datacenter used by the enpoint_snitch. i.e. "DC1"
+            The datacenter used by the endpoint_snitch. i.e. "DC1"
     rack: 
         type: string
         description:
-            The rack used by the enpoint_snitch. i.e. "Rack1"
+            The rack used by the endpoint_snitch. i.e. "Rack1"
 
 
     # Cassandra.yaml related options

@@ -1,5 +1,5 @@
 name: cassandra
-maintainer: JuanJo Ciarlante <jjo@canonical.com>
+maintainer: David Ames <david.ames@canonical.com>
 summary: distributed storage system for structured data
 description: |
   Cassandra is a distributed (peer-to-peer) system for the management and
