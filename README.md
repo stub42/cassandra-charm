@@ -44,6 +44,9 @@ Changing the configuration of a deployed Cassandra cluster is supported; however
 it will result in a restart of each Cassandra node as the changes are implemented
 which may result in outages.
 
+Adding persistent storage after a node has had no persistent storage and it has
+existing data on the "local" file system is not currently not supported.
+
 # Configuration
 
 Cassandra has a pretty good guess at configuring its Java memory settings to

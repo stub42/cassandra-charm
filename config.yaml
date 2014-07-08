@@ -15,14 +15,17 @@ options:
             Apt repository key, typically needed for apt-repo-spec.
     private_jna_url:
         type: string
+        default: ""
         description: >
             URL for the private jna tar file. DSE requires JNA >= 3.4
     private_jre_url:
         type: string
+        default: ""
         description: >
             URL for the private jre tar file. DSE requires Oracle java JRE >= 1.7
     private_dse_url:
         type: string
+        default: ""
         description: >
             URL for the private dse tar file. Tar file of all the dse deb packages.
             Used when external apt repositories are not allowed or available.
@@ -39,6 +42,12 @@ options:
             /etc setup and trigger cassandra restart on config-change or
             upgrade-charm), or "all".
             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
+    allow-single-node:
+        type: boolean
+        default: False
+        description: Allow cassandra to start in a single-node configuration.
+            When deploying a new service with more than one initial unit (i.e.
+            juju deploy -n 2), this should be set to false.
 
 
     # nrpe-external-master relation related options
@@ -114,15 +123,18 @@ options:
             possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
     dc_suffix:
         type: string
+        default: ""
         description:
             Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
             append a string to the EC2 region name. Used with cassandra >= 1.2.x
     datacenter:
         type: string
+        default: ""
         description:
             The datacenter used by the endpoint_snitch. i.e. "DC1"
     rack: 
         type: string
+        default: ""
         description:
             The rack used by the endpoint_snitch. i.e. "Rack1"
 
@@ -160,26 +172,50 @@ options:
     authenticator:
         type: string
         default: AllowAllAuthenticator
+        description: >
+            Authentication backend, implementing IAuthenticator; used to identify
+            users Out of the box, Cassandra provides
+            org.apache.cassandra.auth.{AllowAllAuthenticator, PasswordAuthenticator}. 
+            DSE also provides a Kerberos authenticator for external authentication.
+            - AllowAllAuthenticator performs no checks - set it to disable
+            authentication.
+            - PasswordAuthenticator relies on username/password pairs to authenticate
+              users. It keeps usernames and hashed passwords in system_auth.credentials
+              table.
+              Please increase system_auth keyspace replication factor if you use
+              this authenticator.
+            - com.datastax.bdp.cassandra.auth.KerberosAuthenticator For external
+              authentication through Kerberos. Additional configuration is required
+              in dse.yaml
     authorizer:
         type: string
         default: AllowAllAuthorizer
+        description: >
+            Authorization backend, implementing IAuthorizer; used to limit
+            access/provide permissions Out of the box, Cassandra provides
+            org.apache.cassandra.auth.{AllowAllAuthorizer, CassandraAuthorizer}.
+            - AllowAllAuthorizer allows any action to any user - set it to disable
+            authorization.
+            - CassandraAuthorizer stores permissions in system_auth.permissions
+            table. Please increase system_auth keyspace replication factor if you
+            use this authorizer.
     data_file_directories:
          type: string
          default: /var/lib/cassandra/data
-         descritpion: >
+         description: >
              Space delimited data directories
              For use with phyiscal hardware drive partitions
              Note: Overriden by external_volume_mount
     commitlog_directory:
          type: string
          default: /var/lib/cassandra/commitlog
-         descritpion: >
+         description: >
              Commit log directory
              Note: Overriden by external_volume_mount
     saved_caches_directory:
          type: string
          default: /var/lib/cassandra/saved_caches
-         descritpion: >
+         description: >
              Saved caches directory
              Note: Overriden by external_volume_mount
     external_volume_mount:
@@ -191,20 +227,12 @@ options:
              Overrides data_file_directories, commitlog_directory and
              saved_caches_directory.
              Note: There is only support for a single external mount
-
     num-tokens:
         type: int
         default: 256
         description: >
             Number of tokens per node for Cassandra 1.2+. Ignored for earlier
             versions. 0 disables.
-    # Using initial tokens
-    allow-single-node:
-        type: boolean
-        default: False
-        description: Allow cassandra to start in a single-node configuration.
-            When deploying a new service with more than one initial unit (i.e.
-            juju deploy -n 2), this should be set to false.
     force-seed-nodes:
         type: string
         default: ""
@@ -212,51 +240,6 @@ options:
             A comma separated list of seed nodes. This is useful if the cluster
             being created in this juju environment is part of a larger cluser
             and the seed nodes are remote.
-    token-map-by-unitname:
-        type: string
-        default: ""
-        description: >
-            YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
-            Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set. If persistent storage
-            is being used then use token-map-by-volid instead.
-            Useful when rebalancing a ring by hand
-    token-map-by-volid:
-        type: string
-        default: ""
-        description: >
-            YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
-            Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
-            and cannot be used if token-map-by-unitname is also set. 
-            Useful when rebalancing a ring by hand
-    #------------------------------------------------------------------------
-    # Volume management
-    #   volume-map, volume-dev_regexp are only used 
-    #   if volume-ephemeral-storage == False
-    #------------------------------------------------------------------------
-    volume-ephemeral-storage:
-        type: boolean
-        default: True
-        description: |
-            If False, a configure-error state will be raised if
-               volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
-               below) - see "volume-map" below.
-            If True, service units won't try to use "volume-map" (and
-               related variables) to mount and use external (EBS) volumes,
-               thus storage lifetime will equal VM, thus ephemeral.
-               YOU'VE BEEN WARNED.
-    volume-map:
-        type: string
-        default: ""
-        description: >
-            YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
-            Service units will raise a "configure-error" condition if no volume-map
-            value is set for it - it's expected a human to set it properly to resolve it.
-    volume-dev-regexp:
-        type: string
-        default: "/dev/vd[b-z]"
-        description: >
-            Block device for attached volumes as seen by the VM, will be "scanned"
-            for an unused device when "volume-map" is valid for the unit.
     compaction-throughput:
         type: int
         default: 16
@@ -278,50 +261,57 @@ options:
            repair, which can lead to saturating the network connection and 
            degrading rpc performance. When unset, the default is 200 Mbps or 25
            MB/s. 0 to disable throttling.
-    use-simpleauth:
-        type: boolean
-        default: false
-        description: |
-            If True, it will use passwd-prop64 and access-prop64 configs
-            (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
-            -Dpasswd.properties=/etc/casssandra/passwd.properties \
-            -Daccess.properties=/etc/casssandra/access.properties
-            See http://www.datastax.com/docs/1.0/configuration/authentication
-    auth-passwd64:
-        type: string
-        default: ""
-        description: |
-            base64 encoded content to be written to /etc/casssandra/passwd.properties
-            created by e.g.:
-                juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
-    auth-access64:
-        type: string
-        default: ""
-        description: |
-            base64 encoded content to be written to /etc/casssandra/access.properties
-            created by e.g.:
-                juju set cassandra auth-access64="$(base64 ./access.props)"
-
     commit_failure_policy: 
         type: string
         default: stop 
         description: >
              policy for commit disk failures. stop, stop_commit, ignore
+             stop: shut down gossip and Thrift, leaving the node effectively
+                   dead, but can still be inspected via JMX.
+             stop_commit: shutdown the commit log, letting writes collect but 
+                          continuing to service reads, as in pre-2.0.5
+                          Cassandra
+             ignore: ignore fatal errors and let the batches fail
     tombstone_warn_threshold:
         type: int
         default: 1000
+        description: >
+            When executing a scan, within or across a partition, we need to keep
+            the tombstones seen in memory so we can return them to the
+            coordinator, which will use them to make sure other replicas also
+            know about the deleted rows. With workloads that generate a lot of
+            tombstones, this can cause performance problems and even exaust the
+            server heap. Adjust the thresholds here if you understand the
+            dangers and want to scan more tombstones anyway.
     tombstone_failure_threshold:
         type: int
         default: 100000
+        description: >
+            When executing a scan, within or across a partition, we need to keep
+            the tombstones seen in memory so we can return them to the
+            coordinator, which will use them to make sure other replicas also
+            know about the deleted rows. With workloads that generate a lot of
+            tombstones, this can cause performance problems and even exaust the
+            server heap. Adjust the thresholds here if you understand the
+            dangers and want to scan more tombstones anyway.
     batch_size_warn_threshold_in_kb:
         type: int
         default: 5
+        description:
+            Log WARN on any batch size exceeding this value. 5kb per batch by
+            default.
     cas_contention_timeout_in_ms:
         type: int
         default: 1000
+        description: >
+            How long a coordinator should continue to retry a CAS operation
+            that contends with other proposals for the same row
     preheat_kernel_page_cache:
          type: string
          default: "false"
+         description: >
+             Enable or disable kernel page cache preheating from
+             contents of the key cache after compaction.
 
     # Config changed options that do not require a restart
     io-scheduler:

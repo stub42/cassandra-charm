@@ -1,26 +1,51 @@
-See README.storage for the persistent storage approach taken.
+TODO
 
-TODO(jjo):  [2012/Sep/27]
-* [P0]  Support setting an invalid volume-map  - ie don't
-        assume we've 'lost' our volume assignment -> raise error,
-        to require human intervention (play safe & conservative)
 
-* [P0]  Review state/needed configs/etc in case of "re-attaching" set
-        of volumes into a fresh new deployment (should serve data
-        present in volume-s) - this really requires a well thought
-        statemachine transition diagram, to assure we'll never e.g.:
-        - override already populated volumes, and/or "partially"
-          serve a cluster (units should behave consistently).
-     
-* [P0]  Fix/implement DELAY_START_UNTIL_VOLUME logic (config set
-        to indeed make the instance to void serving, until volume-map
-        "assigns" a volume to it)
+* Units to update
 
-* [P0]  Do "full-cycle" testing, specially assess that volumes
-        survive destroy-service, and can 'resume' serving if
-        re-attached and setup with proper 'volume-map'.
+The previous incarnation of the cassandra charm allowed the updating
+of a subset of nodes. This is very useful for proving a change. This
+should be reintroduced.
 
-* [P1]  Create helper scripts to scrape euca-describe-volumes, and 'merge'
-        with juju status output, to:
-        - fire attachments, then:
-        - set a proper volume-map (instance->volume)
+
+* Existing data
+
+More extensive testing is needed for using existing data. When there
+is a large cassandra data set start up and shutdown take longer.
+
+1) Large data sets
+
+2) Node startup with a pre-existing persistent storage volume with
+a large data set.
+
+3) When a node has had no persistent storage and persistent storage is
+introduced after it has existing data on the "local" file system.
+This is currently not supported
+
+
+* Authentication
+
+The previous incarnation of the cassandra charm supported cassandra
+1.0.x which could utilize simple authentication. With modern cassandra
+authentication is built in. This is currently not supported by the
+charm and should be.
+
+
+* Initial Tokens and Leader Election
+
+The previous incarnation of the cassandra charm supported cassandra
+1.0.x which did not support virtual nodes. This version utilized the
+token-map-by-unitname and token-map-by-volid to map initial tokens
+to each cassandra node.
+
+This required an initial leader node to be the seed node. Therefore,
+leader election was required. Juju does not currently handle leader
+election (although it is in the works) so this was handled by the 
+previous version of the charm.
+
+With modern cassandra and the use of virtual nodes this is no longer
+necessary.
+
+For the purposes of backward compatibility we may want to re-introduce
+these features.
+

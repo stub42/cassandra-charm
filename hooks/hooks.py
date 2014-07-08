@@ -2,7 +2,6 @@
 
 import sys
 import os
-import os.path
 import shutil
 import socket
 import glob
@@ -27,14 +26,6 @@ from charmhelpers.contrib.charmsupport import nrpe
 from charmhelpers.payload.archive import extract
 
 hooks = hookenv.Hooks()
-
-# XXX volume management
-# XXX leader election
-# XXX hooekenv.config() cross hook bug
-# XXX units to update
-# XXX more juju logging
-# XXX Testing with existing data
-# XXX Test replacing a node with persistant storage
 
 
 def Template(*args, **kw):
@@ -375,9 +366,6 @@ def cassandra_yaml_template():
 
     config_dict = hookenv.config()
 
-    # XXX Add num_tokens vs initial token check
-    # XXX Handle initial tokens if needed
-
     # If any of these options change Cassandra must be restarted
     # config.yaml options
     options = [ 'cluster-name', 'cluster-port', 'client-port', 'partitioner',
@@ -443,9 +431,6 @@ def cassandra_env_template():
     # If any of these options change Cassandra must be restarted
     options = [ 'auto-memory', 'heap-size', 'new-gen-size', 'jmx-port',
                 'extra-jvm-opts']
-    # XXX Handle simple auth for 1.0.x
-    # -Dpasswd.properties=${CASSANDRA_PASSWD}
-    # -Daccess.properties=${CASSANDRA_ACCESS}
 
     # This bit of insanity sends the full dictionary as a dict member
     # to overcome the use of VAR-NAME rather than VAR_NAME in
