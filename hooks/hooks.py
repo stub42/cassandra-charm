@@ -12,6 +12,8 @@ import time
 import re
 import apt_pkg
 import json
+import pwd
+import grp
 
 import _pythonpath
 _ = _pythonpath
@@ -43,6 +45,17 @@ def Template(*args, **kw):
     """
     from jinja2 import Template
     return Template(*args, **kw)
+
+
+def recursive_chown(directory, user="root", group="root"):
+    uid = pwd.getpwnam(user).pw_uid
+    gid = grp.getgrnam(group).gr_gid
+
+    for root, dirs, files in os.walk(directory):
+        for dirname in dirs:
+            os.chown(os.path.join(root, dirname), uid, gid)
+        for filename in files:
+            os.chown(os.path.join(root, filename), uid, gid)
 
 
 def get_cassandra_version():
@@ -612,23 +625,27 @@ def setup_directories():
         config_dict['commitlog_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'commitlog')
         config_dict['saved_caches_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'saved_caches')
 
-    # XXX recursive chown to cassandra:cassandra
-
     for directory in config_dict['data_file_directories'].split(' '):
         directory = os.path.dirname(directory)
-        if not os.path.exists(directory):
+        if os.path.exists(directory):
+            recursive_chown(directory, user="cassandra", group="cassandra")
+        else:
             hookenv.log("Creating cassandra data top directory {}".format(directory))
             host.mkdir(directory, owner='cassandra', group='cassandra',
             perms=0755, force=True)
             
     directory = os.path.dirname(config_dict['commitlog_directory'])
-    if not os.path.exists(directory):
+    if os.path.exists(directory):
+        recursive_chown(directory, user="cassandra", group="cassandra")
+    else:
         hookenv.log("Creating cassandra commitlog top directory {}".format(directory))
         host.mkdir(directory, owner='cassandra', group='cassandra',
         perms=0755, force=True)
 
     directory = os.path.dirname(config_dict['saved_caches_directory'])
-    if not os.path.exists(directory):
+    if os.path.exists(directory):
+        recursive_chown(directory, user="cassandra", group="cassandra")
+    else:
         hookenv.log("Creating cassandra saved_caches top directory {}".format(directory))
         host.mkdir(directory, owner='cassandra', group='cassandra',
         perms=0755, force=True)
