@@ -2,8 +2,6 @@
 
 import sys
 import os
-import shutil
-import socket
 import glob
 import subprocess
 import shutil
@@ -17,13 +15,9 @@ import grp
 import _pythonpath
 _ = _pythonpath
 
-from charmhelpers.contrib.templating.pyformat import render
 from charmhelpers import fetch
-
 from charmhelpers.core import hookenv, host
 from charmhelpers.contrib.charmsupport import nrpe
-
-from charmhelpers.payload.archive import extract
 
 hooks = hookenv.Hooks()
 
@@ -52,7 +46,7 @@ def recursive_chown(directory, user="root", group="root"):
 def get_cassandra_version():
     apt_pkg.init()
     cache = apt_pkg.Cache()
-    pkgver=cache['cassandra'].current_ver
+    pkgver = cache['cassandra'].current_ver
     if pkgver is None and hookenv.config('dse'):
         version_string = "2.0"
     else:
@@ -63,7 +57,7 @@ def get_cassandra_version():
 def disable_cassandra_start():
     policy_rc = os.path.join("/", "usr", "sbin", "policy-rc.d")
     if os.path.exists(policy_rc):
-        shutil.move(policy_rc, "{}-orig".format(poiicy_rc))
+        shutil.move(policy_rc, "{}-orig".format(policy_rc))
 
     shutil.copyfile(os.path.join(hookenv.charm_dir(), "files", "policy-rc.d"),
                     policy_rc)
@@ -73,7 +67,7 @@ def disable_cassandra_start():
 def enable_cassandra_start():
     policy_rc = os.path.join("/", "usr", "sbin", "policy-rc.d")
     if os.path.exists("{}-orig".format(policy_rc)):
-        shutil.move("{}-orig".format(poiicy_rc), policy_rc)
+        shutil.move("{}-orig".format(policy_rc), policy_rc)
     else:
         os.unlink(policy_rc)
 
@@ -81,7 +75,7 @@ def enable_cassandra_start():
 def get_cassandra_config_dir():
     if hookenv.config('dse'):
         return '/etc/dse/cassandra/'
-    else: 
+    else:
         return '/etc/cassandra/'
 
 
@@ -94,7 +88,8 @@ def get_cassandra_env_file():
 
 
 def get_cassandra_rackdc_file():
-    return os.path.join(get_cassandra_config_dir(), "cassandra-rackdc.properties")
+    return os.path.join(get_cassandra_config_dir(),
+                        "cassandra-rackdc.properties")
 
 
 def get_seeds():
@@ -110,7 +105,7 @@ def get_seeds():
 
     seeds = []
     for peer in hookenv.relations_of_type(reltype="cluster"):
-       seeds.append(peer['private-address'])
+        seeds.append(peer['private-address'])
 
     seeds.append(hookenv.unit_private_ip())
     return seeds
@@ -122,7 +117,8 @@ def set_io_scheduler():
     config_dict = hookenv.config()
     # For now force directories if using external volume
     if config_dict.get('external_volume_mount'):
-        config_dict['data_file_directories'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'data')
+        config_dict['data_file_directories'] = os.path.join(
+            config_dict.get('external_volume_mount'), 'cassandra', 'data')
 
     regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
 
@@ -133,11 +129,12 @@ def set_io_scheduler():
                         "".format(directory, config_dict['io-scheduler']))
             output = subprocess.check_output(['df', directory])
             block_dev = re.findall(regex, output)[0]
-            sys_file = os.path.join("/", "sys", "block", block_dev, "queue", "scheduler")
+            sys_file = os.path.join("/", "sys", "block", block_dev, "queue",
+                                    "scheduler")
             host.write_file(sys_file, config_dict['io-scheduler'], perms=0644)
         else:
-            hookenv.log("Directory {} does not exist. Cannot set io scheduler {}"
-                        "".format(directory, config_dict['io-scheduler']))
+            hookenv.log("Directory {} does not exist. Cannot set io scheduler "
+                        "{}".format(directory, config_dict['io-scheduler']))
 
 
 def is_cassandra_running():
@@ -153,34 +150,44 @@ def is_cassandra_running():
         hookenv.log("Cassandra is stopped", 'INFO')
         return False
     else:
-        f=open (pid_file,"r")
+        f = open(pid_file, "r")
         for line in f:
             pid = int(line.strip())
         if not pid > 1:
-            raise RuntimeError("Cassandra pid is less than or equal to 1. Aborting")
+            raise RuntimeError("Cassandra pid is less than or equal to 1. "
+                               "Aborting")
         try:
             # This does not kill the process but checks for its existence
             os.kill(pid, 0)
             hookenv.log("Cassandra PID {} is running".format(pid), 'INFO')
         except OSError:
-            raise RuntimeError("Cassandra PID file exists but PID {} is not running. Please manually check on the state of Cassandra".format(pid) )
+            raise RuntimeError("Cassandra PID file exists but PID {} is not "
+                               "running. Please manually check on the state "
+                               "of Cassandra".format(pid))
         # Wait for full up state with binary backoff
         # up to 256 seconds
         for i in range(9):
             try:
                 # This does not kill the process but checks for its existence
                 os.kill(pid, 0)
-                hookenv.log("Cassandra PID {} is still running".format(pid), 'INFO')
+                hookenv.log("Cassandra PID {} is still running".format(pid))
             except OSError:
-                raise RuntimeError("Cassandra PID {} is no longer running. Please manually check on the state of Cassandra".format(pid) )
+                raise RuntimeError("Cassandra PID {} is no longer running. "
+                                   "Please manually check on the state of "
+                                   "Cassandra".format(pid))
             try:
-                subprocess.check_call(["nodetool", "-h", hookenv.unit_private_ip(), "info"], stderr=open(os.devnull, 'wb'))
+                subprocess.check_call(["nodetool", "-h",
+                                      hookenv.unit_private_ip(), "info"],
+                                      stderr=open(os.devnull, 'wb'))
                 hookenv.log("Cassandra is running", 'INFO')
                 return True
             except:
-                hookenv.log("Cassandra is still not fully up at attempt {}".format(i), 'INFO')
-                time.sleep(2**i)
-        raise RuntimeError("Cassandra PID {} is running but not responding to nodetool. Please manually check on the state of Cassandra".format(pid) )
+                hookenv.log("Cassandra is still not fully up at attempt {}"
+                            "".format(i))
+                time.sleep(2 ** i)
+        raise RuntimeError("Cassandra PID {} is running but not responding to "
+                           "nodetool. Please manually check on the state of "
+                           "Cassandra".format(pid))
 
 
 def stop_cassandra():
@@ -195,7 +202,7 @@ def stop_cassandra():
     # XXX wait time for cassandra to process
     if is_cassandra_running():
         raise RuntimeError("Cassandra failed to stop")
-    
+
 
 def start_cassandra():
     if hookenv.config('dse'):
@@ -216,7 +223,7 @@ def restart_cassandra():
     start_cassandra()
 
 
-def does_cassandra_need_to_restart(options = [None]):
+def does_cassandra_need_to_restart(options=[None]):
     ''' Determine if Cassandra needs to restart
         Check critical options for changes
         Set config_dict['restart_needed'] True or False
@@ -268,7 +275,7 @@ def write_restart_request(restart_request_dict):
 
 
 def request_cassandra_restart():
-    ''' Make peers aware of restart request. 
+    ''' Make peers aware of restart request.
         Restart if mine is the oldest request '''
 
     config_dict = hookenv.config()
@@ -283,8 +290,10 @@ def request_cassandra_restart():
     if restart_needed:
         hookenv.log("Cassandra restart is requested")
 
-        if config_dict.get('external_volume_mount') and not is_external_volume_mounted():
-            hookenv.log("Do not restart Cassandra, we are waiting on an external volume to mount")
+        if (config_dict.get('external_volume_mount') and not
+                is_external_volume_mounted()):
+            hookenv.log("Do not restart Cassandra, we are waiting on an "
+                        "external volume to mount")
             return
 
         if config_dict['allow-single-node']:
@@ -296,16 +305,20 @@ def request_cassandra_restart():
             restart_request_time = int(time.time() * factor)
             # Not in a relation hook. Need to set relation id
             for peer in hookenv.relations_of_type(reltype="cluster"):
-                hookenv.relation_set(relation_id = peer['__relid__'],
-                                     relation_settings = {"restart_request_time": restart_request_time})
-            restart_request_dict['restart_request_time'] = restart_request_time 
+                hookenv.relation_set(
+                    relation_id=peer['__relid__'],
+                    relation_settings={"restart_request_time":
+                                       restart_request_time})
+            restart_request_dict['restart_request_time'] = restart_request_time
             write_restart_request(restart_request_dict)
-            hookenv.log("Setting my restart request time on the peer relation, {}. "
-                        "Exiting cleanly to wait my turn.".format(restart_request_time))
+            hookenv.log("Setting my restart request time on the peer relation,"
+                        " {}. Exiting cleanly to wait my turn."
+                        "".format(restart_request_time))
             return
         else:
             restart_request_time = int(restart_request_time)
-            hookenv.log("Cassandra restart request time {}".format(restart_request_time))
+            hookenv.log("Cassandra restart request time {}"
+                        "".format(restart_request_time))
     else:
         hookenv.log("Cassandra does not need a restart. Exiting cleanly")
         return
@@ -327,32 +340,37 @@ def request_cassandra_restart():
                     "{} == {}. Starting over to break the deadlock"
                     "".format(restart_request_time, oldest_request))
         restart_request_time = int((time.time() + node_id) * factor)
-        # Reset on on all peer relations so others don't get stuck 
+        # Reset on on all peer relations so others don't get stuck
         # waiting on a restart that will never happen
         for peer in hookenv.relations_of_type(reltype="cluster"):
-            hookenv.relation_set(relation_id = peer['__relid__'],
-                                 relation_settings = {"restart_request_time": restart_request_time})
+            hookenv.relation_set(
+                relation_id=peer['__relid__'],
+                relation_settings={"restart_request_time":
+                                   restart_request_time})
 
-        hookenv.relation_set(relation_settings={"restart_request_time": restart_request_time})
-        restart_request_dict['restart_request_time'] = restart_request_time 
+        hookenv.relation_set(
+            relation_settings={"restart_request_time": restart_request_time})
+        restart_request_dict['restart_request_time'] = restart_request_time
         write_restart_request(restart_request_dict)
     elif restart_request_time < oldest_request:
-        hookenv.log("My restart request time is the oldest, {}. Less than {}. Out of {}.  {}. "
-                    "Restarting".format(restart_request_time, oldest_request,
-                                        len(restart_request_times),
-                                        sorted(restart_request_times)))
+        hookenv.log("My restart request time is the oldest, {}. Less than {}. "
+                    "Out of {}.  {}. Restarting"
+                    "".format(restart_request_time, oldest_request,
+                              len(restart_request_times),
+                              sorted(restart_request_times)))
         restart_cassandra()
         # Tell all peers restart is no longer needed
         hookenv.log("Restart complete. Informing peers.")
         for peer in hookenv.relations_of_type(reltype="cluster"):
-            hookenv.relation_set(relation_id = peer['__relid__'],
-                                 relation_settings = {"restart_request_time": None})
+            hookenv.relation_set(
+                relation_id=peer['__relid__'],
+                relation_settings={"restart_request_time": None})
         restart_request_dict['restart_needed'] = False
         restart_request_dict['restart_request_time'] = False
         write_restart_request(restart_request_dict)
     else:
-        hookenv.log("My restart request time is NOT the oldest, {}. Greater than {}. "
-                    "Out of {}. {} Exiting cleanly to wait my turn."
+        hookenv.log("My restart request time is NOT the oldest, {}. Greater "
+                    "than {}. Out of {}. {} Exiting cleanly to wait my turn."
                     "".format(restart_request_time, oldest_request,
                               len(restart_request_times),
                               sorted(restart_request_times)))
@@ -368,18 +386,15 @@ def cassandra_yaml_template():
 
     # If any of these options change Cassandra must be restarted
     # config.yaml options
-    options = [ 'cluster-name', 'cluster-port', 'client-port', 'partitioner',
-                'endpoint_snitch', 'dse', 'authenticator', 'authorizer',
-                'data_file_directories', 'commitlog_directory',
-                'saved_caches_directory', 'num-tokens', 'allow-single-node',
-                'force-seed-nodes', 'token-map-by-unitname',
-                'token-map-by-volid', 'volume-ephemeral-storage', 'volume-map',
-                'volume-dev-regexp', 'compaction-throughput',
-                'stream-throughput', 'use-simpleauth', 'auth-passwd64',
-                'auth-access64', 'commit_failure_policy',
-                'tombstone_warn_threshold', 'tombstone_failure_threshold',
-                'batch_size_warn_threshold_in_kb',
-                'cas_contention_timeout_in_ms', 'preheat_kernel_page_cache']
+    options = ['cluster-name', 'cluster-port', 'client-port', 'partitioner',
+               'endpoint_snitch', 'dse', 'authenticator', 'authorizer',
+               'data_file_directories', 'commitlog_directory',
+               'saved_caches_directory', 'num-tokens', 'allow-single-node',
+               'force-seed-nodes', 'compaction-throughput',
+               'stream-throughput', 'commit_failure_policy',
+               'tombstone_warn_threshold', 'tombstone_failure_threshold',
+               'batch_size_warn_threshold_in_kb',
+               'cas_contention_timeout_in_ms', 'preheat_kernel_page_cache']
 
     # Additional options
     options = options + ['private_address', 'seeds']
@@ -390,14 +405,16 @@ def cassandra_yaml_template():
     config = {}
     for key, value in config_dict.iteritems():
         config[key] = value
-    config['data_file_directories'] = config['data_file_directories'].split(' ')
+    config['data_file_directories'] = config['data_file_directories'].split(
+        ' ')
     config['config'] = config
 
-    template_file = "{}/templates/cassandra.yaml.tmpl".format(hookenv.charm_dir())
+    template_file = os.path.join(hookenv.charm_dir(), "templates",
+                                 "cassandra.yaml.tmpl")
     contents = Template(open(template_file).read()).render(config)
-    host.write_file(get_cassandra_yaml_file(), contents )
+    host.write_file(get_cassandra_yaml_file(), contents)
 
-    return does_cassandra_need_to_restart(options = options)
+    return does_cassandra_need_to_restart(options=options)
 
 
 def dse_yaml_template():
@@ -411,13 +428,14 @@ def dse_yaml_template():
 
     # If any of these options change Cassandra must be restarted
     # config.yaml options
-    options = [ 'endpoint_snitch' ]
+    options = ['endpoint_snitch']
 
-    template_file = "{}/templates/dse.yaml.tmpl".format(hookenv.charm_dir())
+    template_file = os.path.join(hookenv.charm_dir(), "templates",
+                                 "dse.yaml.tmpl")
     contents = Template(open(template_file).read()).render(config_dict)
     host.write_file(dse_yaml_file, contents)
 
-    return does_cassandra_need_to_restart(options = options)
+    return does_cassandra_need_to_restart(options=options)
 
 
 def cassandra_env_template():
@@ -429,8 +447,8 @@ def cassandra_env_template():
     config_dict = hookenv.config()
 
     # If any of these options change Cassandra must be restarted
-    options = [ 'auto-memory', 'heap-size', 'new-gen-size', 'jmx-port',
-                'extra-jvm-opts']
+    options = ['auto-memory', 'heap-size', 'new-gen-size', 'jmx-port',
+               'extra-jvm-opts']
 
     # This bit of insanity sends the full dictionary as a dict member
     # to overcome the use of VAR-NAME rather than VAR_NAME in
@@ -440,11 +458,12 @@ def cassandra_env_template():
         config[key] = value
     config['config'] = config
 
-    template_file = "{}/templates/cassandra-env.tmpl".format(hookenv.charm_dir())
+    template_file = os.path.join(hookenv.charm_dir(), "templates",
+                                 "cassandra-env.tmpl")
     contents = Template(open(template_file).read()).render(config)
-    host.write_file(get_cassandra_env_file(), contents )
+    host.write_file(get_cassandra_env_file(), contents)
 
-    return does_cassandra_need_to_restart(options = options)
+    return does_cassandra_need_to_restart(options=options)
 
 
 def cassandra_rackdc_template():
@@ -456,13 +475,14 @@ def cassandra_rackdc_template():
     config_dict = hookenv.config()
 
     # If any of these options change Cassandra must be restarted
-    options = [ 'prefer_local', 'dc_suffix', 'datacenter', 'rack' ]
+    options = ['prefer_local', 'dc_suffix', 'datacenter', 'rack']
 
-    template_file = "{}/templates/cassandra-rackdc.tmpl".format(hookenv.charm_dir())
+    template_file = os.path.join(hookenv.charm_dir(), "templates",
+                                 "cassandra-rackdc.tmpl")
     contents = Template(open(template_file).read()).render(config_dict)
-    host.write_file(get_cassandra_rackdc_file(), contents )
+    host.write_file(get_cassandra_rackdc_file(), contents)
 
-    return does_cassandra_need_to_restart(options = options)
+    return does_cassandra_need_to_restart(options=options)
 
 
 def maintenance():
@@ -474,10 +494,11 @@ def maintenance():
     node_id = int(hookenv.local_unit().split('/')[1])
     repair_day = node_id % 7
 
-    template_dict = { "repair_day": repair_day }
-    template_file = "{}/templates/cassandra_maintenance_cron.tmpl".format(hookenv.charm_dir())
+    template_dict = {"repair_day": repair_day}
+    template_file = os.path.join(hookenv.charm_dir(), "templates",
+                                 "cassandra_maintenance_cron.tmpl")
     contents = Template(open(template_file).read()).render(template_dict)
-    host.write_file(cron_location, contents )
+    host.write_file(cron_location, contents)
 
 
 def ensure_package_status():
@@ -491,16 +512,14 @@ def ensure_package_status():
         packages = ['cassandra']
 
     if package_status not in ['install', 'hold']:
-        valid = False
         RuntimeError("package_status must be 'install' or 'hold' not '{}'"
-            "".format(package_status))
+                     "".format(package_status))
 
     for package in packages:
         selections = ''.join(['{} {}\n'.format(package, package_status)])
         dpkg = subprocess.Popen(['dpkg', '--set-selections'],
-                                    stdin=subprocess.PIPE)
+                                stdin=subprocess.PIPE)
         dpkg.communicate(input=selections)
-
 
 
 @hooks.hook('nrpe-external-master-relation-joined',
@@ -508,11 +527,13 @@ def ensure_package_status():
 def nrpe_external_master_relation():
     ''' Configure the nrpe-external-master relation '''
 
-    local_plugins = os.path.join("/", "usr", "local", "lib", "nagios", "plugins")
+    local_plugins = os.path.join("/", "usr", "local", "lib", "nagios",
+                                 "plugins")
     if os.path.exists(local_plugins):
-        shutil.copyfile(os.path.join(hookenv.charm_dir(), "files", "check_cassandra_heap.sh"),
+        shutil.copyfile(os.path.join(hookenv.charm_dir(), "files",
+                                     "check_cassandra_heap.sh"),
                         os.path.join(local_plugins, "check_cassandra_heap.sh")
-                       )
+                        )
         os.chmod(os.path.join(local_plugins, "check_cassandra_heap.sh"), 0555)
 
     nrpe_compat = nrpe.NRPE()
@@ -524,9 +545,9 @@ def nrpe_external_master_relation():
         nrpe_compat.add_check(
             shortname="cassandra_heap",
             description="Check Cassandra Heap",
-            check_cmd="check_cassandra_heap.sh {} {} {}".format(hookenv.unit_private_ip(),
-                                                                 cassandra_heap_warn,
-                                                                 cassandra_heap_crit)
+            check_cmd="check_cassandra_heap.sh {} {} {}"
+                      "".format(hookenv.unit_private_ip(), cassandra_heap_warn,
+                                cassandra_heap_crit)
         )
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
@@ -537,10 +558,9 @@ def nrpe_external_master_relation():
             nrpe_compat.add_check(
                 shortname="cassandra_disk{}".format(check_name),
                 description="Check Cassandra Disk {}".format(disk),
-                check_cmd="check_disk -u GB -w {}% -c {}% -K 5% -p {}".format(
-                                                                    cassandra_disk_warn,
-                                                                    cassandra_disk_crit,
-                                                                    disk)
+                check_cmd="check_disk -u GB -w {}% -c {}% -K 5% -p {}"
+                          "".format(cassandra_disk_warn, cassandra_disk_crit,
+                                    disk)
             )
 
     nrpe_compat.write()
@@ -555,8 +575,10 @@ def is_external_volume_mounted():
     regex = re.compile(config_dict.get('external_volume_mount'))
 
     for peer in hookenv.relations_of_type(reltype="data"):
-        if hookenv.relation_get(attribute = "mountpoint", unit = peer['__unit__'], rid = peer['__relid__']):
-             related = True
+        if hookenv.relation_get(attribute="mountpoint",
+                                unit=peer['__unit__'],
+                                rid=peer['__relid__']):
+            related = True
 
     if related:
         output = subprocess.check_output(['mount'])
@@ -584,7 +606,8 @@ def data_relation_changed():
 
 @hooks.hook('data-relation-joined')
 def data_relation_joined():
-    ''' Request external volume from storage subordinate by setting mountpoint '''
+    ''' Request external volume from storage subordinate by setting
+        mountpoint '''
 
     config_dict = hookenv.config()
 
@@ -596,8 +619,10 @@ def data_relation_joined():
     hookenv.log("Setting mountpoint in the storage data relation: {}"
                 "".format(config_dict.get('external_volume_mount')))
     for peer in hookenv.relations_of_type(reltype="data"):
-        hookenv.relation_set(relation_id = peer['__relid__'],
-                             relation_settings = {"mountpoint": config_dict.get('external_volume_mount')})
+        hookenv.relation_set(
+            relation_id=peer['__relid__'],
+            relation_settings={"mountpoint":
+                               config_dict.get('external_volume_mount')})
 
 
 def setup_directories():
@@ -606,44 +631,51 @@ def setup_directories():
 
     # For now force directories if using external volume
     if config_dict.get('external_volume_mount'):
-        config_dict['data_file_directories'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'data')
-        config_dict['commitlog_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'commitlog')
-        config_dict['saved_caches_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'saved_caches')
+        config_dict['data_file_directories'] = os.path.join(
+            config_dict.get('external_volume_mount'), 'cassandra', 'data')
+        config_dict['commitlog_directory'] = os.path.join(
+            config_dict.get('external_volume_mount'), 'cassandra', 'commitlog')
+        config_dict['saved_caches_directory'] = os.path.join(
+            config_dict.get('external_volume_mount'),
+            'cassandra', 'saved_caches')
 
     for directory in config_dict['data_file_directories'].split(' '):
         directory = os.path.dirname(directory)
         if os.path.exists(directory):
             recursive_chown(directory, user="cassandra", group="cassandra")
         else:
-            hookenv.log("Creating cassandra data top directory {}".format(directory))
+            hookenv.log("Creating cassandra data top directory {}"
+                        "".format(directory))
             host.mkdir(directory, owner='cassandra', group='cassandra',
-            perms=0755, force=True)
-            
+                       perms=0755, force=True)
+
     directory = os.path.dirname(config_dict['commitlog_directory'])
     if os.path.exists(directory):
         recursive_chown(directory, user="cassandra", group="cassandra")
     else:
-        hookenv.log("Creating cassandra commitlog top directory {}".format(directory))
+        hookenv.log("Creating cassandra commitlog top directory {}"
+                    "".format(directory))
         host.mkdir(directory, owner='cassandra', group='cassandra',
-        perms=0755, force=True)
+                   perms=0755, force=True)
 
     directory = os.path.dirname(config_dict['saved_caches_directory'])
     if os.path.exists(directory):
         recursive_chown(directory, user="cassandra", group="cassandra")
     else:
-        hookenv.log("Creating cassandra saved_caches top directory {}".format(directory))
+        hookenv.log("Creating cassandra saved_caches top directory {}"
+                    "".format(directory))
         host.mkdir(directory, owner='cassandra', group='cassandra',
-        perms=0755, force=True)
+                   perms=0755, force=True)
 
 
 def install_dse():
     java_jre_dir = os.path.join("/", "usr", "lib", "jvm", "oracle-jre")
     java_jna_dir = os.path.join("/", "usr", "share", "java", "jna")
     java_jna_jar = os.path.join("/", "usr", "share", "java", "jna.jar")
-    
+
     # Install prerequisites
-    packages = ['default-jre-headless', 'libcommons-daemon-java', 'libjna-java',
-                'python-support']
+    packages = ['default-jre-headless', 'libcommons-daemon-java',
+                'libjna-java', 'python-support']
     fetch.apt_install(packages, fatal=True)
 
     # Setup Oracle Java
@@ -655,8 +687,9 @@ def install_dse():
         shutil.move(" ".join(glob.glob(os.path.join(source, "*"))),
                     java_jre_dir)
 
-        subprocess.check_call(["update-alternatives", "--install", "/usr/bin/java",
-                               "java", "/usr/lib/jvm/oracle-jre/bin/java", "1"])
+        subprocess.check_call(["update-alternatives", "--install",
+                               "/usr/bin/java", "java",
+                               "/usr/lib/jvm/oracle-jre/bin/java", "1"])
         subprocess.check_call(["update-alternatives", "--set", "java",
                                "/usr/lib/jvm/oracle-jre/bin/java"])
 
@@ -667,14 +700,18 @@ def install_dse():
             shutil.rmtree(java_jna_dir)
         shutil.move(os.path.join(source, "jna"), java_jna_dir)
         subprocess.check_call(["rm", "-f", java_jna_jar])
-        host.symlink(os.path.join(java_jna_dir, "dist", "jna.jar"), java_jna_jar)
+        host.symlink(os.path.join(java_jna_dir,
+                                  "dist", "jna.jar"),
+                     java_jna_jar)
 
     # Install DSE
     if hookenv.config('private_dse_url'):
         # DSE deb install is not amenable to upgrade
         if hookenv.hook_name() == "install":
             source = fetch.install_remote(hookenv.config('private_dse_url'))
-            cmd = ['dpkg', "--install" ] + glob.glob(os.path.join(source, "dse", "*"))
+            cmd = ['dpkg', "--install"] + glob.glob(os.path.join(source,
+                                                                 "dse",
+                                                                 "*"))
             subprocess.check_call(cmd)
     else:
         packages = ['dse-full']
@@ -692,9 +729,10 @@ def install():
 
     packages = ['python-jinja2']
     fetch.apt_install(packages, fatal=True)
-    
+
     if hookenv.config('apt-repo-spec'):
-        fetch.add_source(hookenv.config('apt-repo-spec'),key=hookenv.config('apt-repo-key'))
+        fetch.add_source(hookenv.config('apt-repo-spec'),
+                         key=hookenv.config('apt-repo-key'))
 
     fetch.apt_update(fatal=True)
 
@@ -703,7 +741,7 @@ def install():
         fetch.apt_install(packages, fatal=True)
 
     if hookenv.config('dse'):
-        install_dse() 
+        install_dse()
     else:
         # The Cassandra package starts Cassandra with default options
         # which may conflict with the soon to be configured options.
@@ -731,19 +769,25 @@ def config_changed():
 
     # For now force directories if using external volume
     if config_dict.get('external_volume_mount'):
-        config_dict['data_file_directories'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'data')
-        config_dict['commitlog_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'commitlog')
-        config_dict['saved_caches_directory'] = os.path.join(config_dict.get('external_volume_mount'), 'cassandra', 'saved_caches')
+        config_dict['data_file_directories'] = os.path.join(
+            config_dict.get('external_volume_mount'), 'cassandra', 'data')
+        config_dict['commitlog_directory'] = os.path.join(
+            config_dict.get('external_volume_mount'), 'cassandra', 'commitlog')
+        config_dict['saved_caches_directory'] = os.path.join(
+            config_dict.get('external_volume_mount'),
+            'cassandra', 'saved_caches')
 
-    config_dict['private_address'] =  hookenv.unit_private_ip()
+    config_dict['private_address'] = hookenv.unit_private_ip()
     config_dict['seeds'] = get_seeds()
     config_dict.save()
 
     cassandra_yaml_template()
     cassandra_env_template()
     if hookenv.config('dse'):
-        dse_yaml_template() 
-    if config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch" or config_dict['endpoint_snitch'] == "org.apache.cassandra.locator.GossipingPropertyFileSnitch":
+        dse_yaml_template()
+    if (config_dict['endpoint_snitch'] == "GossipingPropertyFileSnitch" or
+        config_dict['endpoint_snitch'] == "org.apache.cassandra.locator."
+                                          "GossipingPropertyFileSnitch"):
         cassandra_rackdc_template()
 
     nrpe_external_master_relation()
@@ -751,7 +795,8 @@ def config_changed():
     ensure_package_status()
 
     # Handle use of an external volume
-    if not config_dict.get('external_volume_mount') or is_external_volume_mounted():
+    if (not config_dict.get('external_volume_mount') or
+            is_external_volume_mounted()):
         setup_directories()
         set_io_scheduler()
 
@@ -770,17 +815,19 @@ def cluster_relation():
 @hooks.hook('database-relation-joined', 'database-relation-changed')
 def datbase_relation():
     hookenv.log("Setup Cassandra database interface")
-    hookenv.relation_set(relation_settings={"port": hookenv.config('client-port')})
+    hookenv.relation_set(
+        relation_settings={"port": hookenv.config('client-port')})
 
 
 @hooks.hook('jmx-relation-joined', 'jmx-relation-changed')
 def jmx_relation():
     hookenv.log("Setup Cassandra JMX interface")
-    hookenv.relation_set(relation_settings={"port": hookenv.config('jmx-port')})
+    hookenv.relation_set(
+        relation_settings={"port": hookenv.config('jmx-port')})
 
 
 hook_name = os.path.basename(sys.argv[0])
 
 if __name__ == '__main__':
-    hookenv.log("Running {} hook".format(hook_name),'INFO')
+    hookenv.log("Running {} hook".format(hook_name))
     hooks.execute(sys.argv)
