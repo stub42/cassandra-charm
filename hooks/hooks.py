@@ -120,21 +120,29 @@ def set_io_scheduler():
         config_dict['data_file_directories'] = os.path.join(
             config_dict.get('external_volume_mount'), 'cassandra', 'data')
 
-    regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
+    # XXX The block device regex may be a tad simplistic
+    block_regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
+    lxc_regex = re.compile('\/dev\/disk\/by-label\/cloudimg-rootfs', re.IGNORECASE)
 
     for directory in config_dict['data_file_directories'].split(' '):
         directory = os.path.dirname(directory)
         if os.path.exists(directory):
-            hookenv.log("Setting block device of {} to IO scheduler {}"
-                        "".format(directory, config_dict['io-scheduler']))
             output = subprocess.check_output(['df', directory])
-            block_dev = re.findall(regex, output)[0]
-            sys_file = os.path.join("/", "sys", "block", block_dev, "queue",
-                                    "scheduler")
-            host.write_file(sys_file, config_dict['io-scheduler'], perms=0644)
+            # Make no change if we are in an LXC
+            if not re.findall(lxc_regex, output):
+                hookenv.log("Setting block device of {} to IO scheduler {}"
+                            "".format(directory, config_dict['io-scheduler']))
+                block_dev = re.findall(block_regex, output)[0]
+                sys_file = os.path.join("/", "sys", "block", block_dev,
+                                        "queue", "scheduler")
+                host.write_file(sys_file, config_dict['io-scheduler'],
+                                perms=0644)
+            else:
+                hookenv.log("In an LXC. Cannot set io scheduler {}"
+                            "".format(config_dict['io-scheduler']))
         else:
             hookenv.log("Directory {} does not exist. Cannot set io scheduler "
-                        "{}".format(directory, config_dict['io-scheduler']))
+                        "{}".format(config_dict['io-scheduler']))
 
 
 def is_cassandra_running():
