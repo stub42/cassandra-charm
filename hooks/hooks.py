@@ -122,7 +122,8 @@ def set_io_scheduler():
 
     # XXX The block device regex may be a tad simplistic
     block_regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
-    lxc_regex = re.compile('\/dev\/disk\/by-label\/cloudimg-rootfs', re.IGNORECASE)
+    lxc_regex = re.compile('\/dev\/disk\/by-label\/cloudimg-rootfs',
+                           re.IGNORECASE)
 
     for directory in config_dict['data_file_directories'].split(' '):
         directory = os.path.dirname(directory)
@@ -282,7 +283,7 @@ def write_restart_request(restart_request_dict):
             json.dump(restart_request_dict, f)
 
 
-def request_cassandra_restart():
+def request_cassandra_restart(just_mounted=False):
     ''' Make peers aware of restart request.
         Restart if mine is the oldest request '''
 
@@ -311,12 +312,14 @@ def request_cassandra_restart():
 
         if not restart_request_time:
             restart_request_time = int(time.time() * factor)
-            # Not in a relation hook. Need to set relation id
+            relation_settings = {"restart_request_time": restart_request_time}
+            if just_mounted:
+                relation_settings['just_mounted'] = True
+
             for peer in hookenv.relations_of_type(reltype="cluster"):
                 hookenv.relation_set(
                     relation_id=peer['__relid__'],
-                    relation_settings={"restart_request_time":
-                                       restart_request_time})
+                    relation_settings=relation_settings)
             restart_request_dict['restart_request_time'] = restart_request_time
             write_restart_request(restart_request_dict)
             hookenv.log("Setting my restart request time on the peer relation,"
@@ -328,6 +331,14 @@ def request_cassandra_restart():
             hookenv.log("Cassandra restart request time {}"
                         "".format(restart_request_time))
     else:
+        # Force a final cluster-relation-changed run
+        for peer in hookenv.relations_of_type(reltype="cluster"):
+            if peer.get('just_mounted'):
+                hookenv.log("Force final cluster-relation-changed to get "
+                            "peer {} to restart".format(peer.get('__relid__')))
+                hookenv.relation_set(
+                    relation_id=peer['__relid__'],
+                    relation_settings={"trigger": True})
         hookenv.log("Cassandra does not need a restart. Exiting cleanly")
         return
 
@@ -355,9 +366,6 @@ def request_cassandra_restart():
                 relation_id=peer['__relid__'],
                 relation_settings={"restart_request_time":
                                    restart_request_time})
-
-        hookenv.relation_set(
-            relation_settings={"restart_request_time": restart_request_time})
         restart_request_dict['restart_request_time'] = restart_request_time
         write_restart_request(restart_request_dict)
     elif restart_request_time < oldest_request:
@@ -369,10 +377,13 @@ def request_cassandra_restart():
         restart_cassandra()
         # Tell all peers restart is no longer needed
         hookenv.log("Restart complete. Informing peers.")
+        relation_settings = {"restart_request_time": None,
+                             "just_mounted": False,
+                             "trigger": False}
         for peer in hookenv.relations_of_type(reltype="cluster"):
             hookenv.relation_set(
                 relation_id=peer['__relid__'],
-                relation_settings={"restart_request_time": None})
+                relation_settings=relation_settings)
         restart_request_dict['restart_needed'] = False
         restart_request_dict['restart_request_time'] = False
         write_restart_request(restart_request_dict)
@@ -607,7 +618,7 @@ def data_relation_changed():
         hookenv.log("External volume is mounted")
         setup_directories()
         set_io_scheduler()
-        request_cassandra_restart()
+        request_cassandra_restart(just_mounted=True)
     else:
         hookenv.log("External volume is not yet mounted")
 
