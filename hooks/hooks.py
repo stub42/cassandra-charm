@@ -520,6 +520,22 @@ def maintenance():
     host.write_file(cron_location, contents)
 
 
+def swapoff():
+    ''' Turn off swapping on the system '''
+
+    subprocess.check_call(['swapoff', '-a'])
+
+
+def set_sysctl():
+    ''' Configure sysctl settings '''
+
+    cassandra_sysctl_file = os.path.join('/', 'etc', 'sysctl.d',
+                                         '99-cassandra.conf')
+    contents = "vm.max_map_count = 131072\n"
+    host.write_file(cassandra_sysctl_file, contents)
+    subprocess.check_call(['sysctl', '-p', cassandra_sysctl_file])
+
+
 def ensure_package_status():
 
     config_dict = hookenv.config()
@@ -811,6 +827,8 @@ def config_changed():
 
     nrpe_external_master_relation()
     maintenance()
+    set_sysctl()
+    swapoff()
     ensure_package_status()
 
     # Handle use of an external volume
