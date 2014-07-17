@@ -11,6 +11,7 @@ import apt_pkg
 import json
 import pwd
 import grp
+import errno
 
 import _pythonpath
 _ = _pythonpath
@@ -136,8 +137,25 @@ def set_io_scheduler():
                 block_dev = re.findall(block_regex, output)[0]
                 sys_file = os.path.join("/", "sys", "block", block_dev,
                                         "queue", "scheduler")
-                host.write_file(sys_file, config_dict['io-scheduler'],
-                                perms=0644)
+                try:
+                    host.write_file(sys_file, config_dict['io-scheduler'],
+                                    perms=0644)
+                except Exception as e:
+                    if e.errno == errno.EACCES:
+                        hookenv.log("Got Permission Denied trying to set the "
+                                    "IO scheduler at {}. We may be in an LXC. "
+                                    "Exiting gracefully".format(sys_file),
+                                    'WARN')
+                    elif e.errno == errno.ENOENT:
+                        hookenv.log("Got no such file or directory trying to "
+                                    "set the IO scheduler at {}. It may be "
+                                    "this is an LXC, the device name is as "
+                                    "yet unknown to the charm, or LVM/RAID is "
+                                    "hiding the underlying device name. "
+                                    "Exiting gracefully".format(sys_file),
+                                    'WARN')
+                    else:
+                        raise e
             else:
                 hookenv.log("In an LXC. Cannot set io scheduler {}"
                             "".format(config_dict['io-scheduler']))
@@ -523,7 +541,12 @@ def maintenance():
 def swapoff():
     ''' Turn off swapping on the system '''
 
-    subprocess.check_call(['swapoff', '-a'])
+    try:
+        subprocess.check_call(['swapoff', '-a'])
+    except Exception as e:
+        hookenv.log("Got an error trying to turn off swapping. {}. "
+                    "We may be in an LXC. Exiting gracefully"
+                    "".format(e), "WARN")
 
 
 def set_sysctl():
@@ -532,8 +555,17 @@ def set_sysctl():
     cassandra_sysctl_file = os.path.join('/', 'etc', 'sysctl.d',
                                          '99-cassandra.conf')
     contents = "vm.max_map_count = 131072\n"
-    host.write_file(cassandra_sysctl_file, contents)
-    subprocess.check_call(['sysctl', '-p', cassandra_sysctl_file])
+    try:
+        host.write_file(cassandra_sysctl_file, contents)
+        subprocess.check_call(['sysctl', '-p', cassandra_sysctl_file])
+    except Exception as e:
+        if e.errno == errno.EACCES:
+            hookenv.log("Got Permission Denied trying to set the "
+                        "sysctl settings at {}. We may be in an LXC. "
+                        "Exiting gracefully".format(cassandra_sysctl_file),
+                        "WARN")
+        else:
+            raise e
 
 
 def ensure_package_status():

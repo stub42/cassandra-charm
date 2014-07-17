@@ -1,3 +1,4 @@
+all: runtests check
 build: runtests
 
 runtests:
@@ -5,3 +6,7 @@ runtests:
 
 clean:
 	$(MAKE) -C tests clean
+
+check:
+	@pyflakes ./hooks/*.py
+	@pep8 ./hooks/*.py
