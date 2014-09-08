@@ -38,6 +38,15 @@ Cassandra using thrift::
     juju deploy --repository . local:service-that-needs-cassandra
     juju add-relation service-that-needs-cassandra cassandra
 
+
+### Offline Installation
+
+The cassandra charm supports offline-capable installation (and cross platform installation's) by the use of 'fat-packing' the charm.
+
+Place a `cassandra_*.deb` in files. During deployment, the cassandra charm checks for the presence of this file, if present, it utilizes that deb resource instead of reaching out over the wire.
+
+You can fetch upstream Cassandra debs: [here](http://www.apache.org/dist/cassandra/debian/pool/main/c/cassandra/)
+
 # Known Limitations and Issues
 
 Changing the configuration of a deployed Cassandra cluster is supported; however
@@ -71,3 +80,4 @@ during normal operation as more memory is allocated to heap.
 
 - [Apache Cassandra homepage](http://cassandra.apache.org/)
 - [Cassandra Getting Started](http://wiki.apache.org/cassandra/GettingStarted)
+
