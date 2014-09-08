@@ -220,15 +220,19 @@ options:
             Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
             possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
     dc_suffix:
+        default: 
         type: string
         description:
             Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
             append a string to the EC2 region name. Used with cassandra >= 1.2.x
     datacenter:
+        default: 
         type: string
         description:
             The datacenter used by the enpoint_snitch. i.e. "DC1"
-    rack: 
+    rack:
+        default:
         type: string
         description:
             The rack used by the enpoint_snitch. i.e. "Rack1"
+

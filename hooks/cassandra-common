@@ -13,7 +13,7 @@ CASSANDRA_USER="cassandra"
 CASSANDRA_GROUP="cassandra"
 NAGIOS_EXPORT_DIR="/var/lib/nagios/export"
 
-set -e
+set -ex
 
 export LANG=en_US.UTF-8
 
@@ -79,20 +79,33 @@ install_cassandra () {
   APT_REPO_KEY=$(config-get apt-repo-key)
   # Check for configured extra packages to install from config
   EXTRA_PACKAGES="$(config-get extra_packages)"
-  # Add the key
-  if [[ -n "${APT_REPO_KEY}" ]]; then
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys ${APT_REPO_KEY}
-  fi
-  if [[ -n "${APT_REPO_SPEC}" ]]; then 
-    echo "${APT_REPO_SPEC}" > /etc/apt/sources.list.d/cassandra.list
-  fi
-  # Update the repositories
+  # Get the debian package in the files directory.
+  DEBIAN_PACKAGE_FILE=($CHARM_DIR/files/cassandra_*.deb)
+  # Does the debain cassandra package exist in the charm directory?
+  if [[ -f ${DEBIAN_PACKAGE_FILE} ]]; then
+    # The apt-get update command is necessary to install java.
+    apt-get update -qq
+    # Install the prerequisites for cassandra.
+    DEBIAN_FRONTEND=noninteractive apt-get -qq install -y openjdk-7-jre-headless libjna-java python-support python-cheetah dnsutils bzr ${EXTRA_PACKAGES}
+    # Use the debian package manager to install the cassandra package.
+    dpkg -i ${DEBIAN_PACKAGE_FILE}
+  else
+    # Add the key
+    if [[ -n "${APT_REPO_KEY}" ]]; then
+      # Use port 80 to get the keyserver key.
+      apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys ${APT_REPO_KEY}
+    fi
+    if [[ -n "${APT_REPO_SPEC}" ]]; then 
+      echo "${APT_REPO_SPEC}" > /etc/apt/sources.list.d/cassandra.list
+    fi
+    # Update the repositories
 
-  apt-get update
-  # Ensure that cassandra does not startup before we have configured it
-  disable_cassandra_start
-  # Install the package
-  DEBIAN_FRONTEND=noninteractive apt-get -qq install -y cassandra python-cheetah dnsutils bzr ${EXTRA_PACKAGES}
+    apt-get update
+    # Ensure that cassandra does not startup before we have configured it
+    disable_cassandra_start
+    # Install the package
+    DEBIAN_FRONTEND=noninteractive apt-get -qq install -y cassandra python-cheetah dnsutils bzr ${EXTRA_PACKAGES}
+  fi
   bzr_ci || :
 }
 
@@ -349,9 +362,19 @@ configure_cassandra () {
   # Open port ready for expose
   open-port ${CLIENT_PORT}/TCP
 
-  # Default cassandra-env.sh for some cassandra 1.0.x specifies -Xss128k
-  # while 160k min is required
-  sed -i -e "s/-Xss128k/-Xss256k/" ${CASSANDRA_ENV}
+  # Get the architecture from the uname command.
+  ARCHITECTURE=`uname -m`
+  if [ "$ARCHITECTURE" == "ppc64le" ]; then
+    # On the ppc64le architecture requires a higher value for stack size.
+    sed -i -e "s/-Xss[0-9]*k/-Xss1664k/" ${CASSANDRA_ENV}
+  else
+    # Default cassandra-env.sh for some cassandra 1.0.x specifies -Xss128k
+    # while 160k min is required
+    sed -i -e "s/-Xss[0-9]*k/-Xss256k/" ${CASSANDRA_ENV}
+  fi
+  # OpenJDK does not handle the UseCondCardMark flag.
+  sed -i -e "s/-XX:+UseCondCardMark//" ${CASSANDRA_ENV}
+
   # Configure memory settings as specified in configuration
   if [ "$AUTO_MEMORY" = "False" ]; then
     juju-log "Configuring Manual Memory Setttings"
