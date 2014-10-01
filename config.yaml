@@ -76,7 +76,7 @@ options:
             Apt repository to install cassandra package(s) from.
     apt-repo-key:
         type: string
-        default: 4BD736A82B5C1B00
+        default: 749D6EEC0353B12C 
         description: >
             Apt repository key, typically needed for apt-repo-spec.
     force-seed-nodes:
