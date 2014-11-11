@@ -40,12 +40,14 @@ Cassandra using thrift::
 
 # Known Limitations and Issues
 
-Changing the configuration of a deployed Cassandra cluster is supported; however
-it will result in a restart of each Cassandra node as the changes are implemented
-which may result in outages.
+Changing the configuration of a deployed Cassandra cluster is supported;
+however it will result in a restart of each Cassandra node as the changes
+are implemented which may result in outages.
 
 Adding persistent storage after a node has had no persistent storage and it has
 existing data on the "local" file system is not currently not supported.
+
+This is the 'trusty' charm. Upgrade from the 'precise' charm is not supported.
 
 # Configuration
 
