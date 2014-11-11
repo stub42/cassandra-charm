@@ -64,7 +64,7 @@ However be aware that its recommended that Cassandra always remains in 'real'
 memory and should never be swapped out to disk so keep this in mind when
 changing these options.
 
-Cassandra sets both is minimum and maximum heap size on startup so will
+Cassandra sets both its minimum and maximum heap size on startup so will
 pre-allocate all memory to avoid freezes during operation (this happens
 during normal operation as more memory is allocated to heap).
 
