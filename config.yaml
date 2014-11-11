@@ -313,16 +313,178 @@ options:
              Enable or disable kernel page cache preheating from
              contents of the key cache after compaction.
 
-    # Config changed options that do not require a restart
+    apt-repo-spec:
+        type: string
+        default: deb http://www.apache.org/dist/cassandra/debian 12x main
+        description: >
+            Apt repository to install cassandra package(s) from.
+    apt-repo-key:
+        type: string
+        default: 749D6EEC0353B12C 
+        description: >
+            Apt repository key, typically needed for apt-repo-spec.
+    force-seed-nodes:
+        type: string
+        default: ""
+        description: >
+            A comma separated list of seed nodes. This is useful if the cluster
+            being created in this juju environment is part of a larger cluser
+            and the seed nodes are remote.
+    token-map-by-unitname:
+        type: string
+        default: ""
+        description: >
+            YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
+            Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set. If persistent storage
+            is being used then use token-map-by-volid instead.
+            Useful when rebalancing a ring by hand
+    token-map-by-volid:
+        type: string
+        default: ""
+        description: >
+            YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
+            Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
+            and cannot be used if token-map-by-unitname is also set. 
+            Useful when rebalancing a ring by hand
+    use-simpleauth:
+        type: boolean
+        default: false
+        description: |
+            If True, it will use passwd-prop64 and access-prop64 configs
+            (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
+            -Dpasswd.properties=/etc/casssandra/passwd.properties \
+            -Daccess.properties=/etc/casssandra/access.properties
+            See http://www.datastax.com/docs/1.0/configuration/authentication
+    auth-passwd64:
+        type: string
+        default: ""
+        description: |
+            base64 encoded content to be written to /etc/casssandra/passwd.properties
+            created by e.g.:
+                juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
+    auth-access64:
+        type: string
+        default: ""
+        description: |
+            base64 encoded content to be written to /etc/casssandra/access.properties
+            created by e.g.:
+                juju set cassandra auth-access64="$(base64 ./access.props)"
+    extra-jvm-opts:
+        type: string
+        default: ""
+        description: |
+            string to be appended to JVM_OPTS, e.g.:
+            -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+
+    units-to-update:
+        type: string
+        default: "all"
+        description: >
+            Comma separated list of unit numbers to update (i.e. modify
+            /etc setup and trigger cassandra restart on config-change or
+            upgrade-charm), or "all".
+
+    #------------------------------------------------------------------------
+    # Volume management
+    #   volume-map, volume-dev_regexp are only used 
+    #   if volume-ephemeral-storage == False
+    #------------------------------------------------------------------------
+    volume-ephemeral-storage:
+        type: boolean
+        default: True
+        description: |
+            If False, a configure-error state will be raised if
+               volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
+               below) - see "volume-map" below.
+            If True, service units won't try to use "volume-map" (and
+               related variables) to mount and use external (EBS) volumes,
+               thus storage lifetime will equal VM, thus ephemeral.
+               YOU'VE BEEN WARNED.
+            
+    volume-map:
+        type: string
+        default: ""
+        description: >
+            YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
+            Service units will raise a "configure-error" condition if no volume-map
+            value is set for it - it's expected a human to set it properly to resolve it.
+
+    volume-dev-regexp:
+        type: string
+        default: "/dev/vd[b-z]"
+        description: >
+            Block device for attached volumes as seen by the VM, will be "scanned"
+            for an unused device when "volume-map" is valid for the unit.
     io-scheduler:
         type: string
         default: "noop"
         description: >
             Set kernel io scheduler for persistent storage. Only used when
             volume-ephemeral-storage is False.
+            https://www.kernel.org/doc/Documentation/block/switching-sched.txt
     package_status:
         default: "install"
         type: string
         description: |
             The status of service-affecting packages will be set to this value in the dpkg database.
             Useful valid values are "install" and "hold".
+    nagios_context:
+        default: "juju"
+        type: string
+        description: |
+            a string that will be prepended to instance name to set the host name
+            in nagios. So for instance the hostname would be something like:
+                juju-cassandra-0
+            If you're running multiple environments with the same services in them
+            this allows you to differentiate between them.
+    nagios_heapchk_warn_pct:
+        default: 80
+        type: int
+        description: |
+            The pct of heap used to trigger a nagios warning
+    nagios_heapchk_crit_pct:
+        default: 90
+        type: int
+        description: |
+            The pct of heap used to trigger a nagios critcal alert
+    extra_packages:
+        type: string
+        default: ""
+        description: |
+                Extra packages to install. A space delimited list of packages.
+    partitioner:
+        default: "org.apache.cassandra.dht.RandomPartitioner"
+        type: string
+        description:
+            The cassandra partitioner to use
+    endpoint_snitch:
+        default: "org.apache.cassandra.locator.SimpleSnitch"
+        type: string
+        description:
+            The cassandra endpoint snitch to use. Currently supported by the
+            charm, SimpleSnitch and GossipingPropertyFileSnitch.
+    prefer_local:
+        default: False
+        type: boolean
+        description:
+            Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
+            possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
+    dc_suffix:
+        default: 
+        type: string
+        default:
+        description:
+            Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
+            append a string to the EC2 region name. Used with cassandra >= 1.2.x
+    datacenter:
+        default: 
+        type: string
+        default:
+        description:
+            The datacenter used by the enpoint_snitch. i.e. "DC1"
+    rack:
+        default:
+        type: string
+        default:
+        description:
+            The rack used by the enpoint_snitch. i.e. "Rack1"
