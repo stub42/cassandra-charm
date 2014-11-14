@@ -7,6 +7,12 @@ runtests:
 clean:
 	$(MAKE) -C tests clean
 
-check:
-	@pyflakes ./hooks/*.py
-	@pep8 ./hooks/*.py
+lint:
+	@flake8 ./hooks/*.py
+
+sync:
+	@bzr cat \
+            lp:charm-helpers/tools/charm_helpers_sync/charm_helpers_sync.py \
+                > .charm_helpers_sync.py
+	@python .charm_helpers_sync.py -c charm-helpers.yaml
+	@rm .charm_helpers_sync.py
