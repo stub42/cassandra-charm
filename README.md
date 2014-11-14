@@ -49,6 +49,13 @@ existing data on the "local" file system is not currently not supported.
 
 This is the 'trusty' charm. Upgrade from the 'precise' charm is not supported.
 
+The DataStax Enterprise variant of Cassandra cannot be tested by Juju's
+open automated test environment, due to DataStax's policy of requiring
+registration before downloading their software. While DSE hopefully works
+with this charm, it cannot be fully supported and using standard Apache
+Cassandra is recommended wherever possible.
+
+
 # Configuration
 
 Cassandra has a pretty good guess at configuring its Java memory settings to

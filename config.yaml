@@ -1,65 +1,180 @@
-# vim: sw=4 ts=4 et ai tw=80
 options:
-    # http://wiki.apache.org/cassandra/FAQ#ports
-
     # Install and upgrade charm related options
-    apt-repo-spec:
-        type: string
-        default: deb http://www.apache.org/dist/cassandra/debian 20x main
-        description: >
-            Apt repository to install cassandra package(s) from.
-    apt-repo-key:
-        type: string
-        default: 4BD736A82B5C1B00
-        description: >
-            Apt repository key, typically needed for apt-repo-spec.
-    private_jna_url:
-        type: string
-        default: ""
-        description: >
-            URL for the private jna tar file. DSE requires JNA >= 3.4
-    private_jre_url:
-        type: string
-        default: ""
-        description: >
-            URL for the private jre tar file. DSE requires Oracle java JRE >= 1.7
-    private_dse_url:
-        type: string
-        default: ""
-        description: >
-            URL for the private dse tar file. Tar file of all the dse deb packages.
-            Used when external apt repositories are not allowed or available.
     extra_packages:
         type: string
         default: ""
         description: |
                 Extra packages to install. A space delimited list of packages.
-    units-to-update:
+    package_status:
+        default: "install"
         type: string
-        default: "all"
-        description: >
-            Comma separated list of unit numbers to update (i.e. modify
-            /etc setup and trigger cassandra restart on config-change or
-            upgrade-charm), or "all".
-            https://www.kernel.org/doc/Documentation/block/switching-sched.txt
-    allow-single-node:
-        type: boolean
-        default: False
-        description: Allow cassandra to start in a single-node configuration.
-            When deploying a new service with more than one initial unit (i.e.
-            juju deploy -n 2), this should be set to false.
+        description: |
+            The status of service-affecting packages will be set to this
+            value in the dpkg database. Useful valid values are "install"
+            and "hold".
+    install_sources:
+        type: string
+        description: |
+            Charm standard listing of package install sources. If you
+            are using Datastax Enterprise, you will need to override one
+            defaults with your own username and password.
+        default: |
+            - ppa:webupd8team/java
+            - deb http://www.apache.org/dist/cassandra/debian 21x main
+            - deb http://debian.datastax.com/community stable main
+        #   DSE requires you to register and add your username/password here.
+        #   - deb http://un:pw@debian.datastax.com/enterprise stable main
+    install_keys:
+        type: string
+        default: |
+            - null
+            - |
+              -----BEGIN PGP PUBLIC KEY BLOCK-----
+              Version: GnuPG v1
+              Note: Apache Cassandra signing key (2014-11-14)
+              
+              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
+              =yiQ4
+              -----END PGP PUBLIC KEY BLOCK-----
+            - |
+              -----BEGIN PGP PUBLIC KEY BLOCK-----
+              Version: GnuPG v1.4.10 (GNU/Linux)
+              Note: DataStax repo key (2014-11-14)
+              
+              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
+              RPmGJpOrBPU=
+              =JGkB
+              -----END PGP PUBLIC KEY BLOCK-----
 
+              
+    # private_dse_url:
+    #     type: string
+    #     default: ""
+    #     description: >
+    #         URL for the private dse tar file. Tar file of all the dse deb packages.
+    #         Used when external apt repositories are not allowed or available.
+    #
+    #
+##     units-to-update:
+##         type: string
+##         default: "all"
+##         description: >
+##             Comma separated list of unit numbers to update (i.e. modify
+##             /etc setup and trigger cassandra restart on config-change or
+##             upgrade-charm), or "all".
+##             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
+##     allow-single-node:
+##         type: boolean
+##         default: False
+##         description: Allow cassandra to start in a single-node configuration.
+##             When deploying a new service with more than one initial unit (i.e.
+##             juju deploy -n 2), this should be set to false.
+## 
 
     # nrpe-external-master relation related options
     nagios_context:
-        default: "juju"
-        type: string
-        description: |
-            a string that will be prepended to instance name to set the host name
-            in nagios. So for instance the hostname would be something like:
-                juju-cassandra-0
-            If you're running multiple environments with the same services in them
-            this allows you to differentiate between them.
+      default: "juju"
+      type: string
+      description: |
+        Used by the nrpe subordinate charms.
+        A string that will be prepended to instance name to set the host name
+        in nagios. So for instance the hostname would be something like:
+            juju-myservice-0
+        If you're running multiple environments with the same services in them
+        this allows you to differentiate between them.
+    nagios_servicegroups:
+      default: ""
+      type: string
+      description: |
+        A comma-separated list of nagios servicegroups.
+        If left empty, the nagios_context will be used as the servicegroup
     nagios_heapchk_warn_pct:
         default: 80
         type: int
@@ -82,352 +197,349 @@ options:
             The pct of data disk used to trigger a nagios critcal alert
 
 
-    # cassandra-env.sh related options
-    auto-memory:
-        type: boolean
-        default: true
-        description: >
-            Automatically configure memory options based on specification
-            of the server infrastructure its running on.
-    heap-size:
-        type: string
-        default: 1G
-        description: >
-            Total size of Java memory heap, for example 1G or 512M.
-            Only used if auto-memory = false.
-    new-gen-size:
-        type: string
-        default: 100M
-        description: >
-            Size of Java new generation memory, for example 100M.  Only used
-            if auto-memory = false.
-    jmx-port:
-        type: int
-        default: 7199
-        description: JMX management port
-    extra-jvm-opts:
-        type: string
-        default: ""
-        description: |
-            string to be appended to JVM_OPTS, e.g.:
-            -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+##     # cassandra-env.sh related options
+##     auto-memory:
+##         type: boolean
+##         default: true
+##         description: >
+##             Automatically configure memory options based on specification
+##             of the server infrastructure its running on.
+##     heap-size:
+##         type: string
+##         default: 1G
+##         description: >
+##             Total size of Java memory heap, for example 1G or 512M.
+##             Only used if auto-memory = false.
+##     new-gen-size:
+##         type: string
+##         default: 100M
+##         description: >
+##             Size of Java new generation memory, for example 100M.  Only used
+##             if auto-memory = false.
+##     jmx-port:
+##         type: int
+##         default: 7199
+##         description: JMX management port
+##     extra-jvm-opts:
+##         type: string
+##         default: ""
+##         description: |
+##             string to be appended to JVM_OPTS, e.g.:
+##             -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
 
 
-    # cassandra-rackdc.properties for GossipingPropertyFileSnitch related
-    # options
-    prefer_local:
-        default: False
-        type: boolean
-        description:
-            Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
-            possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
-    dc_suffix:
-        type: string
-        default: ""
-        description:
-            Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
-            append a string to the EC2 region name. Used with cassandra >= 1.2.x
-    datacenter:
-        type: string
-        default: ""
-        description:
-            The datacenter used by the endpoint_snitch. i.e. "DC1"
-    rack: 
-        type: string
-        default: ""
-        description:
-            The rack used by the endpoint_snitch. i.e. "Rack1"
+##     # cassandra-rackdc.properties for GossipingPropertyFileSnitch related
+##     # options
+##     prefer_local:
+##         default: False
+##         type: boolean
+##         description:
+##             Used with endpoint_snitch=GossipingPropertyFileSnitch to
+##             prefer the internal ip when possible, as the
+##             Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
+##     dc_suffix:
+##         type: string
+##         default: ""
+##         description:
+##             Add a suffix to a datacenter name. Used by the Ec2Snitch
+##             and Ec2MultiRegionSnitch to append a string to the EC2
+##             region name. Used with cassandra >= 1.2.x
+##     datacenter:
+##         type: string
+##         default: ""
+##         description:
+##             The datacenter used by the endpoint_snitch. i.e. "DC1"
+##     rack: 
+##         type: string
+##         default: ""
+##         description:
+##             The rack used by the endpoint_snitch. i.e. "Rack1"
 
 
-    # Cassandra.yaml related options
+##     # Cassandra.yaml related options
     cluster-name:
         type: string
-        default: "Cassandra Cluster"
+        default: ""
         description: >
-            Name of the Cassandra Cluster - don't change yet!
-    cluster-port:
-        type: int
-        default: 7000
-        description: Cluster communication port
-    client-port:
-        type: int
-        default: 9160
-        description: Thrift clients port
-    partitioner:
-        default: org.apache.cassandra.dht.Murmur3Partitioner
-        type: string
-        description:
-            The cassandra partitioner to use. i.e. org.apache.cassandra.dht.RandomPartitioner
-    endpoint_snitch:
-        default: "org.apache.cassandra.locator.SimpleSnitch"
-        type: string
-        description:
-            The cassandra endpoint snitch to use. Currently supported by the
-            charm, SimpleSnitch and GossipingPropertyFileSnitch.
-    dse:
-        type: boolean
-        default: False
-        description:
-            True if using DataStax Enterprise. False if community Cassandra.
-    authenticator:
-        type: string
-        default: AllowAllAuthenticator
-        description: >
-            Authentication backend, implementing IAuthenticator; used to identify
-            users Out of the box, Cassandra provides
-            org.apache.cassandra.auth.{AllowAllAuthenticator, PasswordAuthenticator}. 
-            DSE also provides a Kerberos authenticator for external authentication.
-            - AllowAllAuthenticator performs no checks - set it to disable
-            authentication.
-            - PasswordAuthenticator relies on username/password pairs to authenticate
-              users. It keeps usernames and hashed passwords in system_auth.credentials
-              table.
-              Please increase system_auth keyspace replication factor if you use
-              this authenticator.
-            - com.datastax.bdp.cassandra.auth.KerberosAuthenticator For external
-              authentication through Kerberos. Additional configuration is required
-              in dse.yaml
-    authorizer:
-        type: string
-        default: AllowAllAuthorizer
-        description: >
-            Authorization backend, implementing IAuthorizer; used to limit
-            access/provide permissions Out of the box, Cassandra provides
-            org.apache.cassandra.auth.{AllowAllAuthorizer, CassandraAuthorizer}.
-            - AllowAllAuthorizer allows any action to any user - set it to disable
-            authorization.
-            - CassandraAuthorizer stores permissions in system_auth.permissions
-            table. Please increase system_auth keyspace replication factor if you
-            use this authorizer.
-    data_file_directories:
-         type: string
-         default: /var/lib/cassandra/data
-         description: >
-             Space delimited data directories
-             For use with phyiscal hardware drive partitions
-             Note: Overriden by external_volume_mount
-    commitlog_directory:
-         type: string
-         default: /var/lib/cassandra/commitlog
-         description: >
-             Commit log directory
-             Note: Overriden by external_volume_mount
-    saved_caches_directory:
-         type: string
-         default: /var/lib/cassandra/saved_caches
-         description: >
-             Saved caches directory
-             Note: Overriden by external_volume_mount
-    external_volume_mount:
-         type: string
-         default: ""
-         description: >
-             Used with storage charm for external storage
-             i.e. /srv/data
-             Overrides data_file_directories, commitlog_directory and
-             saved_caches_directory.
-             Note: There is only support for a single external mount
+            Name of the Cassandra cluster. This is mainly used to
+            prevent machines in one logical cluster from joining
+            another. Defaults to the Juju service name.
+##     cluster-port:
+##         type: int
+##         default: 7000
+##         description: Cluster communication port
+##     client-port:
+##         type: int
+##         default: 9160
+##         description: Thrift clients port
+##     partitioner:
+##         default: org.apache.cassandra.dht.Murmur3Partitioner
+##         type: string
+##         description:
+##             The cassandra partitioner to use.
+##             eg. org.apache.cassandra.dht.RandomPartitioner
+##     endpoint_snitch:
+##         default: "org.apache.cassandra.locator.SimpleSnitch"
+##         type: string
+##         description:
+##             The cassandra endpoint snitch to use. Currently supported by the
+##             charm, SimpleSnitch and GossipingPropertyFileSnitch.
+##     dse:
+##         type: boolean
+##         default: False
+##         description:
+##             True if using DataStax Enterprise. False if community Cassandra.
+##     authenticator:
+##         type: string
+##         default: AllowAllAuthenticator
+##         description: >
+##             Authentication backend, implementing IAuthenticator; used to
+##             identify users Out of the box, Cassandra provides
+##             org.apache.cassandra.auth.{AllowAllAuthenticator,
+##             PasswordAuthenticator}. DSE also provides a Kerberos
+##             authenticator for external authentication.
+##             - AllowAllAuthenticator performs no checks - set it to disable
+##             authentication.
+##             - PasswordAuthenticator relies on username/password pairs to
+##               authenticate users. It keeps usernames and hashed passwords
+##               in system_auth.credentials table. Please increase
+##               system_auth keyspace replication factor if you use this
+##               authenticator.
+##             - com.datastax.bdp.cassandra.auth.KerberosAuthenticator For
+##               external authentication through Kerberos. Additional
+##               configuration is required in dse.yaml
+##     authorizer:
+##         type: string
+##         default: AllowAllAuthorizer
+##         description: >
+##             Authorization backend, implementing IAuthorizer; used to limit
+##             access/provide permissions Out of the box, Cassandra provides
+##             org.apache.cassandra.auth.{AllowAllAuthorizer,
+##             CassandraAuthorizer}.
+##             - AllowAllAuthorizer allows any action to any user - set it to
+##               disable authorization.
+##             - CassandraAuthorizer stores permissions in
+##               system_auth.permissions table. Please increase system_auth
+##               keyspace replication factor if you use this authorizer.
+              
+    ## Is there a use case for overriding these in a juju environment?
+    ##
+    ## data_file_directories:
+    ##      type: string
+    ##      default: /var/lib/cassandra/data
+    ##      description: >
+    ##          Space delimited data directories
+    ##          For use with phyiscal hardware drive partitions
+    ##          Note: Overriden by external_volume_mount
+    ## commitlog_directory:
+    ##      type: string
+    ##      default: /var/lib/cassandra/commitlog
+    ##      description: >
+    ##          Commit log directory
+    ##          Note: Overriden by external_volume_mount
+    ## saved_caches_directory:
+    ##      type: string
+    ##      default: /var/lib/cassandra/saved_caches
+    ##      description: >
+    ##          Saved caches directory
+    ##          Note: Overriden by external_volume_mount
+    
+    ## Is there a use case for this being configurable?
+    ## external_volume_mount:
+    ##      type: string
+    ##      default: ""
+    ##      description: >
+    ##          Used with storage charm for external storage
+    ##          i.e. /srv/data
+    ##          Overrides data_file_directories, commitlog_directory and
+    ##          saved_caches_directory.
+    ##          Note: There is only support for a single external mount
+    
     num-tokens:
         type: int
         default: 256
-        description: >
-            Number of tokens per node for Cassandra 1.2+. Ignored for earlier
-            versions. 0 disables.
+        description: Number of tokens per node.
     force-seed-nodes:
         type: string
         default: ""
         description: >
-            A comma separated list of seed nodes. This is useful if the cluster
-            being created in this juju environment is part of a larger cluser
-            and the seed nodes are remote.
-    compaction-throughput:
-        type: int
-        default: 16
-        description: >
-            Throttles compaction to the given total throughput (in MB/sec)
-            across the entire system. The faster you insert data, the faster
-            you need to compact in order to keep the sstable count down,
-            but in general, setting this to 16 to 32 times the rate you
-            are inserting data is more than sufficient.  Setting this to
-            0 disables throttling. Note that this account for all types
-            of compaction, including validation compaction.
-    stream-throughput:
-        type: int
-        default: 200
-        description: >
-           Throttles all outbound streaming file transfers on nodes to the
-           given total throughput in Mbps. This is necessary because Cassandra
-           does mostly sequential IO when streaming data during bootstrap or 
-           repair, which can lead to saturating the network connection and 
-           degrading rpc performance. When unset, the default is 200 Mbps or 25
-           MB/s. 0 to disable throttling.
-    commit_failure_policy: 
-        type: string
-        default: stop 
-        description: >
-             policy for commit disk failures. stop, stop_commit, ignore
-             stop: shut down gossip and Thrift, leaving the node effectively
-                   dead, but can still be inspected via JMX.
-             stop_commit: shutdown the commit log, letting writes collect but 
-                          continuing to service reads, as in pre-2.0.5
-                          Cassandra
-             ignore: ignore fatal errors and let the batches fail
-    tombstone_warn_threshold:
-        type: int
-        default: 1000
-        description: >
-            When executing a scan, within or across a partition, we need to keep
-            the tombstones seen in memory so we can return them to the
-            coordinator, which will use them to make sure other replicas also
-            know about the deleted rows. With workloads that generate a lot of
-            tombstones, this can cause performance problems and even exaust the
-            server heap. Adjust the thresholds here if you understand the
-            dangers and want to scan more tombstones anyway.
-    tombstone_failure_threshold:
-        type: int
-        default: 100000
-        description: >
-            When executing a scan, within or across a partition, we need to keep
-            the tombstones seen in memory so we can return them to the
-            coordinator, which will use them to make sure other replicas also
-            know about the deleted rows. With workloads that generate a lot of
-            tombstones, this can cause performance problems and even exaust the
-            server heap. Adjust the thresholds here if you understand the
-            dangers and want to scan more tombstones anyway.
-    batch_size_warn_threshold_in_kb:
-        type: int
-        default: 5
-        description:
-            Log WARN on any batch size exceeding this value. 5kb per batch by
-            default.
-    cas_contention_timeout_in_ms:
-        type: int
-        default: 1000
-        description: >
-            How long a coordinator should continue to retry a CAS operation
-            that contends with other proposals for the same row
-    preheat_kernel_page_cache:
-         type: string
-         default: "false"
-         description: >
-             Enable or disable kernel page cache preheating from
-             contents of the key cache after compaction.
-
-    apt-repo-spec:
-        type: string
-        default: deb http://www.apache.org/dist/cassandra/debian 12x main
-        description: >
-            Apt repository to install cassandra package(s) from.
-    apt-repo-key:
-        type: string
-        default: 749D6EEC0353B12C 
-        description: >
-            Apt repository key, typically needed for apt-repo-spec.
-    force-seed-nodes:
-        type: string
-        default: ""
-        description: >
-            A comma separated list of seed nodes. This is useful if the cluster
-            being created in this juju environment is part of a larger cluser
-            and the seed nodes are remote.
-    token-map-by-unitname:
-        type: string
-        default: ""
-        description: >
-            YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
-            Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set. If persistent storage
-            is being used then use token-map-by-volid instead.
-            Useful when rebalancing a ring by hand
-    token-map-by-volid:
-        type: string
-        default: ""
-        description: >
-            YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
-            Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
-            and cannot be used if token-map-by-unitname is also set. 
-            Useful when rebalancing a ring by hand
-    use-simpleauth:
-        type: boolean
-        default: false
-        description: |
-            If True, it will use passwd-prop64 and access-prop64 configs
-            (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
-            -Dpasswd.properties=/etc/casssandra/passwd.properties \
-            -Daccess.properties=/etc/casssandra/access.properties
-            See http://www.datastax.com/docs/1.0/configuration/authentication
-    auth-passwd64:
-        type: string
-        default: ""
-        description: |
-            base64 encoded content to be written to /etc/casssandra/passwd.properties
-            created by e.g.:
-                juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
-    auth-access64:
-        type: string
-        default: ""
-        description: |
-            base64 encoded content to be written to /etc/casssandra/access.properties
-            created by e.g.:
-                juju set cassandra auth-access64="$(base64 ./access.props)"
-    extra-jvm-opts:
-        type: string
-        default: ""
-        description: |
-            string to be appended to JVM_OPTS, e.g.:
-            -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
-
-    units-to-update:
-        type: string
-        default: "all"
-        description: >
-            Comma separated list of unit numbers to update (i.e. modify
-            /etc setup and trigger cassandra restart on config-change or
-            upgrade-charm), or "all".
-
-    #------------------------------------------------------------------------
-    # Volume management
-    #   volume-map, volume-dev_regexp are only used 
-    #   if volume-ephemeral-storage == False
-    #------------------------------------------------------------------------
-    volume-ephemeral-storage:
-        type: boolean
-        default: True
-        description: |
-            If False, a configure-error state will be raised if
-               volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
-               below) - see "volume-map" below.
-            If True, service units won't try to use "volume-map" (and
-               related variables) to mount and use external (EBS) volumes,
-               thus storage lifetime will equal VM, thus ephemeral.
-               YOU'VE BEEN WARNED.
-            
-    volume-map:
-        type: string
-        default: ""
-        description: >
-            YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
-            Service units will raise a "configure-error" condition if no volume-map
-            value is set for it - it's expected a human to set it properly to resolve it.
-
-    volume-dev-regexp:
-        type: string
-        default: "/dev/vd[b-z]"
-        description: >
-            Block device for attached volumes as seen by the VM, will be "scanned"
-            for an unused device when "volume-map" is valid for the unit.
-    io-scheduler:
-        type: string
-        default: "noop"
-        description: >
-            Set kernel io scheduler for persistent storage. Only used when
-            volume-ephemeral-storage is False.
-            https://www.kernel.org/doc/Documentation/block/switching-sched.txt
-    package_status:
-        default: "install"
-        type: string
-        description: |
-            The status of service-affecting packages will be set to this value in the dpkg database.
-            Useful valid values are "install" and "hold".
+            A comma separated list of seed node ip addresses. This is
+            useful if the cluster being created in this juju environment
+            is part of a larger cluser and the seed nodes are remote.
+    ##     compaction-throughput:
+    ##         type: int
+    ##         default: 16
+    ##         description: >
+    ##             Throttles compaction to the given total throughput (in MB/sec)
+    ##             across the entire system. The faster you insert data, the faster
+    ##             you need to compact in order to keep the sstable count down,
+    ##             but in general, setting this to 16 to 32 times the rate you
+    ##             are inserting data is more than sufficient.  Setting this to
+    ##             0 disables throttling. Note that this account for all types
+    ##             of compaction, including validation compaction.
+    ##     stream-throughput:
+    ##         type: int
+    ##         default: 200
+    ##         description: >
+    ##            Throttles all outbound streaming file transfers on nodes to the
+    ##            given total throughput in Mbps. This is necessary because Cassandra
+    ##            does mostly sequential IO when streaming data during bootstrap or 
+    ##            repair, which can lead to saturating the network connection and 
+    ##            degrading rpc performance. When unset, the default is 200 Mbps or 25
+    ##            MB/s. 0 to disable throttling.
+    ##     commit_failure_policy: 
+    ##         type: string
+    ##         default: stop 
+    ##         description: >
+    ##              policy for commit disk failures. stop, stop_commit, ignore
+    ##              stop: shut down gossip and Thrift, leaving the node effectively
+    ##                    dead, but can still be inspected via JMX.
+    ##              stop_commit: shutdown the commit log, letting writes collect but 
+    ##                           continuing to service reads, as in pre-2.0.5
+    ##                           Cassandra
+    ##              ignore: ignore fatal errors and let the batches fail
+    ##     tombstone_warn_threshold:
+    ##         type: int
+    ##         default: 1000
+    ##         description: >
+    ##             When executing a scan, within or across a partition, we
+    ##             need to keep the tombstones seen in memory so we can return
+    ##             them to the coordinator, which will use them to make sure
+    ##             other replicas also know about the deleted rows. With
+    ##             workloads that generate a lot of tombstones, this can cause
+    ##             performance problems and even exaust the server heap. Adjust
+    ##             the thresholds here if you understand the dangers and want
+    ##             to scan more tombstones anyway.
+    ##     tombstone_failure_threshold:
+    ##         type: int
+    ##         default: 100000
+    ##         description: >
+    ##             When executing a scan, within or across a partition, we need
+    ##             to keep the tombstones seen in memory so we can return them
+    ##             to the coordinator, which will use them to make sure other
+    ##             replicas also know about the deleted rows. With workloads
+    ##             that generate a lot of tombstones, this can cause
+    ##             performance problems and even exaust the server heap. Adjust
+    ##             the thresholds here if you understand the dangers and want
+    ##             to scan more tombstones anyway.
+    ##     batch_size_warn_threshold_in_kb:
+    ##         type: int
+    ##         default: 5
+    ##         description:
+    ##             Log WARN on any batch size exceeding this value. 5kb per batch by
+    ##             default.
+    ##     cas_contention_timeout_in_ms:
+    ##         type: int
+    ##         default: 1000
+    ##         description: >
+    ##             How long a coordinator should continue to retry a CAS operation
+    ##             that contends with other proposals for the same row
+    ##     preheat_kernel_page_cache:
+    ##          type: string
+    ##          default: "false"
+    ##          description: >
+    ##              Enable or disable kernel page cache preheating from
+    ##              contents of the key cache after compaction.
+    ## 
+    ##     force-seed-nodes:
+    ##         type: string
+    ##         default: ""
+    ##         description: >
+    ##             A comma separated list of seed nodes. This is useful if the cluster
+    ##             being created in this juju environment is part of a larger cluser
+    ##             and the seed nodes are remote.
+    ##     token-map-by-unitname:
+    ##         type: string
+    ##         default: ""
+    ##         description: >
+    ##             YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
+    ##             Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set. If persistent storage
+    ##             is being used then use token-map-by-volid instead.
+    ##             Useful when rebalancing a ring by hand
+    ##     token-map-by-volid:
+    ##         type: string
+    ##         default: ""
+    ##         description: >
+    ##             YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
+    ##             Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
+    ##             and cannot be used if token-map-by-unitname is also set. 
+    ##             Useful when rebalancing a ring by hand
+    ##     use-simpleauth:
+    ##         type: boolean
+    ##         default: false
+    ##         description: |
+    ##             If True, it will use passwd-prop64 and access-prop64 configs
+    ##             (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
+    ##             -Dpasswd.properties=/etc/casssandra/passwd.properties \
+    ##             -Daccess.properties=/etc/casssandra/access.properties
+    ##             See http://www.datastax.com/docs/1.0/configuration/authentication
+    ##     auth-passwd64:
+    ##         type: string
+    ##         default: ""
+    ##         description: |
+    ##             base64 encoded content to be written to /etc/casssandra/passwd.properties
+    ##             created by e.g.:
+    ##                 juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
+    ##     auth-access64:
+    ##         type: string
+    ##         default: ""
+    ##         description: |
+    ##             base64 encoded content to be written to /etc/casssandra/access.properties
+    ##             created by e.g.:
+    ##                 juju set cassandra auth-access64="$(base64 ./access.props)"
+    ##     extra-jvm-opts:
+    ##         type: string
+    ##         default: ""
+    ##         description: |
+    ##             string to be appended to JVM_OPTS, e.g.:
+    ##             -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+    ## 
+    ##     units-to-update:
+    ##         type: string
+    ##         default: "all"
+    ##         description: >
+    ##             Comma separated list of unit numbers to update (i.e. modify
+    ##             /etc setup and trigger cassandra restart on config-change or
+    ##             upgrade-charm), or "all".
+    ## 
+    ##     #------------------------------------------------------------------------
+    ##     # Volume management
+    ##     #   volume-map, volume-dev_regexp are only used 
+    ##     #   if volume-ephemeral-storage == False
+    ##     #------------------------------------------------------------------------
+    ##     volume-ephemeral-storage:
+    ##         type: boolean
+    ##         default: True
+    ##         description: |
+    ##             If False, a configure-error state will be raised if
+    ##                volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
+    ##                below) - see "volume-map" below.
+    ##             If True, service units won't try to use "volume-map" (and
+    ##                related variables) to mount and use external (EBS) volumes,
+    ##                thus storage lifetime will equal VM, thus ephemeral.
+    ##                YOU'VE BEEN WARNED.
+    ##             
+    ##     volume-map:
+    ##         type: string
+    ##         default: ""
+    ##         description: >
+    ##             YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
+    ##             Service units will raise a "configure-error" condition if no volume-map
+    ##             value is set for it - it's expected a human to set it properly to resolve it.
+    ## 
+    ##     volume-dev-regexp:
+    ##         type: string
+    ##         default: "/dev/vd[b-z]"
+    ##         description: >
+    ##             Block device for attached volumes as seen by the VM, will be "scanned"
+    ##             for an unused device when "volume-map" is valid for the unit.
+    ##     io-scheduler:
+    ##         type: string
+    ##         default: "noop"
+    ##         description: >
+    ##             Set kernel io scheduler for persistent storage. Only used when
+    ##             volume-ephemeral-storage is False.
+    ##             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
     nagios_context:
         default: "juju"
         type: string
@@ -447,44 +559,39 @@ options:
         type: int
         description: |
             The pct of heap used to trigger a nagios critcal alert
-    extra_packages:
-        type: string
-        default: ""
-        description: |
-                Extra packages to install. A space delimited list of packages.
-    partitioner:
-        default: "org.apache.cassandra.dht.RandomPartitioner"
-        type: string
-        description:
-            The cassandra partitioner to use
-    endpoint_snitch:
-        default: "org.apache.cassandra.locator.SimpleSnitch"
-        type: string
-        description:
-            The cassandra endpoint snitch to use. Currently supported by the
-            charm, SimpleSnitch and GossipingPropertyFileSnitch.
-    prefer_local:
-        default: False
-        type: boolean
-        description:
-            Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
-            possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
-    dc_suffix:
-        default: 
-        type: string
-        default:
-        description:
-            Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
-            append a string to the EC2 region name. Used with cassandra >= 1.2.x
-    datacenter:
-        default: 
-        type: string
-        default:
-        description:
-            The datacenter used by the enpoint_snitch. i.e. "DC1"
-    rack:
-        default:
-        type: string
-        default:
-        description:
-            The rack used by the enpoint_snitch. i.e. "Rack1"
+##     partitioner:
+##         default: "org.apache.cassandra.dht.RandomPartitioner"
+##         type: string
+##         description:
+##             The cassandra partitioner to use
+##     endpoint_snitch:
+##         default: "org.apache.cassandra.locator.SimpleSnitch"
+##         type: string
+##         description:
+##             The cassandra endpoint snitch to use. Currently supported by the
+##             charm, SimpleSnitch and GossipingPropertyFileSnitch.
+##     prefer_local:
+##         default: False
+##         type: boolean
+##         description:
+##             Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
+##             possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
+##     dc_suffix:
+##         default: 
+##         type: string
+##         default:
+##         description:
+##             Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
+##             append a string to the EC2 region name. Used with cassandra >= 1.2.x
+##     datacenter:
+##         default: 
+##         type: string
+##         default:
+##         description:
+##             The datacenter used by the enpoint_snitch. i.e. "DC1"
+##     rack:
+##         default:
+##         type: string
+##         default:
+##         description:
+##             The rack used by the enpoint_snitch. i.e. "Rack1"
