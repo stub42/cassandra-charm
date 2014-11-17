@@ -29,9 +29,9 @@ options:
         default: |
             - null
             - |
+              Apache Cassandra signing key (2014-11-14)
               -----BEGIN PGP PUBLIC KEY BLOCK-----
               Version: GnuPG v1
-              Note: Apache Cassandra signing key (2014-11-14)
               
               mQINBFQJvgUBEAC0KcYCTj0hd15p4fiXBsbob0sKgsvN5Lm7N9jzJWlGshJ0peMi
               kH8YhDXw5Lh+mPEHksL7t1L8CIr1a+ntns/Opt65ZPO38ENVkOqEVAn9Z5sIoZsb
@@ -82,9 +82,9 @@ options:
               =yiQ4
               -----END PGP PUBLIC KEY BLOCK-----
             - |
+              DataStax repo key (2014-11-14)
               -----BEGIN PGP PUBLIC KEY BLOCK-----
               Version: GnuPG v1.4.10 (GNU/Linux)
-              Note: DataStax repo key (2014-11-14)
               
               mQENBExkbXsBCACgUAbMWASAz/fmnMoWE4yJ/YHeuFHTK8zloJ/mApwizlQXTIVp
               U4UV8nbLJrbkFY92VTcC2/IBtvnHpZl8eVm/JSI7nojXc5Kmm4Ek/cY7uW2KKPr4
@@ -132,8 +132,52 @@ options:
               RPmGJpOrBPU=
               =JGkB
               -----END PGP PUBLIC KEY BLOCK-----
+##     dse:
+##         type: boolean
+##         default: False
+##         description:
+##             True if using DataStax Enterprise. False if community Cassandra.
 
-              
+    # Storage configuration
+    wait_for_storage_broker:
+        type: boolean
+        default: False
+        description: |
+            Do not start the service before external storage has been
+            mounted using the block storage broker relation. If you do
+            not set this and you relate the service to the storage
+            broker, then your service will have started up using local
+            disk, and later torn down and rebuilt when the external
+            storage became available.
+    data_file_directories:
+         type: string
+         default: data
+         description: |
+            Space delimited data directories. Use multiple data
+            directories to split data over multiple physical hardware
+            drive partitions. Paths are relative to /var/lib/cassandra
+            or the block storage broker external mount point.
+    commitlog_directory:
+         type: string
+         default: commitlog
+         description: |
+             Commit log directory. The path is relative to
+             /var/lib/cassandra or the block storage broker external
+             mount point.
+    saved_caches_directory:
+         type: string
+         default: saved_caches
+         description: |
+             Saved caches directory. The path is relative to
+             /var/lib/cassandra or the block storage broker external
+             mount point.
+    io_scheduler:
+        type: string
+        default: "noop"
+        description: |
+            Set kernel io scheduler for persistent storage.
+            https://www.kernel.org/doc/Documentation/block/switching-sched.txt
+ 
     # private_dse_url:
     #     type: string
     #     default: ""
@@ -256,8 +300,8 @@ options:
 ##             The rack used by the endpoint_snitch. i.e. "Rack1"
 
 
-##     # Cassandra.yaml related options
-    cluster-name:
+    # Cassandra.yaml related options
+    cluster_name:
         type: string
         default: ""
         description: >
@@ -272,23 +316,30 @@ options:
 ##         type: int
 ##         default: 9160
 ##         description: Thrift clients port
-##     partitioner:
-##         default: org.apache.cassandra.dht.Murmur3Partitioner
-##         type: string
-##         description:
-##             The cassandra partitioner to use.
-##             eg. org.apache.cassandra.dht.RandomPartitioner
+    partitioner:
+        default: org.apache.cassandra.dht.Murmur3Partitioner
+        type: string
+        description: |
+            The cassandra partitioner to use. Use Murmur3Partitioner,
+            unless another is required for backwards compatibility.
+    num_tokens:
+        type: int
+        default: 256
+        description: Number of tokens per node.
+    force_seed_nodes:
+        type: string
+        default: ""
+        description: |
+            A comma separated list of seed node ip addresses. This is
+            useful if the cluster being created in this juju environment
+            is part of a larger cluser and the seed nodes are remote.
+
 ##     endpoint_snitch:
 ##         default: "org.apache.cassandra.locator.SimpleSnitch"
 ##         type: string
 ##         description:
 ##             The cassandra endpoint snitch to use. Currently supported by the
 ##             charm, SimpleSnitch and GossipingPropertyFileSnitch.
-##     dse:
-##         type: boolean
-##         default: False
-##         description:
-##             True if using DataStax Enterprise. False if community Cassandra.
 ##     authenticator:
 ##         type: string
 ##         default: AllowAllAuthenticator
@@ -321,51 +372,6 @@ options:
 ##             - CassandraAuthorizer stores permissions in
 ##               system_auth.permissions table. Please increase system_auth
 ##               keyspace replication factor if you use this authorizer.
-              
-    ## Is there a use case for overriding these in a juju environment?
-    ##
-    ## data_file_directories:
-    ##      type: string
-    ##      default: /var/lib/cassandra/data
-    ##      description: >
-    ##          Space delimited data directories
-    ##          For use with phyiscal hardware drive partitions
-    ##          Note: Overriden by external_volume_mount
-    ## commitlog_directory:
-    ##      type: string
-    ##      default: /var/lib/cassandra/commitlog
-    ##      description: >
-    ##          Commit log directory
-    ##          Note: Overriden by external_volume_mount
-    ## saved_caches_directory:
-    ##      type: string
-    ##      default: /var/lib/cassandra/saved_caches
-    ##      description: >
-    ##          Saved caches directory
-    ##          Note: Overriden by external_volume_mount
-    
-    ## Is there a use case for this being configurable?
-    ## external_volume_mount:
-    ##      type: string
-    ##      default: ""
-    ##      description: >
-    ##          Used with storage charm for external storage
-    ##          i.e. /srv/data
-    ##          Overrides data_file_directories, commitlog_directory and
-    ##          saved_caches_directory.
-    ##          Note: There is only support for a single external mount
-    
-    num-tokens:
-        type: int
-        default: 256
-        description: Number of tokens per node.
-    force-seed-nodes:
-        type: string
-        default: ""
-        description: >
-            A comma separated list of seed node ip addresses. This is
-            useful if the cluster being created in this juju environment
-            is part of a larger cluser and the seed nodes are remote.
     ##     compaction-throughput:
     ##         type: int
     ##         default: 16
@@ -533,13 +539,6 @@ options:
     ##         description: >
     ##             Block device for attached volumes as seen by the VM, will be "scanned"
     ##             for an unused device when "volume-map" is valid for the unit.
-    ##     io-scheduler:
-    ##         type: string
-    ##         default: "noop"
-    ##         description: >
-    ##             Set kernel io scheduler for persistent storage. Only used when
-    ##             volume-ephemeral-storage is False.
-    ##             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
     nagios_context:
         default: "juju"
         type: string
