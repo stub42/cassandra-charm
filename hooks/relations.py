@@ -42,9 +42,6 @@ class BlockStorageBroker(RelationContext):
     def __init__(self, name=None, mountpoint=None):
         super(BlockStorageBroker, self).__init__(name)
 
-        from pprint import pprint
-        pprint(dict(self))
-
         if mountpoint is None:
             mountpoint = os.path.join('/srv/',
                                       hookenv.local_unit().replace('/', '_'))

@@ -317,7 +317,7 @@ options:
 ##         default: 9160
 ##         description: Thrift clients port
     partitioner:
-        default: org.apache.cassandra.dht.Murmur3Partitioner
+        default: Murmur3Partitioner
         type: string
         description: |
             The cassandra partitioner to use. Use Murmur3Partitioner,
@@ -507,47 +507,18 @@ options:
     ##             Comma separated list of unit numbers to update (i.e. modify
     ##             /etc setup and trigger cassandra restart on config-change or
     ##             upgrade-charm), or "all".
-    ## 
-    ##     #------------------------------------------------------------------------
-    ##     # Volume management
-    ##     #   volume-map, volume-dev_regexp are only used 
-    ##     #   if volume-ephemeral-storage == False
-    ##     #------------------------------------------------------------------------
-    ##     volume-ephemeral-storage:
-    ##         type: boolean
-    ##         default: True
-    ##         description: |
-    ##             If False, a configure-error state will be raised if
-    ##                volume-map[$JUJU_UNIT_NAME] is not set (see "volume-map"
-    ##                below) - see "volume-map" below.
-    ##             If True, service units won't try to use "volume-map" (and
-    ##                related variables) to mount and use external (EBS) volumes,
-    ##                thus storage lifetime will equal VM, thus ephemeral.
-    ##                YOU'VE BEEN WARNED.
-    ##             
-    ##     volume-map:
-    ##         type: string
-    ##         default: ""
-    ##         description: >
-    ##             YAML map as e.g. "{ cassandra/0: vol-0000010, cassandra/1: vol-0000016 }".
-    ##             Service units will raise a "configure-error" condition if no volume-map
-    ##             value is set for it - it's expected a human to set it properly to resolve it.
-    ## 
-    ##     volume-dev-regexp:
-    ##         type: string
-    ##         default: "/dev/vd[b-z]"
-    ##         description: >
-    ##             Block device for attached volumes as seen by the VM, will be "scanned"
-    ##             for an unused device when "volume-map" is valid for the unit.
+
     nagios_context:
         default: "juju"
         type: string
         description: |
-            a string that will be prepended to instance name to set the host name
-            in nagios. So for instance the hostname would be something like:
+            a string that will be prepended to instance name to set the
+            host name in nagios. So for instance the hostname would be
+            something like:
                 juju-cassandra-0
-            If you're running multiple environments with the same services in them
-            this allows you to differentiate between them.
+            If you're running multiple environments with the same
+            services in them this allows you to differentiate between
+            them.
     nagios_heapchk_warn_pct:
         default: 80
         type: int
@@ -558,11 +529,7 @@ options:
         type: int
         description: |
             The pct of heap used to trigger a nagios critcal alert
-##     partitioner:
-##         default: "org.apache.cassandra.dht.RandomPartitioner"
-##         type: string
-##         description:
-##             The cassandra partitioner to use
+
 ##     endpoint_snitch:
 ##         default: "org.apache.cassandra.locator.SimpleSnitch"
 ##         type: string

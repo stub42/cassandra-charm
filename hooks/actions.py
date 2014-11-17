@@ -31,36 +31,44 @@ def preinstall(servicename):
 # FOR CHARMHELPERS
 def swapoff(servicename):
     '''Turn off swapping on the system.'''
-    try:
-        subprocess.check_call(['swapoff', '-a'])
-    except Exception as e:
-        hookenv.log("Got an error trying to turn off swapping. {}. "
-                    "We may be in an LXC. Exiting gracefully"
-                    "".format(e), "WARN")
+    if is_lxc():
+        hookenv.log("In an LXC container. Not touching swap.")
+    else:
+        try:
+            subprocess.check_call(['swapoff', '-a'])
+        except Exception as e:
+            hookenv.log("Got an error trying to turn off swapping. {}. "
+                        "We may be in an LXC. Exiting gracefully"
+                        "".format(e), "WARN")
 
 
 # FOR CHARMHELPERS
 def configure_sources(servicename):
     '''Standard charmhelpers package source configuration.'''
-    fetch.configure_sources(True)
+    config = hookenv.config()
+    if config.changed('install_sources') or config.changed('install_keys'):
+        fetch.configure_sources(True)
 
 
 def reset_sysctl(servicename):
     '''Configure sysctl settings for Cassandra'''
-    cassandra_sysctl_file = os.path.join('/', 'etc', 'sysctl.d',
-                                         '99-cassandra.conf')
-    contents = "vm.max_map_count = 131072\n"
-    try:
-        host.write_file(cassandra_sysctl_file, contents)
-        subprocess.check_call(['sysctl', '-p', cassandra_sysctl_file])
-    except Exception as e:
-        if e.errno == errno.EACCES:
-            hookenv.log("Got Permission Denied trying to set the "
-                        "sysctl settings at {}. We may be in an LXC. "
-                        "Exiting gracefully".format(cassandra_sysctl_file),
-                        "WARN")
-        else:
-            raise
+    if is_lxc():
+        hookenv.log("In an LXC container. Leaving sysctl unchanged.")
+    else:
+        cassandra_sysctl_file = os.path.join('/', 'etc', 'sysctl.d',
+                                            '99-cassandra.conf')
+        contents = "vm.max_map_count = 131072\n"
+        try:
+            host.write_file(cassandra_sysctl_file, contents)
+            subprocess.check_call(['sysctl', '-p', cassandra_sysctl_file])
+        except Exception as e:
+            if e.errno == errno.EACCES:
+                hookenv.log("Got Permission Denied trying to set the "
+                            "sysctl settings at {}. We may be in an LXC. "
+                            "Exiting gracefully".format(cassandra_sysctl_file),
+                            "WARN")
+            else:
+                raise
 
 
 def ensure_package_status(servicename):
