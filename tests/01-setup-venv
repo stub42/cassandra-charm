@@ -1,0 +1,14 @@
+#!/bin/sh -ex
+
+TESTDIR=$(dirname $0)
+CHARMDIR=$(dirname $TESTDIR)
+
+virtualenv -p python3 $TESTDIR/.venv
+# Tests don't consistently run in a particular working directory.
+# Create a symbolic link in the other potential working directory.
+# This symbolic link must be relative to keep amulet and juju-deployer
+# happy.
+(cd $CHARMDIR && ln -sf tests/.venv .)
+
+$TESTDIR/.venv/bin/pip3 install -q amulet
+$TESTDIR/.venv/bin/pip3 install -q cassandra-driver

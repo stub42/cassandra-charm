@@ -31,7 +31,7 @@ def preinstall(servicename):
 # FOR CHARMHELPERS
 def swapoff(servicename):
     '''Turn off swapping on the system.'''
-    if is_lxc():
+    if helpers.is_lxc():
         hookenv.log("In an LXC container. Not touching swap.")
     else:
         try:
@@ -52,11 +52,11 @@ def configure_sources(servicename):
 
 def reset_sysctl(servicename):
     '''Configure sysctl settings for Cassandra'''
-    if is_lxc():
+    if helpers.is_lxc():
         hookenv.log("In an LXC container. Leaving sysctl unchanged.")
     else:
         cassandra_sysctl_file = os.path.join('/', 'etc', 'sysctl.d',
-                                            '99-cassandra.conf')
+                                             '99-cassandra.conf')
         contents = "vm.max_map_count = 131072\n"
         try:
             host.write_file(cassandra_sysctl_file, contents)

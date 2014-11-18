@@ -1,14 +1,26 @@
-all: runtests check
-build: runtests
-
-runtests:
-	$(MAKE) -C tests test
-
-clean:
-	$(MAKE) -C tests clean
+default:
+	@echo Missing target
 
 lint:
 	@flake8 ./hooks/*.py
+
+deps: packages venv
+
+packages: .stamp-packages
+.stamp-packages:
+	tests/00-setup-packages
+	touch .stamp-packages
+
+venv: .stamp-venv
+.stamp-venv:
+	tests/01-setup-venv
+	touch .stamp-venv
+
+test: deps
+	tests/10-test.py
+
+clean:
+	rm -rf .venv tests/.venv .stamp-*
 
 sync:
 	@bzr cat \

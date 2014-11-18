@@ -1,3 +1,0 @@
-#!/bin/bash
-# Run the cassandra tests that are in the Makefile.
-make
