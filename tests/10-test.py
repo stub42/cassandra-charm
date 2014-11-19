@@ -1,34 +1,88 @@
 #!.venv/bin/python3
 
-import amulet
+from contextlib import contextmanager
 import os.path
-import requests
+import shutil
+import subprocess
 import unittest
 
+import amulet
+import requests
+import yaml
 
-class TestDeployment(unittest.TestCase):
+
+SERIES = 'trusty'
+
+
+# Explicitly reset $JUJU_REPOSITORY to ensure amulet and juju-deployer
+# don't mess with your real one, per Bug #1393792
+os.environ['JUJU_REPOSITORY'] = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '.venv', 'repo'))
+os.makedirs(os.path.join(os.environ['JUJU_REPOSITORY'], SERIES),
+            mode=0o700, exist_ok=True)
+
+
+def repackage_charm(charm_dir):
+    """Mirror the charm into a staging area.
+
+    We do this to work around issues with Amulet and juju-deployer,
+    in particular:
+        - symlinks in the Python virtual env pointing outside of the
+          charm directory.
+        - juju-deployer messing with the directory pointed to by your
+          existing $JUJU_REPOSITORY
+        - odd bzr interactions, such as tests being run on the committed
+          version of the charm, rather than the working tree.
+
+    Returns the test charm directory.
+    """
+    with open(os.path.join(charm_dir, 'metadata.yaml'), 'rb') as s:
+        charm_name = yaml.safe_load(s)['name']
+
+    repack_root = os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                               '.venv', 'repack'))
+    os.makedirs(repack_root, 0o700, exist_ok=True)
+
+    repack_charm_dir = os.path.join(repack_root, charm_name)
+    shutil.rmtree(repack_charm_dir, ignore_errors=True)
+
+    # Ignore .bzr to work around weird bzr interactions with
+    # juju-deployer, per Bug #1394078, and ignore .venv
+    # due to it containing symlinks juju will reject and to avoid
+    # infinite recursion.
+    shutil.copytree(charm_dir, repack_charm_dir, symlinks=True,
+                    ignore=shutil.ignore_patterns('.venv', '.bzr'))
+
+    return repack_charm_dir
+
+
+def reset_environment():
+    subprocess.check_call(['juju-deployer', '-T'])
+
+
+class Test1UnitDeployment(unittest.TestCase):
+    rf = 1
+    deployment = None
+
     @classmethod
     def setUpClass(cls):
-        cls.deployment = amulet.Deployment(series='trusty')
+        cassandra_charm = repackage_charm(
+            os.path.join(os.path.dirname(__file__), os.pardir))
+        reset_environment()
 
-        cls.deployment.add('cassandra',
-                           os.path.join(os.path.dirname(__file__), os.pardir))
-
-        ## cls.deployment.add('stub-client')
-        ## cls.deployment.add('storage')
-        ## cls.deployment.add('nova-compute-power')
-        ## cls.deployment.relate('cassandra:jmx', 'stub-client')
-        ## cls.deployment.relate('cassandra:data', 'storage')
-        ## cls.deployment.relate('cassandra:nrpe-external-master',
-        ##                       'nova-compute-power')
-        ## cls.deployment.relate('cassandra:database', 'nova-compute-power')
-
+        cls.deployment = amulet.Deployment(series=SERIES)
+        cls.deployment.add('cassandra', cassandra_charm, units=cls.rf)
         try:
             cls.deployment.setup(timeout=900)
             cls.deployment.sentry.wait()
         except amulet.helpers.TimeoutError:
             amulet.raise_status(amulet.SKIP,
                                 msg="Environment wasn't stood up in time")
+
+    @classmethod
+    def tearDownClass(cls):
+        reset_environment()
+        cls.deployment = None
 
     def test_case(self):
         # Now you can use self.deployment.sentry.unit[UNIT] to address each of
@@ -55,5 +109,9 @@ class TestDeployment(unittest.TestCase):
         pass
 
 
+class Test3UnitDeployment(TestSingleDeployment):
+    rf = 3
+
+
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(verbosity=2)
