@@ -2,7 +2,7 @@ default:
 	@echo Missing target
 
 lint:
-	@flake8 ./hooks/*.py
+	@flake8 hooks/*.py tests/*.py
 
 deps: packages venv
 

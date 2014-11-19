@@ -5,9 +5,14 @@ import os.path
 import shutil
 import subprocess
 import unittest
+import warnings
+
+warnings.filterwarnings('ignore', 'The blist library is not available')
 
 import amulet
-import requests
+from cassandra import ConsistencyLevel
+from cassandra.cluster import Cluster, InvalidRequest
+from cassandra.query import SimpleStatement
 import yaml
 
 
@@ -84,32 +89,87 @@ class Test1UnitDeployment(unittest.TestCase):
         reset_environment()
         cls.deployment = None
 
-    def test_case(self):
-        # Now you can use self.deployment.sentry.unit[UNIT] to address each of
-        # the units and perform more in-depth steps.  You can also reference
-        # the first unit as self.unit.
-        # There are three test statuses that can be triggered with
-        # amulet.raise_status():
-        #   - amulet.PASS
-        #   - amulet.FAIL
-        #   - amulet.SKIP
-        # Each unit has the following methods:
-        #   - .info - An array of the information of that unit from Juju
-        #   - .file(PATH) - Get the details of a file on that unit
-        #   - .file_contents(PATH) - Get plain text output of PATH file from that unit
-        #   - .directory(PATH) - Get details of directory
-        #   - .directory_contents(PATH) - List files and folders in PATH on that unit
-        #   - .relation(relation, service:rel) - Get relation data from return service
-        #          add tests here to confirm service is up and working properly
-        # For example, to confirm that it has a functioning HTTP server:
-        #     page = requests.get('http://{}'.format(self.unit.info['public-address']))
-        #     page.raise_for_status()
-        # More information on writing Amulet tests can be found at:
-        #     https://juju.ubuntu.com/docs/tools-amulet.html
-        pass
+    def setUp(self):
+        self.needs_reset = True
+
+    def juju_status(self):
+        status_yaml = subprocess.check_output(['juju', 'status',
+                                               '--format=yaml'])
+        if not status_yaml.strip():
+            return None
+        return yaml.safe_load(status_yaml)
+
+    def cluster(self):
+        status = self.juju_status()
+        ips = []
+        for unit, detail in status['services']['cassandra']['units'].items():
+            ips.append(detail['public-address'])
+        cluster = Cluster(ips)
+        self.addCleanup(cluster.shutdown)
+        return cluster
+
+    def session(self):
+        cluster = self.cluster()
+        if self.needs_reset:
+            session = self.cluster().connect()
+            try:
+                session.execute('drop keyspace test')
+            except Exception:
+                pass
+            session.execute('''
+                            create keyspace test with replication = {
+                                'class': 'SimpleStrategy',
+                                'replication_factor': %s}
+                            ''', (self.rf,))
+            session.set_keyspace('test')
+            self.needs_reset = False
+        else:
+            session = self.cluster().connect('test')
+        self.addCleanup(session.shutdown)
+        return session
+
+    def test_database_basics(self):
+        session = self.session()
+        session.execute('CREATE TABLE Foo (x varchar PRIMARY KEY)')
+
+        # Insert some data, ensuring that it has been stored on
+        # all of our juju units. Note that the replication factor
+        # of our keyspace has been set to the number of units we
+        # deployed.
+        query = SimpleStatement(
+            "INSERT INTO Foo (x) VALUES (%s)",
+            consistency_level=ConsistencyLevel.ALL)
+        session.execute(query, ('hello',))
+
+        # We can get the data out again. This isn't testing our charm,
+        # but nice to know anyway...
+        r = session.execute('SELECT * FROM Foo LIMIT 1')
+        self.assertEqual(r[0].x, 'hello')
+
+# Now you can use self.deployment.sentry.unit[UNIT] to address each of
+# the units and perform more in-depth steps.  You can also reference
+# the first unit as self.unit.
+# There are three test statuses that can be triggered with
+# amulet.raise_status():
+#   - amulet.PASS
+#   - amulet.FAIL
+#   - amulet.SKIP
+# Each unit has the following methods:
+#   - .info - An array of the information of that unit from Juju
+#   - .file(PATH) - Get the details of a file on that unit
+#   - .file_contents(PATH) - Get plain text output of PATH file from that unit
+#   - .directory(PATH) - Get details of directory
+#   - .directory_contents(PATH) - List files and folders in PATH on that unit
+#   - .relation(relation, service:rel) - Get relation data from return service
+#          add tests here to confirm service is up and working properly
+# For example, to confirm that it has a functioning HTTP server:
+#     page = requests.get('http://{}'.format(self.unit.info['public-address']))
+#     page.raise_for_status()
+# More information on writing Amulet tests can be found at:
+#     https://juju.ubuntu.com/docs/tools-amulet.html
 
 
-class Test3UnitDeployment(TestSingleDeployment):
+class Test3UnitDeployment(Test1UnitDeployment):
     rf = 3
 
 

@@ -121,6 +121,7 @@ def configure_cassandra_yaml(servicename):
     cassandra_yaml['num_tokens'] = int(config['num_tokens'])
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
+    cassandra_yaml['rpc_address'] = hookenv.unit_private_ip()
 
     cassandra_yaml['native_transport_port'] = 9042
     cassandra_yaml['rpc_port'] = 9160  # Thrift
