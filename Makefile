@@ -16,7 +16,7 @@ venv: .stamp-venv
 	tests/01-setup-venv
 	touch .stamp-venv
 
-test: deps
+test: deps lint
 	tests/10-test.py
 
 clean:

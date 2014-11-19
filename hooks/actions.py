@@ -99,16 +99,15 @@ def install(servicename):
         fetch.apt_install(packages, fatal=True)
 
 
-def configure_cassandra_yaml(servicename):
+def configure_cassandra_yaml(
+        servicename, cassandra_yaml_path='/etc/cassandra/cassandra.yaml'):
     config = hookenv.config()
-
-    cassandra_yaml_path = '/etc/cassandra/cassandra.yaml'
 
     # Create a backup of the original cassandra.yaml, as its comments
     # may be useful.
     if not os.path.exists(cassandra_yaml_path + '.orig'):
         host.write_file(cassandra_yaml_path + '.orig',
-                        open('/etc/cassandra/cassandra.yaml', 'rb').read())
+                        open(cassandra_yaml_path, 'rb').read())
 
     cassandra_yaml = yaml.safe_load(open(cassandra_yaml_path, 'rb'))
 

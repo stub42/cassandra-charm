@@ -1,6 +1,5 @@
 #!.venv/bin/python3
 
-from contextlib import contextmanager
 import os.path
 import shutil
 import subprocess
@@ -11,7 +10,7 @@ warnings.filterwarnings('ignore', 'The blist library is not available')
 
 import amulet
 from cassandra import ConsistencyLevel
-from cassandra.cluster import Cluster, InvalidRequest
+from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 import yaml
 
@@ -65,7 +64,7 @@ def reset_environment():
     subprocess.check_call(['juju-deployer', '-T'])
 
 
-class Test1UnitDeployment(unittest.TestCase):
+class TestDeploymentBase(unittest.TestCase):
     rf = 1
     deployment = None
 
@@ -73,6 +72,7 @@ class Test1UnitDeployment(unittest.TestCase):
     def setUpClass(cls):
         cassandra_charm = repackage_charm(
             os.path.join(os.path.dirname(__file__), os.pardir))
+
         reset_environment()
 
         cls.deployment = amulet.Deployment(series=SERIES)
@@ -109,15 +109,14 @@ class Test1UnitDeployment(unittest.TestCase):
         return cluster
 
     def session(self):
-        cluster = self.cluster()
         if self.needs_reset:
             session = self.cluster().connect()
             try:
-                session.execute('drop keyspace test')
+                session.execute('DROP KEYSPACE test')
             except Exception:
                 pass
             session.execute('''
-                            create keyspace test with replication = {
+                            CREATE KEYSPACE test WITH REPLICATION = {
                                 'class': 'SimpleStrategy',
                                 'replication_factor': %s}
                             ''', (self.rf,))
@@ -127,6 +126,11 @@ class Test1UnitDeployment(unittest.TestCase):
             session = self.cluster().connect('test')
         self.addCleanup(session.shutdown)
         return session
+
+
+class Test3UnitDeployment(TestDeploymentBase):
+    """Tests run on both a 3 node cluster and a single node cluster."""
+    rf = 3
 
     def test_database_basics(self):
         session = self.session()
@@ -145,6 +149,12 @@ class Test1UnitDeployment(unittest.TestCase):
         # but nice to know anyway...
         r = session.execute('SELECT * FROM Foo LIMIT 1')
         self.assertEqual(r[0].x, 'hello')
+
+
+class Test1UnitDeployment(Test3UnitDeployment):
+    """Tests run on a single node cluster."""
+    rf = 1
+
 
 # Now you can use self.deployment.sentry.unit[UNIT] to address each of
 # the units and perform more in-depth steps.  You can also reference
@@ -167,10 +177,6 @@ class Test1UnitDeployment(unittest.TestCase):
 #     page.raise_for_status()
 # More information on writing Amulet tests can be found at:
 #     https://juju.ubuntu.com/docs/tools-amulet.html
-
-
-class Test3UnitDeployment(Test1UnitDeployment):
-    rf = 3
 
 
 if __name__ == '__main__':
