@@ -30,8 +30,8 @@ os.makedirs(os.path.join(os.environ['JUJU_REPOSITORY'], SERIES),
 def repackage_charm(charm_dir):
     """Mirror the charm into a staging area.
 
-    We do this to work around issues with Amulet and juju-deployer,
-    in particular:
+    We do this to work around issues with Amulet, juju-deployer
+    and juju. In particular:
         - symlinks in the Python virtual env pointing outside of the
           charm directory.
         - juju-deployer messing with the directory pointed to by your
@@ -53,7 +53,7 @@ def repackage_charm(charm_dir):
 
     # Ignore .bzr to work around weird bzr interactions with
     # juju-deployer, per Bug #1394078, and ignore .venv
-    # due to it containing symlinks juju will reject and to avoid
+    # due to a) it containing symlinks juju will reject and b) to avoid
     # infinite recursion.
     shutil.copytree(charm_dir, repack_charm_dir, symlinks=True,
                     ignore=shutil.ignore_patterns('.venv', '.bzr'))
