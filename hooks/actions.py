@@ -7,6 +7,7 @@ import yaml
 
 from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
+from charmhelpers.core.fstab import Fstab
 from charmhelpers.core.hookenv import log
 
 import helpers
@@ -29,8 +30,9 @@ def preinstall(servicename):
 
 
 # FOR CHARMHELPERS
-def swapoff(servicename):
-    '''Turn off swapping on the system.'''
+def swapoff(servicename, fstab='/etc/fstab'):
+    '''Turn off swapping in the container, permanently.'''
+    # Turn off swap in the current session
     if helpers.is_lxc():
         hookenv.log("In an LXC container. Not touching swap.")
     else:
@@ -40,6 +42,14 @@ def swapoff(servicename):
             hookenv.log("Got an error trying to turn off swapping. {}. "
                         "We may be in an LXC. Exiting gracefully"
                         "".format(e), "WARN")
+
+    # Disable swap permanently
+    fstab = Fstab(fstab)
+    while True:
+        swap_entry = fstab.get_entry_by_attr('filesystem', 'swap')
+        if swap_entry is None:
+            break
+        fstab.remove_entry(swap_entry)
 
 
 # FOR CHARMHELPERS
