@@ -1,2 +1,5 @@
 revision
 *.pyc
+.stamp-*
+.venv
+tests/.venv
