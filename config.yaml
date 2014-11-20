@@ -15,9 +15,9 @@ options:
     install_sources:
         type: string
         description: |
-            Charm standard listing of package install sources. If you
-            are using Datastax Enterprise, you will need to override one
-            defaults with your own username and password.
+            charm-helpers standard listing of package install sources.
+            If you are using Datastax Enterprise, you will need to
+            override one defaults with your own username and password.
         default: |
             - ppa:webupd8team/java
             - deb http://www.apache.org/dist/cassandra/debian 21x main
@@ -26,6 +26,9 @@ options:
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
     install_keys:
         type: string
+        description: |
+            charm-helpers standard listing of package install source
+            signing keys, corresponding to install_sources.
         default: |
             - null
             - |

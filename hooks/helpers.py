@@ -18,7 +18,7 @@ def autostart_disabled():
             shutil.move(policy_rc, "{}-orig".format(policy_rc))
         shutil.copyfile(os.path.join(hookenv.charm_dir(),
                                      "files", "policy-rc.d"), policy_rc)
-        os.chmod(policy_rc, 0555)
+        os.chmod(policy_rc, 0o555)
         yield
     finally:
         if os.path.exists("{}-orig".format(policy_rc)):
@@ -61,7 +61,7 @@ def ensure_directories():
 
     def _mkdir(reldir):
         absdir = os.path.join(root, reldir)
-        host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0755)
+        host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o755)
         set_io_scheduler(config['io_scheduler'], absdir)
         return absdir
 
@@ -102,7 +102,7 @@ def set_io_scheduler(io_scheduler, directory):
         sys_file = os.path.join("/", "sys", "block", block_dev,
                                 "queue", "scheduler")
         try:
-            host.write_file(sys_file, io_scheduler, perms=0644)
+            host.write_file(sys_file, io_scheduler, perms=0o644)
         except Exception as e:
             if e.errno == errno.EACCES:
                 hookenv.log("Got Permission Denied trying to set the "

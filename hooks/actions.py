@@ -75,9 +75,10 @@ def ensure_package_status(servicename):
     config_dict = hookenv.config()
 
     package_status = config_dict['package_status']
-    ## if config_dict['dse']:
-    ##     packages = ['dse']
-    ## else:
+    # TODO: dse
+    # if config_dict['dse']:
+    #     packages = ['dse']
+    # else:
     packages = ['cassandra', 'cassandra-tools']
 
     if package_status not in ['install', 'hold']:

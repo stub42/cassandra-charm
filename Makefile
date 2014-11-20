@@ -1,23 +1,24 @@
 default:
 	@echo Missing target
+	@echo 'Usage: make [ deps | lint | test | clean | sync ]'
 
-lint:
-	@flake8 hooks/*.py tests/*.py
-
-deps: packages venv
+deps: clean packages venv
 
 packages: .stamp-packages
 .stamp-packages:
 	tests/00-setup-packages
 	touch .stamp-packages
 
-venv: .stamp-venv
+venv: packages .stamp-venv
 .stamp-venv:
 	tests/01-setup-venv
 	touch .stamp-venv
 
-test: deps lint
-	tests/10-test.py
+lint: venv
+	tests/10-lint.sh
+
+test: venv lint
+	tests/20-integration-tests.py
 
 clean:
 	rm -rf .venv tests/.venv .stamp-*

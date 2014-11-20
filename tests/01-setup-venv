@@ -10,5 +10,8 @@ virtualenv -p python3 $TESTDIR/.venv
 # happy.
 (cd $CHARMDIR && ln -sf tests/.venv .)
 
-$TESTDIR/.venv/bin/pip3 install -q amulet
-$TESTDIR/.venv/bin/pip3 install -q cassandra-driver
+PIP=$TESTDIR/.venv/bin/pip3
+
+$PIP install -q amulet
+$PIP install -q cassandra-driver
+$PIP install -q flake8
