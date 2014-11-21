@@ -84,7 +84,8 @@ def reset_sysctl(servicename):
                 raise
 
 
-def ensure_package_status(servicename):
+# FOR CHARMHELPERS
+def ensure_package_status(servicename, packages):
     config_dict = hookenv.config()
 
     package_status = config_dict['package_status']
@@ -92,21 +93,20 @@ def ensure_package_status(servicename):
     # if config_dict['dse']:
     #     packages = ['dse']
     # else:
-    packages = ['cassandra', 'cassandra-tools']
 
     if package_status not in ['install', 'hold']:
         RuntimeError("package_status must be 'install' or 'hold' not '{}'"
                      "".format(package_status))
 
+    selections = []
     for package in packages:
-        selections = ''.join(['{} {}\n'.format(package, package_status)])
-        dpkg = subprocess.Popen(['dpkg', '--set-selections'],
-                                stdin=subprocess.PIPE)
-        dpkg.communicate(input=selections)
+        selections.append('{} {}\n'.format(package, package_status))
+    dpkg = subprocess.Popen(['dpkg', '--set-selections'],
+                            stdin=subprocess.PIPE)
+    dpkg.communicate(input=''.join(selections))
 
 
-def install(servicename):
-    packages = ['cassandra', 'cassandra-tools']
+def install(servicename, packages):
     if hookenv.config('extra_packages'):
         packages.extend(hookenv.config('extra_packages').split())
     with helpers.autostart_disabled():

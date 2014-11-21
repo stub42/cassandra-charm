@@ -1,6 +1,7 @@
 #!.venv/bin/python3
 
 import os.path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -127,6 +128,22 @@ class TestsActions(unittest.TestCase):
         check_call.assert_called_once_with(['sysctl', '-p',
                                             '/etc/sysctl.d/99-cassandra.conf'])
 
+    @patch('subprocess.Popen')
+    @patch('charmhelpers.core.hookenv.config')
+    def test_ensure_package_status(self, config, popen):
+        for status in ['install', 'hold']:
+            with self.subTest(status=status):
+                popen.reset_mock()
+                config.return_value = hookenv.Config(
+                    dict(package_status=status))
+                actions.ensure_package_status('', ['a_pack', 'b_pack'])
+
+                selections = 'a_pack {}\nb_pack {}\n'.format(status, status)
+
+                self.assertEqual([
+                    call(['dpkg', '--set-selections'], stdin=subprocess.PIPE),
+                    call().communicate(input=selections),
+                    ], popen.mock_calls)
 
 
 if __name__ == '__main__':

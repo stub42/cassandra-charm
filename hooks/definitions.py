@@ -5,6 +5,7 @@ from charmhelpers.core.services import ServiceManager
 import actions
 import relations
 
+CASSANDRA_PACKAGES = ['cassandra', 'cassandra-tools']
 
 SERVICE_DEFINITIONS = [
     dict(service='cassandra',
@@ -27,8 +28,8 @@ SERVICE_DEFINITIONS = [
              actions.configure_sources,
              actions.swapoff,
              actions.reset_sysctl,
-             actions.install,
-             actions.ensure_package_status,
+             lambda: actions.install(CASSANDRA_PACKAGES),
+             lambda: actions.ensure_package_status(CASSANDRA_PACKAGES),
              actions.configure_cassandra_yaml,
          ]),
 ]
