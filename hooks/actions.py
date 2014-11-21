@@ -1,3 +1,4 @@
+from contextlib import closing
 import errno
 import glob
 import os.path
@@ -44,12 +45,12 @@ def swapoff(servicename, fstab='/etc/fstab'):
                         "".format(e), "WARN")
 
     # Disable swap permanently
-    fstab = Fstab(fstab)
-    while True:
-        swap_entry = fstab.get_entry_by_attr('filesystem', 'swap')
-        if swap_entry is None:
-            break
-        fstab.remove_entry(swap_entry)
+    with closing(Fstab(fstab)) as fstab:
+        while True:
+            swap_entry = fstab.get_entry_by_attr('filesystem', 'swap')
+            if swap_entry is None:
+                break
+            fstab.remove_entry(swap_entry)
 
 
 # FOR CHARMHELPERS
