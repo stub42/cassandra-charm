@@ -28,7 +28,7 @@ SERVICE_DEFINITIONS = [
              actions.configure_sources,
              actions.swapoff,
              actions.reset_sysctl,
-             lambda: actions.install(CASSANDRA_PACKAGES),
+             lambda: actions.install_packages(CASSANDRA_PACKAGES),
              lambda: actions.ensure_package_status(CASSANDRA_PACKAGES),
              actions.configure_cassandra_yaml,
          ]),

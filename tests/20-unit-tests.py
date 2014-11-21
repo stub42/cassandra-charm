@@ -4,8 +4,10 @@ import os.path
 import subprocess
 import sys
 import tempfile
+from textwrap import dedent
 import unittest
 from unittest.mock import call, patch
+import yaml
 
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.pardir, 'hooks')))
@@ -17,7 +19,15 @@ import actions
 import helpers
 
 
-@patch('helpers.is_lxc', lambda: False)
+def mock_config(config_dict):
+    c = hookenv.Config(config_dict)
+    def config(scope=None):
+        if scope is None:
+            return c
+        return c.get(scope, None)
+    return config
+
+
 class TestsActions(unittest.TestCase):
 
     def setUp(self):
@@ -28,19 +38,28 @@ class TestsActions(unittest.TestCase):
         mock_env.start()
         self.addCleanup(mock_env.stop)
 
-        # Magic mock charm-helpers.
+        # Magic mocks.
         methods = [
+            'helpers.is_lxc',
             'charmhelpers.core.hookenv.log',
+            'charmhelpers.core.host.log',
             'actions.log',
+            'charmhelpers.core.hookenv.hook_name',
+            'charmhelpers.core.hookenv.service_name',
+            'charmhelpers.core.hookenv.unit_private_ip',
         ]
         for m in methods:
-            mock = patch(m)
+            mock = patch(m, autospec=True)
             mock.start()
             self.addCleanup(mock.stop)
 
-    @patch('charmhelpers.core.hookenv.hook_name', lambda: 'install')
+        helpers.is_lxc.return_value = False
+        hookenv.unit_private_ip.return_value = '10.6.6.6'
+        hookenv.service_name.return_value = 'cassandra'
+
     @patch('subprocess.check_call')
     def test_preinstall(self, check_call):
+        hookenv.hook_name.return_value = 'install'
         # Noop if there are no preinstall hooks found.
         actions.preinstall('')
         self.assertFalse(check_call.called)
@@ -145,6 +164,76 @@ class TestsActions(unittest.TestCase):
                     call().communicate(input=selections),
                     ], popen.mock_calls)
 
+    @patch('helpers.autostart_disabled')
+    @patch('charmhelpers.fetch.apt_install')
+    @patch('charmhelpers.core.hookenv.config')
+    def test_install_packages(self, config, apt_install, autostart_disabled):
+        packages = ['a_pack', 'b_pack']
+        config.side_effect = mock_config(dict(extra_packages='c_pack d_pack'))
+        actions.install_packages('', packages)
+
+        # All packages got installed, and hook aborted if package
+        # installation failed.
+        apt_install.assert_called_once_with(['a_pack', 'b_pack',
+                                             'c_pack', 'd_pack'], fatal=True)
+
+        # The autostart_disabled context manager was used to stop
+        # package installation starting services.
+        autostart_disabled().__enter__.assert_called_once_with()
+        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
+
+    @patch('helpers.ensure_directories')
+    @patch('helpers.get_seeds')
+    @patch('charmhelpers.core.host.write_file')
+    @patch('charmhelpers.core.hookenv.config')
+    def test_configure_cassandra_yaml(self, config, write_file,
+                                      get_seeds, ensure_directories):
+        config.side_effect = mock_config(
+            dict(num_tokens=128,
+                 cluster_name=None,
+                 partitioner='my_partitioner'))
+
+        helpers.get_seeds.return_value = ['10.9.8.7', '6.5.4.3']
+
+        existing_config = '''
+            seed_provider:
+                - class_name: blah.blah.SimpleSeedProvider
+                  parameters:
+                      - seeds: 127.0.0.1  # Comma separated list.
+            '''
+
+        with tempfile.NamedTemporaryFile('wb') as yaml_config:
+            yaml_config.write(existing_config.encode('utf8'))
+            yaml_config.flush()
+
+            actions.configure_cassandra_yaml('', yaml_config.name)
+
+            self.assertEqual(write_file.call_count, 2)
+            new_config = write_file.call_args[0][1]
+
+            expected_config = dedent('''\
+                cluster_name: cassandra
+                listen_address: 10.6.6.6
+                native_transport_port: 9042
+                num_tokens: 128
+                partitioner: my_partitioner
+                rpc_address: 10.6.6.6
+                rpc_port: 9160
+                seed_provider:
+                    - class_name: blah.blah.SimpleSeedProvider
+                      parameters:
+                        - seeds: '10.9.8.7,6.5.4.3'
+                ''')
+            self.assertEqual(yaml.safe_load(new_config),
+                             yaml.safe_load(expected_config))
+
+            # Confirm we can use an explicit cluster_name too.
+            write_file.reset_mock()
+            config()['cluster_name'] = 'fubar'
+            actions.configure_cassandra_yaml('', yaml_config.name)
+            new_config = write_file.call_args[0][1]
+            self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
+                             'fubar')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

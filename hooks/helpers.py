@@ -16,15 +16,12 @@ def autostart_disabled():
         policy_rc = os.path.join("/", "usr", "sbin", "policy-rc.d")
         if os.path.exists(policy_rc):
             shutil.move(policy_rc, "{}-orig".format(policy_rc))
-        shutil.copyfile(os.path.join(hookenv.charm_dir(),
-                                     "files", "policy-rc.d"), policy_rc)
-        os.chmod(policy_rc, 0o555)
+        host.write_file(policy_rc, '#!/bin/sh\nexit 101', perms=0o555)
         yield
     finally:
+        os.unlink(policy_rc)
         if os.path.exists("{}-orig".format(policy_rc)):
             shutil.move("{}-orig".format(policy_rc), policy_rc)
-        else:
-            os.unlink(policy_rc)
 
 
 def get_seeds():

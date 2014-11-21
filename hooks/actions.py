@@ -106,7 +106,8 @@ def ensure_package_status(servicename, packages):
     dpkg.communicate(input=''.join(selections))
 
 
-def install(servicename, packages):
+# FOR CHARMHELPERS
+def install_packages(servicename, packages):
     if hookenv.config('extra_packages'):
         packages.extend(hookenv.config('extra_packages').split())
     with helpers.autostart_disabled():
@@ -120,10 +121,11 @@ def configure_cassandra_yaml(
     # Create a backup of the original cassandra.yaml, as its comments
     # may be useful.
     if not os.path.exists(cassandra_yaml_path + '.orig'):
-        host.write_file(cassandra_yaml_path + '.orig',
-                        open(cassandra_yaml_path, 'rb').read())
+        with open(cassandra_yaml_path, 'rb') as f:
+            host.write_file(cassandra_yaml_path + '.orig', f.read())
 
-    cassandra_yaml = yaml.safe_load(open(cassandra_yaml_path, 'rb'))
+    with open(cassandra_yaml_path, 'rb') as f:
+        cassandra_yaml = yaml.safe_load(f)
 
     cassandra_yaml['cluster_name'] = (config['cluster_name']
                                       or hookenv.service_name())
