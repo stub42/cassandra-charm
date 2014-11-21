@@ -81,6 +81,19 @@ class TestsActions(unittest.TestCase):
         actions.configure_sources('')
         configure_sources.assert_called_once_with(True)
 
+    @patch('charmhelpers.core.host.write_file')
+    @patch('subprocess.check_call')
+    def test_reset_sysctl(self, check_call, write_file):
+        actions.reset_sysctl('')
+
+        ctl_file = '/etc/sysctl.d/99-cassandra.conf'
+        # Magic value per Cassandra best practice.
+        write_file.assert_called_once_with(ctl_file,
+                                           "vm.max_map_count = 131072\n")
+        check_call.assert_called_once_with(['sysctl', '-p',
+                                            '/etc/sysctl.d/99-cassandra.conf'])
+
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
