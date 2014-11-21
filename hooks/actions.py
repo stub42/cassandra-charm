@@ -20,7 +20,9 @@ def preinstall(servicename):
     # Only run the preinstall hooks from the actual install hook.
     if hookenv.hook_name() == 'install':
         # Pre-exec
-        for f in glob.glob('exec.d/*/charm-pre-install'):
+        pattern = os.path.join(hookenv.charm_dir(),
+                               'exec.d', '*', 'charm-pre-install')
+        for f in sorted(glob.glob(pattern)):
             if os.path.isfile(f) and os.access(f, os.X_OK):
                 log('Running preinstall hook {}'.format(f))
                 subprocess.check_call(['sh', '-c', f])

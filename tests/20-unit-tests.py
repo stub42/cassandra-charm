@@ -4,7 +4,7 @@ import os.path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.pardir, 'hooks')))
@@ -20,13 +20,47 @@ import helpers
 class TestsActions(unittest.TestCase):
 
     def setUp(self):
-        # Mock charm environment.
+        # Mock charm environment variables.
         charm_dir = tempfile.TemporaryDirectory()
         self.addCleanup(charm_dir.cleanup)
         mock_env = patch.dict(os.environ, dict(CHARM_DIR=charm_dir.name))
         mock_env.start()
         self.addCleanup(mock_env.stop)
 
+        # Magic mock charm-helpers.
+        methods = [
+            'charmhelpers.core.hookenv.log',
+            'actions.log',
+        ]
+        for m in methods:
+            mock = patch(m)
+            mock.start()
+            self.addCleanup(mock.stop)
+
+    @patch('charmhelpers.core.hookenv.hook_name', lambda: 'install')
+    @patch('subprocess.check_call')
+    def test_preinstall(self, check_call):
+        # Noop if there are no preinstall hooks found.
+        actions.preinstall('')
+        self.assertFalse(check_call.called)
+
+        hook_dirs = []
+        hook_files = []
+        for i in range(1, 3):
+            hook_dirs.append(os.path.join(hookenv.charm_dir(),
+                                          'exec.d', str(i)))
+            hook_files.append(os.path.join(hook_dirs[-1], 'charm-pre-install'))
+
+            os.makedirs(hook_dirs[-1])
+            with open(hook_files[-1], 'w') as f:
+                print('mocked', file=f)
+            os.chmod(hook_files[-1], 0o755)
+
+        check_call.reset_mock()
+        actions.preinstall('')
+
+        calls = [call(['sh', '-c', f]) for f in hook_files]
+        check_call.assert_has_calls(calls)
 
     @patch('subprocess.check_call')
     def test_swapoff(self, check_call):
