@@ -19,17 +19,7 @@ import actions
 import helpers
 
 
-def mock_config(config_dict):
-    c = hookenv.Config(config_dict)
-    def config(scope=None):
-        if scope is None:
-            return c
-        return c.get(scope, None)
-    return config
-
-
-class TestsActions(unittest.TestCase):
-
+class TestCaseBase(unittest.TestCase):
     def setUp(self):
         # Mock charm environment variables.
         charm_dir = tempfile.TemporaryDirectory()
@@ -37,6 +27,25 @@ class TestsActions(unittest.TestCase):
         mock_env = patch.dict(os.environ, dict(CHARM_DIR=charm_dir.name))
         mock_env.start()
         self.addCleanup(mock_env.stop)
+
+        # Mock config.
+        # Set items:
+        #     hookenv.config()['foo'] = 'bar'
+        # Reset 'previous' state:
+        #     hookenv.config().save();
+        #     hookenv.config().load_previous()
+        tmp = tempfile.NamedTemporaryFile(suffix='.config')
+        self.addCleanup(tmp.close)
+        c = hookenv.Config()
+        c.CONFIG_FILE_NAME = tmp.name
+        def mock_config(scope=None):
+            if scope is None:
+                return c
+            return c.get(scope, None)
+        config = patch('charmhelpers.core.hookenv.config',
+                       side_effect=mock_config, autospec=True)
+        config.start()
+        self.addCleanup(config.stop)
 
         # Magic mocks.
         methods = [
@@ -57,6 +66,8 @@ class TestsActions(unittest.TestCase):
         hookenv.unit_private_ip.return_value = '10.6.6.6'
         hookenv.service_name.return_value = 'cassandra'
 
+
+class TestsActions(TestCaseBase):
     @patch('subprocess.check_call')
     def test_preinstall(self, check_call):
         hookenv.hook_name.return_value = 'install'
@@ -97,41 +108,35 @@ class TestsActions(unittest.TestCase):
         check_call.assert_called_once_with(['swapoff', '-a'])
 
     @patch('charmhelpers.fetch.configure_sources')
-    @patch('charmhelpers.core.hookenv.config')
-    def test_configure_sources(self, config, configure_sources):
-        config.return_value = hookenv.Config()
-
-        def reload_config():
-            config().save()
-            config.return_value = hookenv.Config()
+    def test_configure_sources(self, configure_sources):
+        config = hookenv.config()
 
         # fetch.configure_sources called the first time
         actions.configure_sources('')
         configure_sources.assert_called_once_with(True)
 
-        def reload_config():
-            config().save()
-            config.return_value = hookenv.Config()
-
         # fetch.configure_sources not called if relevant config is unchanged.
-        reload_config()
+        config.save()
+        config.load_previous()
         configure_sources.reset_mock()
         actions.configure_sources('')
         self.assertFalse(configure_sources.called)
 
         # Changing install_sources causes fetch.configure_sources to be
         # called.
-        reload_config()
+        config.save()
+        config.load_previous()
         configure_sources.reset_mock()
-        config()['install_sources'] = 'foo'
+        config['install_sources'] = 'foo'
         actions.configure_sources('')
         configure_sources.assert_called_once_with(True)
 
         # Changing install_keys causes fetch.configure_sources to be
         # called.
-        reload_config()
+        config.save()
+        config.load_previous()
         configure_sources.reset_mock()
-        config()['install_keys'] = 'foo'
+        config['install_keys'] = 'foo'
         actions.configure_sources('')
         configure_sources.assert_called_once_with(True)
 
@@ -148,13 +153,11 @@ class TestsActions(unittest.TestCase):
                                             '/etc/sysctl.d/99-cassandra.conf'])
 
     @patch('subprocess.Popen')
-    @patch('charmhelpers.core.hookenv.config')
-    def test_ensure_package_status(self, config, popen):
+    def test_ensure_package_status(self, popen):
         for status in ['install', 'hold']:
             with self.subTest(status=status):
                 popen.reset_mock()
-                config.return_value = hookenv.Config(
-                    dict(package_status=status))
+                hookenv.config()['package_status'] = status
                 actions.ensure_package_status('', ['a_pack', 'b_pack'])
 
                 selections = 'a_pack {}\nb_pack {}\n'.format(status, status)
@@ -166,10 +169,9 @@ class TestsActions(unittest.TestCase):
 
     @patch('helpers.autostart_disabled')
     @patch('charmhelpers.fetch.apt_install')
-    @patch('charmhelpers.core.hookenv.config')
-    def test_install_packages(self, config, apt_install, autostart_disabled):
+    def test_install_packages(self, apt_install, autostart_disabled):
         packages = ['a_pack', 'b_pack']
-        config.side_effect = mock_config(dict(extra_packages='c_pack d_pack'))
+        hookenv.config()['extra_packages'] = 'c_pack d_pack'
         actions.install_packages('', packages)
 
         # All packages got installed, and hook aborted if package
@@ -185,13 +187,11 @@ class TestsActions(unittest.TestCase):
     @patch('helpers.ensure_directories')
     @patch('helpers.get_seeds')
     @patch('charmhelpers.core.host.write_file')
-    @patch('charmhelpers.core.hookenv.config')
-    def test_configure_cassandra_yaml(self, config, write_file,
+    def test_configure_cassandra_yaml(self, write_file,
                                       get_seeds, ensure_directories):
-        config.side_effect = mock_config(
-            dict(num_tokens=128,
-                 cluster_name=None,
-                 partitioner='my_partitioner'))
+        hookenv.config().update(dict(num_tokens=128,
+                                     cluster_name=None,
+                                     partitioner='my_partitioner'))
 
         helpers.get_seeds.return_value = ['10.9.8.7', '6.5.4.3']
 
@@ -229,7 +229,7 @@ class TestsActions(unittest.TestCase):
 
             # Confirm we can use an explicit cluster_name too.
             write_file.reset_mock()
-            config()['cluster_name'] = 'fubar'
+            hookenv.config()['cluster_name'] = 'fubar'
             actions.configure_cassandra_yaml('', yaml_config.name)
             new_config = write_file.call_args[0][1]
             self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
