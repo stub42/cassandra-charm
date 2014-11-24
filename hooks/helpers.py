@@ -11,9 +11,8 @@ import relations
 
 
 @contextmanager
-def autostart_disabled():
+def autostart_disabled(policy_rc='/usr/sbin/policy-rc.d'):
     try:
-        policy_rc = os.path.join("/", "usr", "sbin", "policy-rc.d")
         if os.path.exists(policy_rc):
             shutil.move(policy_rc, "{}-orig".format(policy_rc))
         host.write_file(policy_rc, '#!/bin/sh\nexit 101', perms=0o555)

@@ -47,6 +47,25 @@ class TestCaseBase(unittest.TestCase):
         config.start()
         self.addCleanup(config.stop)
 
+
+        # A mock write_file that can only write root owned files to
+        # the tempdir.
+        def mock_write_file(path, contents, owner='root', group='root',
+                            perms=0o444):
+            self.assertEqual(owner, 'root')
+            self.assertEqual(group, 'root')
+            self.assertTrue(path.startswith(tempfile.gettempdir()))
+            # TODO: This is emulating a bug in charm-helpers. Fix
+            # charmhelpers to correctly use text or binary mode
+            # depending on the 'contents' type.
+            with open(path, 'w') as f:
+                f.write(contents)
+            os.chmod(path, perms)
+        write_file = patch('charmhelpers.core.host.write_file',
+                           side_effect=mock_write_file, autospec=True)
+        write_file.start()
+        self.addCleanup(write_file.stop)
+
         # Magic mocks.
         methods = [
             'helpers.is_lxc',
@@ -234,6 +253,39 @@ class TestsActions(TestCaseBase):
             new_config = write_file.call_args[0][1]
             self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
                              'fubar')
+
+
+class TestHelpers(TestCaseBase):
+    def test_autostart_disabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+
+            prc = os.path.join(tmpdir, 'policy-rc.d')
+            prc_backup = prc + '-orig'
+
+            with helpers.autostart_disabled(prc):
+                # No existing policy-rc.d, so no backup made.
+                self.assertFalse(os.path.exists(prc_backup))
+
+                # A policy-rc.d file has been created that will disable
+                # package autostart per spec (ie. returns a 101 exit code).
+                self.assertTrue(os.path.exists(prc))
+                self.assertEqual(subprocess.call([prc]), 101)
+
+                with helpers.autostart_disabled(prc):
+                    # A second time, we have a backup made.
+                    # policy-rc.d still works
+                    self.assertTrue(os.path.exists(prc_backup))
+                    self.assertEqual(subprocess.call([prc]), 101)
+
+                # Backup removed, and policy-rc.d still works.
+                self.assertFalse(os.path.exists(prc_backup))
+                self.assertEqual(subprocess.call([prc]), 101)
+
+            # Neither backup nor policy-rc.d exist now we are out of the
+            # context manager.
+            self.assertFalse(os.path.exists(prc_backup))
+            self.assertFalse(os.path.exists(prc))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
