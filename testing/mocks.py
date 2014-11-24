@@ -56,27 +56,9 @@ def mock_charmhelpers(test_case):
     mocks.append(patch('charmhelpers.core.hookenv.config',
                         side_effect=mock_config, autospec=True))
 
-    # A mock write_file that can only write root owned files to
-    # the tempdir.
-    def mock_write_file(path, contents, owner='root', group='root',
-                        perms=0o444):
-        assert owner == 'root'
-        assert group == 'root'
-        assert path.startswith(tempfile.gettempdir())
-        # TODO: This is emulating a bug in charm-helpers. Fix
-        # charmhelpers to correctly use text or binary mode
-        # depending on the 'contents' type.
-        with open(path, 'w') as f:
-            f.write(contents)
-        os.chmod(path, perms)
-    write_file = patch('charmhelpers.core.host.write_file',
-                    side_effect=mock_write_file, autospec=True)
-    mocks.append(write_file)
-
     # Magic mocks.
     methods = [
         'charmhelpers.core.hookenv.log',
-        'charmhelpers.core.host.log',
         'charmhelpers.core.hookenv.hook_name',
         'charmhelpers.core.hookenv.related_units',
         'charmhelpers.core.hookenv.relation_ids',
@@ -84,6 +66,8 @@ def mock_charmhelpers(test_case):
         'charmhelpers.core.hookenv.relation_type',
         'charmhelpers.core.hookenv.service_name',
         'charmhelpers.core.hookenv.unit_private_ip',
+        'charmhelpers.core.host.log',
+        'os.chown', 'os.fchown',
     ]
     for m in methods:
         mocks.append(patch(m, autospec=True))
@@ -105,3 +89,14 @@ def mock_charmhelpers(test_case):
         unit_num = int(unit_num)
         return {'private-address': '10.20.0.{}'.format(unit_num)}
     hookenv.relation_for_unit.side_effect = mock_relation_for_unit
+
+    def mock_chown(target, uid, gid):
+        assert uid == 0
+        assert gid == 0
+        assert os.path.exists(target)
+    os.chown.side_effect = mock_chown
+
+    def mock_fchown(fd, uid, gid):
+        assert uid == 0
+        assert gid == 0
+    os.fchown.side_effect = mock_fchown

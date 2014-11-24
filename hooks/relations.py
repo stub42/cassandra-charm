@@ -38,6 +38,7 @@ class BlockStorageBroker(RelationContext):
     configs using the unit name (/srv/${service}_${unitnumber}).
     '''
     interface = 'block-storage'
+    mountpoint = None
 
     def __init__(self, name=None, mountpoint=None):
         super(BlockStorageBroker, self).__init__(name)

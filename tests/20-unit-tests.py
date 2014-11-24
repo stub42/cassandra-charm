@@ -15,12 +15,10 @@ CHARM_DIR = os.path.abspath(os.path.join(
 sys.path.append(CHARM_DIR)
 sys.path.append(os.path.join(CHARM_DIR, 'hooks'))
 
-from charmhelpers.core import hookenv
-import charmhelpers.fetch
+from charmhelpers.core import hookenv, host
 
 import actions
 import helpers
-
 from testing.mocks import mock_charmhelpers
 
 
@@ -49,14 +47,14 @@ class TestsActions(TestCaseBase):
             hook_files.append(os.path.join(hook_dirs[-1], 'charm-pre-install'))
 
             os.makedirs(hook_dirs[-1])
-            with open(hook_files[-1], 'w') as f:
-                print('mocked', file=f)
+            with open(hook_files[-1], 'w') as f1:
+                print('mocked', file=f1)
             os.chmod(hook_files[-1], 0o755)
 
         check_call.reset_mock()
         actions.preinstall('')
 
-        calls = [call(['sh', '-c', f]) for f in hook_files]
+        calls = [call(['sh', '-c', f2]) for f2 in hook_files]
         check_call.assert_has_calls(calls)
 
     @patch('subprocess.check_call')
@@ -242,6 +240,79 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(
             sorted(['10.20.0.1', '10.20.0.2', '10.20.0.3']),
             sorted(helpers.get_seeds()))
+
+    @patch('helpers.set_io_scheduler')
+    @patch('charmhelpers.core.host.mkdir')
+    @patch('relations.BlockStorageBroker', autospec=True)
+    def test_ensure_directories_mounted(self, bsb, mkdir, set_io_scheduler):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bsb().mountpoint = tmpdir
+            bsb().is_ready.return_value = True
+
+            helpers.ensure_directories()
+
+        for dir in ['data', 'commitlog', 'saved_caches']:
+            with self.subTest(dir=dir):
+                path = os.path.join(tmpdir, dir)
+                host.mkdir.assert_any_call(path, owner='cassandra',
+                                           group='cassandra', perms=0o755)
+                set_io_scheduler.assert_any_call('noop', path)
+
+    @patch('helpers.set_io_scheduler')
+    @patch('charmhelpers.core.host.mkdir')
+    @patch('relations.BlockStorageBroker', autospec=True)
+    def test_ensure_directories_unmounted(self, bsb, mkdir, set_io_scheduler):
+        bsb().is_ready.return_value = True
+        bsb().mountpoint = None
+
+        helpers.ensure_directories()
+
+        for dir in ['data', 'commitlog', 'saved_caches']:
+            with self.subTest(dir=dir):
+                path = os.path.join('/var/lib/cassandra', dir)
+                host.mkdir.assert_any_call(path, owner='cassandra',
+                                           group='cassandra', perms=0o755)
+                set_io_scheduler.assert_any_call('noop', path)
+
+    @patch('helpers.set_io_scheduler')
+    @patch('charmhelpers.core.host.mkdir')
+    @patch('relations.BlockStorageBroker', autospec=True)
+    def test_ensure_directories_overrides(self, bsb, mkdir, set_io_scheduler):
+        hookenv.config()['io_scheduler'] = 'foo-sched'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bsb().mountpoint = tmpdir
+            bsb().is_ready.return_value = True
+            hookenv.config()['data_file_directories'] = 'd1 d2'
+            hookenv.config()['commitlog_directory'] = 'cl'
+            hookenv.config()['saved_caches_directory'] = 'scd'
+
+            helpers.ensure_directories()
+
+        for dir in ['d1', 'd2', 'cl', 'scd']:
+            with self.subTest(dir=dir):
+                path = os.path.join(tmpdir, dir)
+                host.mkdir.assert_any_call(path, owner='cassandra',
+                                           group='cassandra', perms=0o755)
+                set_io_scheduler.assert_any_call('foo-sched', path)
+
+    @patch('helpers.set_io_scheduler')
+    @patch('charmhelpers.core.host.mkdir')
+    @patch('relations.BlockStorageBroker', autospec=True)
+    def test_ensure_directories_abspath(self, bsb, mkdir, set_io_scheduler):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bsb().mountpoint = tmpdir
+            bsb().is_ready.return_value = True
+            hookenv.config()['data_file_directories'] = '/d'
+            hookenv.config()['commitlog_directory'] = '/cl'
+            hookenv.config()['saved_caches_directory'] = '/scd'
+
+            helpers.ensure_directories()
+
+        for path in ['/d', '/cl', '/scd']:
+            with self.subTest(path=path):
+                host.mkdir.assert_any_call(path, owner='cassandra',
+                                           group='cassandra', perms=0o755)
+                set_io_scheduler.assert_any_call('noop', path)
 
 
 if __name__ == '__main__':
