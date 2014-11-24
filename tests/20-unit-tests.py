@@ -315,6 +315,18 @@ class TestHelpers(TestCaseBase):
                                            group='cassandra', perms=0o755)
                 set_io_scheduler.assert_any_call('noop', path)
 
+    @patch('charmhelpers.core.host.write_file')
+    @patch('os.path.isdir')
+    @patch('subprocess.check_output')
+    def test_set_io_scheduler(self, check_output, isdir, write_file):
+        check_output.return_value = 'foo\n/dev/sdq 1 2 3 1% /foo\n'
+        isdir.return_value = True
+
+        helpers.set_io_scheduler('fnord', '/foo')
+
+        write_file.assert_called_once_with('/sys/block/sdq/queue/scheduler',
+                                           'fnord', perms=0o644)
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):
