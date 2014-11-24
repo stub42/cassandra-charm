@@ -77,7 +77,8 @@ def ensure_directories():
 # FOR CHARMHELPERS
 def is_lxc():
     '''Return True if we are running inside an LXC container.'''
-    return ':/lxc/' in open('/proc/1/cgroup', 'r').readline()
+    with open('/proc/1/cgroup', 'r') as f:
+        return ':/lxc/' in f.readline()
 
 
 # FOR CHARMHELPERS

@@ -24,9 +24,10 @@ from testing.mocks import mock_charmhelpers
 
 class TestCaseBase(unittest.TestCase):
     def setUp(self):
+        super(TestCaseBase, self).setUp()
         mock_charmhelpers(self)
 
-        is_lxc = patch('helpers.is_lxc', return_value=False, autospec=True)
+        is_lxc = patch('helpers.is_lxc', autospec=True, return_value=False)
         is_lxc.start()
         self.addCleanup(is_lxc.stop)
 
@@ -313,6 +314,13 @@ class TestHelpers(TestCaseBase):
                 host.mkdir.assert_any_call(path, owner='cassandra',
                                            group='cassandra', perms=0o755)
                 set_io_scheduler.assert_any_call('noop', path)
+
+
+class TestIsLxc(unittest.TestCase):
+    def test_is_lxc(self):
+        # Test the function runs under the current environmnet. We
+        # can't sanely test that it is returning the correct value.
+        helpers.is_lxc()
 
 
 if __name__ == '__main__':
