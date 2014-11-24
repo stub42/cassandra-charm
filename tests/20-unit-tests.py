@@ -9,8 +9,11 @@ import unittest
 from unittest.mock import call, patch
 import yaml
 
-sys.path.append(os.path.abspath(os.path.join(
-    os.path.dirname(__file__), os.pardir, 'hooks')))
+CHARM_DIR = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), os.pardir))
+
+sys.path.append(CHARM_DIR)
+sys.path.append(os.path.join(CHARM_DIR, 'hooks'))
 
 from charmhelpers.core import hookenv
 import charmhelpers.fetch
@@ -18,72 +21,16 @@ import charmhelpers.fetch
 import actions
 import helpers
 
+from testing.mocks import mock_charmhelpers
+
 
 class TestCaseBase(unittest.TestCase):
     def setUp(self):
-        # Mock charm environment variables.
-        charm_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(charm_dir.cleanup)
-        mock_env = patch.dict(os.environ, dict(CHARM_DIR=charm_dir.name))
-        mock_env.start()
-        self.addCleanup(mock_env.stop)
+        mock_charmhelpers(self)
 
-        # Mock config.
-        # Set items:
-        #     hookenv.config()['foo'] = 'bar'
-        # Reset 'previous' state:
-        #     hookenv.config().save();
-        #     hookenv.config().load_previous()
-        tmp = tempfile.NamedTemporaryFile(suffix='.config')
-        self.addCleanup(tmp.close)
-        c = hookenv.Config()
-        c.CONFIG_FILE_NAME = tmp.name
-        def mock_config(scope=None):
-            if scope is None:
-                return c
-            return c.get(scope, None)
-        config = patch('charmhelpers.core.hookenv.config',
-                       side_effect=mock_config, autospec=True)
-        config.start()
-        self.addCleanup(config.stop)
-
-
-        # A mock write_file that can only write root owned files to
-        # the tempdir.
-        def mock_write_file(path, contents, owner='root', group='root',
-                            perms=0o444):
-            self.assertEqual(owner, 'root')
-            self.assertEqual(group, 'root')
-            self.assertTrue(path.startswith(tempfile.gettempdir()))
-            # TODO: This is emulating a bug in charm-helpers. Fix
-            # charmhelpers to correctly use text or binary mode
-            # depending on the 'contents' type.
-            with open(path, 'w') as f:
-                f.write(contents)
-            os.chmod(path, perms)
-        write_file = patch('charmhelpers.core.host.write_file',
-                           side_effect=mock_write_file, autospec=True)
-        write_file.start()
-        self.addCleanup(write_file.stop)
-
-        # Magic mocks.
-        methods = [
-            'helpers.is_lxc',
-            'charmhelpers.core.hookenv.log',
-            'charmhelpers.core.host.log',
-            'actions.log',
-            'charmhelpers.core.hookenv.hook_name',
-            'charmhelpers.core.hookenv.service_name',
-            'charmhelpers.core.hookenv.unit_private_ip',
-        ]
-        for m in methods:
-            mock = patch(m, autospec=True)
-            mock.start()
-            self.addCleanup(mock.stop)
-
-        helpers.is_lxc.return_value = False
-        hookenv.unit_private_ip.return_value = '10.6.6.6'
-        hookenv.service_name.return_value = 'cassandra'
+        is_lxc = patch('helpers.is_lxc', return_value=False, autospec=True)
+        is_lxc.start()
+        self.addCleanup(is_lxc.stop)
 
 
 class TestsActions(TestCaseBase):
@@ -212,7 +159,8 @@ class TestsActions(TestCaseBase):
                                      cluster_name=None,
                                      partitioner='my_partitioner'))
 
-        helpers.get_seeds.return_value = ['10.9.8.7', '6.5.4.3']
+        helpers.get_seeds.return_value = ['10.20.0.1', '10.20.0.2',
+                                          '10.20.0.3']
 
         existing_config = '''
             seed_provider:
@@ -231,17 +179,17 @@ class TestsActions(TestCaseBase):
             new_config = write_file.call_args[0][1]
 
             expected_config = dedent('''\
-                cluster_name: cassandra
-                listen_address: 10.6.6.6
+                cluster_name: service
+                listen_address: 10.20.0.1
                 native_transport_port: 9042
                 num_tokens: 128
                 partitioner: my_partitioner
-                rpc_address: 10.6.6.6
+                rpc_address: 10.20.0.1
                 rpc_port: 9160
                 seed_provider:
                     - class_name: blah.blah.SimpleSeedProvider
                       parameters:
-                        - seeds: '10.9.8.7,6.5.4.3'
+                        - seeds: '10.20.0.1, 10.20.0.2, 10.20.0.3'
                 ''')
             self.assertEqual(yaml.safe_load(new_config),
                              yaml.safe_load(expected_config))
@@ -285,6 +233,15 @@ class TestHelpers(TestCaseBase):
             # context manager.
             self.assertFalse(os.path.exists(prc_backup))
             self.assertFalse(os.path.exists(prc))
+
+    def test_get_seeds_forced(self):
+        hookenv.config()['force_seed_nodes'] = 'a,b,c'
+        self.assertEqual(['a', 'b', 'c'], sorted(helpers.get_seeds()))
+
+    def test_get_seeds(self):
+        self.assertEqual(
+            sorted(['10.20.0.1', '10.20.0.2', '10.20.0.3']),
+            sorted(helpers.get_seeds()))
 
 
 if __name__ == '__main__':

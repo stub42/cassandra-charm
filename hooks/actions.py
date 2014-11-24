@@ -9,7 +9,6 @@ import yaml
 from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
-from charmhelpers.core.hookenv import log
 
 import helpers
 
@@ -24,12 +23,12 @@ def preinstall(servicename):
                                'exec.d', '*', 'charm-pre-install')
         for f in sorted(glob.glob(pattern)):
             if os.path.isfile(f) and os.access(f, os.X_OK):
-                log('Running preinstall hook {}'.format(f))
+                hookenv.log('Running preinstall hook {}'.format(f))
                 subprocess.check_call(['sh', '-c', f])
             else:
-                log('Ingnoring preinstall hook {}'.format(f))
+                hookenv.log('Ingnoring preinstall hook {}'.format(f))
         else:
-            log('No preinstall hooks found')
+            hookenv.log('No preinstall hooks found')
 
 
 # FOR CHARMHELPERS
@@ -130,7 +129,7 @@ def configure_cassandra_yaml(
     cassandra_yaml['cluster_name'] = (config['cluster_name']
                                       or hookenv.service_name())
 
-    seeds = ','.join(helpers.get_seeds())
+    seeds = ', '.join(helpers.get_seeds())
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['num_tokens'] = int(config['num_tokens'])
