@@ -330,8 +330,9 @@ class TestHelpers(TestCaseBase):
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):
-        # Test the function runs under the current environmnet. We
-        # can't sanely test that it is returning the correct value.
+        # Test the function runs under the current environmnet.
+        # Unfortunately we can't sanely test that it is returning the
+        # correct value
         helpers.is_lxc()
 
 

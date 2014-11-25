@@ -18,7 +18,8 @@ lint: venv
 	tests/10-lint.sh
 
 test: venv lint
-	tests/20-integration-tests.py
+	tests/20-unit-tests.py
+	tests/30-integration-tests.py
 
 clean:
 	rm -rf .venv tests/.venv .stamp-*
