@@ -1,7 +1,7 @@
 # Bootstrap charm-helpers, installing its dependencies if necessary using
 # only standard libraries.
 try:
-    import six
+    import six  # flake8: noqa
 except ImportError:
     import subprocess
     import sys
@@ -9,5 +9,4 @@ except ImportError:
         subprocess.check_call(['apt-get', 'install', '-y', 'python-six'])
     else:
         subprocess.check_call(['apt-get', 'install', '-y', 'python3-six'])
-    import six
-_ = six
+    import six  # flake8: noqa
