@@ -21,6 +21,10 @@ test: venv lint
 	tests/20-unit-tests.py
 	tests/30-integration-tests.py
 
+ftest: venv lint
+	tests/20-unit-tests.py
+	tests/30-integration-tests.py Test1UnitDeployment
+
 clean:
 	rm -rf .venv tests/.venv .stamp-*
 
