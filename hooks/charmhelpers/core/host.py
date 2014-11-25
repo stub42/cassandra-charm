@@ -55,7 +55,9 @@ def service(action, service_name):
 def service_running(service):
     """Determine whether a system service is running"""
     try:
-        output = subprocess.check_output(['service', service, 'status'], stderr=subprocess.STDOUT)
+        output = subprocess.check_output(
+            ['service', service, 'status'],
+            stderr=subprocess.STDOUT).decode('UTF-8')
     except subprocess.CalledProcessError:
         return False
     else:
@@ -68,9 +70,11 @@ def service_running(service):
 def service_available(service_name):
     """Determine whether a system service is available"""
     try:
-        subprocess.check_output(['service', service_name, 'status'], stderr=subprocess.STDOUT)
+        subprocess.check_output(
+            ['service', service_name, 'status'],
+            stderr=subprocess.STDOUT).decode('UTF-8')
     except subprocess.CalledProcessError as e:
-        return 'unrecognized service' not in e.output
+        return b'unrecognized service' not in e.output
     else:
         return True
 
@@ -116,7 +120,7 @@ def rsync(from_path, to_path, flags='-r', options=None):
     cmd.append(from_path)
     cmd.append(to_path)
     log(" ".join(cmd))
-    return subprocess.check_output(cmd).strip()
+    return subprocess.check_output(cmd).decode('UTF-8').strip()
 
 
 def symlink(source, destination):
@@ -148,11 +152,11 @@ def mkdir(path, owner='root', group='root', perms=0o555, force=False):
 
 
 def write_file(path, content, owner='root', group='root', perms=0o444):
-    """Create or overwrite a file with the contents of a string"""
+    """Create or overwrite a file with the contents of a byte string."""
     log("Writing file {} {}:{} {:o}".format(path, owner, group, perms))
     uid = pwd.getpwnam(owner).pw_uid
     gid = grp.getgrnam(group).gr_gid
-    with open(path, 'w') as target:
+    with open(path, 'wb') as target:
         os.fchown(target.fileno(), uid, gid)
         os.fchmod(target.fileno(), perms)
         target.write(content)
@@ -314,7 +318,7 @@ def list_nics(nic_type):
     interfaces = []
     for int_type in int_types:
         cmd = ['ip', 'addr', 'show', 'label', int_type + '*']
-        ip_output = subprocess.check_output(cmd).split('\n')
+        ip_output = subprocess.check_output(cmd).decode('UTF-8').split('\n')
         ip_output = (line for line in ip_output if line)
         for line in ip_output:
             if line.split()[1].startswith(int_type):
@@ -336,7 +340,7 @@ def set_nic_mtu(nic, mtu):
 
 def get_nic_mtu(nic):
     cmd = ['ip', 'addr', 'show', nic]
-    ip_output = subprocess.check_output(cmd).split('\n')
+    ip_output = subprocess.check_output(cmd).decode('UTF-8').split('\n')
     mtu = ""
     for line in ip_output:
         words = line.split()
@@ -347,7 +351,7 @@ def get_nic_mtu(nic):
 
 def get_nic_hwaddr(nic):
     cmd = ['ip', '-o', '-0', 'addr', 'show', nic]
-    ip_output = subprocess.check_output(cmd)
+    ip_output = subprocess.check_output(cmd).decode('UTF-8')
     hwaddr = ""
     words = ip_output.split()
     if 'link/ether' in words:

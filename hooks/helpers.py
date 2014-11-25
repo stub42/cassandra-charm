@@ -15,7 +15,7 @@ def autostart_disabled(policy_rc='/usr/sbin/policy-rc.d'):
     try:
         if os.path.exists(policy_rc):
             shutil.move(policy_rc, "{}-orig".format(policy_rc))
-        host.write_file(policy_rc, '#!/bin/sh\nexit 101', perms=0o555)
+        host.write_file(policy_rc, b'#!/bin/sh\nexit 101', perms=0o555)
         yield
     finally:
         os.unlink(policy_rc)

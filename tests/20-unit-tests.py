@@ -125,7 +125,8 @@ class TestsActions(TestCaseBase):
                 hookenv.config()['package_status'] = status
                 actions.ensure_package_status('', ['a_pack', 'b_pack'])
 
-                selections = 'a_pack {}\nb_pack {}\n'.format(status, status)
+                selections = 'a_pack {}\nb_pack {}\n'.format(
+                    status, status).encode('US-ASCII')
 
                 self.assertEqual([
                     call(['dpkg', '--set-selections'], stdin=subprocess.PIPE),

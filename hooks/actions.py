@@ -102,7 +102,7 @@ def ensure_package_status(servicename, packages):
         selections.append('{} {}\n'.format(package, package_status))
     dpkg = subprocess.Popen(['dpkg', '--set-selections'],
                             stdin=subprocess.PIPE)
-    dpkg.communicate(input=''.join(selections))
+    dpkg.communicate(input=''.join(selections).encode('US-ASCII'))
 
 
 # FOR CHARMHELPERS
@@ -111,6 +111,14 @@ def install_packages(servicename, packages):
         packages.extend(hookenv.config('extra_packages').split())
     with helpers.autostart_disabled():
         fetch.apt_install(packages, fatal=True)
+
+
+def install_cassandra_packages(servicename):
+    install_packages(servicename, ['cassandra', 'cassandra-tools'])
+
+
+def ensure_cassandra_package_status(servicename):
+    ensure_package_status(servicename, ['cassandra', 'cassandra-tools'])
 
 
 def configure_cassandra_yaml(
@@ -145,4 +153,5 @@ def configure_cassandra_yaml(
     cassandra_yaml['partitioner'] = (config['partitioner']
                                      or 'Murmur3Partitioner')
 
-    host.write_file(cassandra_yaml_path, yaml.safe_dump(cassandra_yaml))
+    host.write_file(cassandra_yaml_path,
+                    yaml.safe_dump(cassandra_yaml).encode('UTF-8'))
