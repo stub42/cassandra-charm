@@ -1,6 +1,6 @@
 destination: hooks/charmhelpers
 #branch: lp:charm-helpers
-branch: lp:~stub/charm-helpers/py3
+branch: lp:~stub/charm-helpers/py3-2
 include:
     - core
     - fetch
