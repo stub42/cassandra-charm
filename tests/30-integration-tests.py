@@ -3,6 +3,7 @@
 import os.path
 import shutil
 import subprocess
+import tempfile
 import unittest
 import warnings
 
@@ -16,52 +17,83 @@ import yaml
 
 
 SERIES = 'trusty'
+CHARM_DIR = os.path.join(os.path.dirname(__file__), os.pardir)
 
 
-# Explicitly reset $JUJU_REPOSITORY to ensure amulet and juju-deployer
-# don't mess with your real one, per Bug #1393792
-os.environ['JUJU_REPOSITORY'] = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '.venv', 'repo'))
-os.makedirs(os.path.join(os.environ['JUJU_REPOSITORY'], SERIES),
-            mode=0o700, exist_ok=True)
+class AmuletFixture(object):
+    def __init__(self, series, charm_dir):
+        self.temp_dirs = []
+        self.series = series
+        self.src_charm_dir = charm_dir
 
+        # Explicitly reset $JUJU_REPOSITORY to ensure amulet and juju-deployer
+        # don't mess with your real one, per Bug #1393792
+        self.org_repo = os.environ.get('JUJU_REPOSITORY', None)
+        temp_repo = tempfile.TemporaryDirectory(suffix='.repo')
+        self.temp_dirs.append(temp_repo)
+        os.environ['JUJU_REPOSITORY'] = temp_repo.name
+        os.makedirs(os.path.join(temp_repo.name, SERIES),
+                    mode=0o700, exist_ok=False)
 
-def repackage_charm(charm_dir):
-    """Mirror the charm into a staging area.
+        # Repackage our charm to a temporary directory, allowing us
+        # to strip our virtualenv symlinks that would otherwise cause
+        # juju to abort. We also strip the .bzr directory, working
+        # around Bug #1394078.
+        self.repackage_charm()
 
-    We do this to work around issues with Amulet, juju-deployer
-    and juju. In particular:
-        - symlinks in the Python virtual env pointing outside of the
-          charm directory.
-        - juju-deployer messing with the directory pointed to by your
-          existing $JUJU_REPOSITORY
-        - odd bzr interactions, such as tests being run on the committed
-          version of the charm, rather than the working tree.
+        self.deployment = amulet.Deployment(series=self.series)
 
-    Returns the test charm directory.
-    """
-    with open(os.path.join(charm_dir, 'metadata.yaml'), 'rb') as s:
-        charm_name = yaml.safe_load(s)['name']
+    def setUp(self, timeout=900):
+        self.reset_environment()
+        try:
+            self.deployment.setup(timeout=timeout)
+            self.deployment.sentry.wait()
+        except amulet.helpers.TimeoutError:
+            # Don't skip tests on timeout. This hides real failures,
+            # such as deadlocks between peers.
+            # raise unittest.SkipTest("Environment wasn't stood up in time")
+            raise
 
-    repack_root = os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                               '.venv', 'repack'))
-    os.makedirs(repack_root, 0o700, exist_ok=True)
+    def tearDown(self, reset_environment=True):
+        if reset_environment:
+            self.reset_environment()
+        if self.org_repo is None:
+            del os.environ['JUJU_REPOSITORY']
+        else:
+            os.environ['JUJU_REPOSITORY'] = self.org_repo
+        for temp_dir in self.temp_dirs:
+            temp_dir.cleanup()
 
-    repack_charm_dir = os.path.join(repack_root, charm_name)
-    shutil.rmtree(repack_charm_dir, ignore_errors=True)
+    def reset_environment(self):
+        subprocess.check_call(['juju-deployer', '-T'])
 
-    # Ignore .bzr to work around weird bzr interactions with
-    # juju-deployer, per Bug #1394078, and ignore .venv
-    # due to a) it containing symlinks juju will reject and b) to avoid
-    # infinite recursion.
-    shutil.copytree(charm_dir, repack_charm_dir, symlinks=True,
-                    ignore=shutil.ignore_patterns('.venv', '.bzr'))
+    def repackage_charm(self):
+        """Mirror the charm into a staging area.
 
-    return repack_charm_dir
+        We do this to work around issues with Amulet, juju-deployer
+        and juju. In particular:
+            - symlinks in the Python virtual env pointing outside of the
+            charm directory.
+            - odd bzr interactions, such as tests being run on the committed
+            version of the charm, rather than the working tree.
 
+        Returns the test charm directory.
+        """
+        with open(os.path.join(self.src_charm_dir,
+                               'metadata.yaml'), 'r') as s:
+            self.charm_name = yaml.safe_load(s)['name']
 
-def reset_environment():
-    subprocess.check_call(['juju-deployer', '-T'])
+        repack_root = tempfile.TemporaryDirectory(suffix='.charm')
+        self.temp_dirs.append(repack_root)
+
+        self.charm_dir = os.path.join(repack_root.name, self.charm_name)
+
+        # Ignore .bzr to work around weird bzr interactions with
+        # juju-deployer, per Bug #1394078, and ignore .venv
+        # due to a) it containing symlinks juju will reject and b) to avoid
+        # infinite recursion.
+        shutil.copytree(self.src_charm_dir, self.charm_dir, symlinks=True,
+                        ignore=shutil.ignore_patterns('.venv', '.bzr'))
 
 
 class TestDeploymentBase(unittest.TestCase):
@@ -70,27 +102,27 @@ class TestDeploymentBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cassandra_charm = repackage_charm(
-            os.path.join(os.path.dirname(__file__), os.pardir))
-
-        reset_environment()
-
-        cls.deployment = amulet.Deployment(series=SERIES)
-        cls.deployment.add('cassandra', cassandra_charm, units=cls.rf)
-        try:
-            cls.deployment.setup(timeout=900)
-            cls.deployment.sentry.wait()
-        except amulet.helpers.TimeoutError:
-            amulet.raise_status(amulet.SKIP,
-                                msg="Environment wasn't stood up in time")
+        cls.amulet = AmuletFixture(charm_dir=CHARM_DIR, series=SERIES)
+        cls.amulet.deployment.add('cassandra',
+                                  cls.amulet.charm_dir, units=cls.rf)
+        cls.amulet.setUp()
 
     @classmethod
     def tearDownClass(cls):
-        reset_environment()
-        cls.deployment = None
+        cls.amulet.tearDown()
+        cls.amulet = None
 
     def setUp(self):
-        self.needs_reset = True
+        session = self.cluster().connect()
+        try:
+            session.execute('DROP KEYSPACE test')
+        except Exception:
+            pass
+        session.execute('''
+                        CREATE KEYSPACE test WITH REPLICATION = {
+                            'class': 'SimpleStrategy',
+                            'replication_factor': %s}
+                        ''', (self.rf,))
 
     def juju_status(self):
         status_yaml = subprocess.check_output(['juju', 'status',
@@ -109,21 +141,7 @@ class TestDeploymentBase(unittest.TestCase):
         return cluster
 
     def session(self):
-        if self.needs_reset:
-            session = self.cluster().connect()
-            try:
-                session.execute('DROP KEYSPACE test')
-            except Exception:
-                pass
-            session.execute('''
-                            CREATE KEYSPACE test WITH REPLICATION = {
-                                'class': 'SimpleStrategy',
-                                'replication_factor': %s}
-                            ''', (self.rf,))
-            session.set_keyspace('test')
-            self.needs_reset = False
-        else:
-            session = self.cluster().connect('test')
+        session = self.cluster().connect('test')
         self.addCleanup(session.shutdown)
         return session
 
@@ -154,29 +172,6 @@ class Test3UnitDeployment(TestDeploymentBase):
 class Test1UnitDeployment(Test3UnitDeployment):
     """Tests run on a single node cluster."""
     rf = 1
-
-
-# Now you can use self.deployment.sentry.unit[UNIT] to address each of
-# the units and perform more in-depth steps.  You can also reference
-# the first unit as self.unit.
-# There are three test statuses that can be triggered with
-# amulet.raise_status():
-#   - amulet.PASS
-#   - amulet.FAIL
-#   - amulet.SKIP
-# Each unit has the following methods:
-#   - .info - An array of the information of that unit from Juju
-#   - .file(PATH) - Get the details of a file on that unit
-#   - .file_contents(PATH) - Get plain text output of PATH file from that unit
-#   - .directory(PATH) - Get details of directory
-#   - .directory_contents(PATH) - List files and folders in PATH on that unit
-#   - .relation(relation, service:rel) - Get relation data from return service
-#          add tests here to confirm service is up and working properly
-# For example, to confirm that it has a functioning HTTP server:
-#     page = requests.get('http://{}'.format(self.unit.info['public-address']))
-#     page.raise_for_status()
-# More information on writing Amulet tests can be found at:
-#     https://juju.ubuntu.com/docs/tools-amulet.html
 
 
 if __name__ == '__main__':
