@@ -3,7 +3,7 @@ charm-helpers mocks.
 '''
 import os.path
 import tempfile
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import yaml
 
@@ -49,12 +49,13 @@ def mock_charmhelpers(test_case):
             config[k] = int(opt_val)
         elif opt_type == 'boolean':
             config[k] = bool(opt_val)
+
     def mock_config(scope=None):
         if scope is None:
             return config
         return config.get(scope, None)
     mocks.append(patch('charmhelpers.core.hookenv.config',
-                        side_effect=mock_config, autospec=True))
+                       side_effect=mock_config, autospec=True))
 
     # Magic mocks.
     methods = [

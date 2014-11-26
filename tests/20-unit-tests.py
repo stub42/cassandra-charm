@@ -11,7 +11,6 @@ import yaml
 
 CHARM_DIR = os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.pardir))
-
 sys.path.append(CHARM_DIR)
 sys.path.append(os.path.join(CHARM_DIR, 'hooks'))
 

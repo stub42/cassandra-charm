@@ -1,99 +1,27 @@
 #!.venv/bin/python3
 
 import os.path
-import shutil
 import subprocess
-import tempfile
+import sys
 import unittest
 import warnings
 
 warnings.filterwarnings('ignore', 'The blist library is not available')
 
-import amulet
 from cassandra import ConsistencyLevel
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 import yaml
 
+CHARM_DIR = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), os.pardir))
+sys.path.append(CHARM_DIR)
+
+from testing.amuletfixture import AmuletFixture
+
 
 SERIES = 'trusty'
 CHARM_DIR = os.path.join(os.path.dirname(__file__), os.pardir)
-
-
-class AmuletFixture(object):
-    def __init__(self, series, charm_dir):
-        self.temp_dirs = []
-        self.series = series
-        self.src_charm_dir = charm_dir
-
-        # Explicitly reset $JUJU_REPOSITORY to ensure amulet and juju-deployer
-        # don't mess with your real one, per Bug #1393792
-        self.org_repo = os.environ.get('JUJU_REPOSITORY', None)
-        temp_repo = tempfile.TemporaryDirectory(suffix='.repo')
-        self.temp_dirs.append(temp_repo)
-        os.environ['JUJU_REPOSITORY'] = temp_repo.name
-        os.makedirs(os.path.join(temp_repo.name, SERIES),
-                    mode=0o700, exist_ok=False)
-
-        # Repackage our charm to a temporary directory, allowing us
-        # to strip our virtualenv symlinks that would otherwise cause
-        # juju to abort. We also strip the .bzr directory, working
-        # around Bug #1394078.
-        self.repackage_charm()
-
-        self.deployment = amulet.Deployment(series=self.series)
-
-    def setUp(self, timeout=900):
-        self.reset_environment()
-        try:
-            self.deployment.setup(timeout=timeout)
-            self.deployment.sentry.wait()
-        except amulet.helpers.TimeoutError:
-            # Don't skip tests on timeout. This hides real failures,
-            # such as deadlocks between peers.
-            # raise unittest.SkipTest("Environment wasn't stood up in time")
-            raise
-
-    def tearDown(self, reset_environment=True):
-        if reset_environment:
-            self.reset_environment()
-        if self.org_repo is None:
-            del os.environ['JUJU_REPOSITORY']
-        else:
-            os.environ['JUJU_REPOSITORY'] = self.org_repo
-        for temp_dir in self.temp_dirs:
-            temp_dir.cleanup()
-
-    def reset_environment(self):
-        subprocess.check_call(['juju-deployer', '-T'])
-
-    def repackage_charm(self):
-        """Mirror the charm into a staging area.
-
-        We do this to work around issues with Amulet, juju-deployer
-        and juju. In particular:
-            - symlinks in the Python virtual env pointing outside of the
-            charm directory.
-            - odd bzr interactions, such as tests being run on the committed
-            version of the charm, rather than the working tree.
-
-        Returns the test charm directory.
-        """
-        with open(os.path.join(self.src_charm_dir,
-                               'metadata.yaml'), 'r') as s:
-            self.charm_name = yaml.safe_load(s)['name']
-
-        repack_root = tempfile.TemporaryDirectory(suffix='.charm')
-        self.temp_dirs.append(repack_root)
-
-        self.charm_dir = os.path.join(repack_root.name, self.charm_name)
-
-        # Ignore .bzr to work around weird bzr interactions with
-        # juju-deployer, per Bug #1394078, and ignore .venv
-        # due to a) it containing symlinks juju will reject and b) to avoid
-        # infinite recursion.
-        shutil.copytree(self.src_charm_dir, self.charm_dir, symlinks=True,
-                        ignore=shutil.ignore_patterns('.venv', '.bzr'))
 
 
 class TestDeploymentBase(unittest.TestCase):
@@ -102,15 +30,14 @@ class TestDeploymentBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.amulet = AmuletFixture(charm_dir=CHARM_DIR, series=SERIES)
-        cls.amulet.deployment.add('cassandra',
-                                  cls.amulet.charm_dir, units=cls.rf)
-        cls.amulet.setUp()
+        cls.deployment = AmuletFixture(series=SERIES)
+        cls.deployment.add('cassandra', units=cls.rf)
+        cls.deployment.setUp()
 
     @classmethod
     def tearDownClass(cls):
-        cls.amulet.tearDown()
-        cls.amulet = None
+        cls.deployment.tearDown()
+        cls.deployment = None
 
     def setUp(self):
         session = self.cluster().connect()
@@ -118,6 +45,10 @@ class TestDeploymentBase(unittest.TestCase):
             session.execute('DROP KEYSPACE test')
         except Exception:
             pass
+        # We create a keyspace with a replication factor equal to the
+        # number of units. This ensures that all records are replicated
+        # to all nodes, and we can cofirm that all nodes are working by
+        # doing an insert with ConsistencyLevel.ALL.
         session.execute('''
                         CREATE KEYSPACE test WITH REPLICATION = {
                             'class': 'SimpleStrategy',
