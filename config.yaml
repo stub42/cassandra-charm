@@ -243,20 +243,22 @@ options:
         description: |
             The pct of data disk used to trigger a nagios critcal alert
 
+    # cassandra-env.sh related options
+    max_heap_size:
+        type: string
+        default: ''
+        description: |
+            Total size of Java memory heap, for example 1G or 512M.
+            If you set this, you should also set heap_newsize.
+    heap_newsize:
+        type: string
+        default: ''
+        description: |
+            The size of the JVM's young generation in the heap. If you
+            set this, you should also set max_heap_size. If in doubt,
+            go with 100M per physical CPU core. Default is automatically
+            tuned.
 
-##     # cassandra-env.sh related options
-##     auto-memory:
-##         type: boolean
-##         default: true
-##         description: >
-##             Automatically configure memory options based on specification
-##             of the server infrastructure its running on.
-##     heap-size:
-##         type: string
-##         default: 1G
-##         description: >
-##             Total size of Java memory heap, for example 1G or 512M.
-##             Only used if auto-memory = false.
 ##     new-gen-size:
 ##         type: string
 ##         default: 100M

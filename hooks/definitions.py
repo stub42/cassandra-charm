@@ -31,6 +31,7 @@ SERVICE_DEFINITIONS = [
              actions.install_cassandra_packages,
              actions.ensure_cassandra_package_status,
              actions.configure_cassandra_yaml,
+             actions.configure_cassandra_env,
          ])
 ]
 

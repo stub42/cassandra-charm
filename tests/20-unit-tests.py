@@ -1,6 +1,7 @@
 #!.venv/bin/python3
 
 import os.path
+import re
 import subprocess
 import sys
 import tempfile
@@ -32,7 +33,7 @@ class TestCaseBase(unittest.TestCase):
 
 
 class TestsActions(TestCaseBase):
-    @patch('subprocess.check_call')
+    @patch('subprocess.check_call', autospec=True)
     def test_preinstall(self, check_call):
         hookenv.hook_name.return_value = 'install'
         # Noop if there are no preinstall hooks found.
@@ -57,7 +58,7 @@ class TestsActions(TestCaseBase):
         calls = [call(['sh', '-c', f2]) for f2 in hook_files]
         check_call.assert_has_calls(calls)
 
-    @patch('subprocess.check_call')
+    @patch('subprocess.check_call', autospec=True)
     def test_swapoff(self, check_call):
         fstab = (
             b'UUID=abc / ext4 errors=remount-ro 0 1\n'
@@ -71,7 +72,7 @@ class TestsActions(TestCaseBase):
 
         check_call.assert_called_once_with(['swapoff', '-a'])
 
-    @patch('charmhelpers.fetch.configure_sources')
+    @patch('charmhelpers.fetch.configure_sources', autospec=True)
     def test_configure_sources(self, configure_sources):
         config = hookenv.config()
 
@@ -104,8 +105,8 @@ class TestsActions(TestCaseBase):
         actions.configure_sources('')
         configure_sources.assert_called_once_with(True)
 
-    @patch('charmhelpers.core.host.write_file')
-    @patch('subprocess.check_call')
+    @patch('charmhelpers.core.host.write_file', autospec=True)
+    @patch('subprocess.check_call', autospec=True)
     def test_reset_sysctl(self, check_call, write_file):
         actions.reset_sysctl('')
 
@@ -116,7 +117,7 @@ class TestsActions(TestCaseBase):
         check_call.assert_called_once_with(['sysctl', '-p',
                                             '/etc/sysctl.d/99-cassandra.conf'])
 
-    @patch('subprocess.Popen')
+    @patch('subprocess.Popen', autospec=True)
     def test_ensure_package_status(self, popen):
         for status in ['install', 'hold']:
             with self.subTest(status=status):
@@ -132,8 +133,8 @@ class TestsActions(TestCaseBase):
                     call().communicate(input=selections),
                     ], popen.mock_calls)
 
-    @patch('helpers.autostart_disabled')
-    @patch('charmhelpers.fetch.apt_install')
+    @patch('helpers.autostart_disabled', autospec=True)
+    @patch('charmhelpers.fetch.apt_install', autospec=True)
     def test_install_packages(self, apt_install, autostart_disabled):
         packages = ['a_pack', 'b_pack']
         hookenv.config()['extra_packages'] = 'c_pack d_pack'
@@ -149,9 +150,9 @@ class TestsActions(TestCaseBase):
         autostart_disabled().__enter__.assert_called_once_with()
         autostart_disabled().__exit__.assert_called_once_with(None, None, None)
 
-    @patch('helpers.ensure_directories')
-    @patch('helpers.get_seeds')
-    @patch('charmhelpers.core.host.write_file')
+    @patch('helpers.ensure_directories', autospec=True)
+    @patch('helpers.get_seeds', autospec=True)
+    @patch('charmhelpers.core.host.write_file', autospec=True)
     def test_configure_cassandra_yaml(self, write_file,
                                       get_seeds, ensure_directories):
         hookenv.config().update(dict(num_tokens=128,
@@ -168,11 +169,12 @@ class TestsActions(TestCaseBase):
                       - seeds: 127.0.0.1  # Comma separated list.
             '''
 
-        with tempfile.NamedTemporaryFile('wb') as yaml_config:
-            yaml_config.write(existing_config.encode('utf8'))
-            yaml_config.flush()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yaml_config = os.path.join(tmpdir, 'c.yaml')
+            with open(yaml_config, 'w', encoding='UTF-8') as f:
+                f.write(existing_config)
 
-            actions.configure_cassandra_yaml('', yaml_config.name)
+            actions.configure_cassandra_yaml('', yaml_config)
 
             self.assertEqual(write_file.call_count, 2)
             new_config = write_file.call_args[0][1]
@@ -196,10 +198,72 @@ class TestsActions(TestCaseBase):
             # Confirm we can use an explicit cluster_name too.
             write_file.reset_mock()
             hookenv.config()['cluster_name'] = 'fubar'
-            actions.configure_cassandra_yaml('', yaml_config.name)
+            actions.configure_cassandra_yaml('', yaml_config)
             new_config = write_file.call_args[0][1]
             self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
                              'fubar')
+
+    @patch('charmhelpers.core.host.write_file', autospec=True)
+    def test_configure_cassandra_env(self, write_file):
+        def _wf(path, contents):
+            with open(path, 'wb') as f:
+                f.write(contents)
+        write_file.side_effect = _wf
+
+        # cassandra-env.sh is a shell script that unfortunately
+        # embeds configuration we need to change.
+        existing_config = dedent('''\
+                                 Everything is ignored
+                                 unless a regexp matches
+                                 #MAX_HEAP_SIZE="1G"
+                                 #HEAP_NEWSIZE="800M"
+                                 And done
+                                 ''')
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            cassandra_env = os.path.join(tempdir, 'c.sh')
+
+            with open(cassandra_env, 'w', encoding='UTF-8') as f:
+                f.write(existing_config)
+
+            overrides = [
+                ('max_heap_size', re.compile('^MAX_HEAP_SIZE=(.*)$', re.M)),
+                ('heap_newsize', re.compile('^HEAP_NEWSIZE=(.*)$', re.M)),
+            ]
+
+            # By default, nothing is overrridden. The settings will be
+            # commented out.
+            actions.configure_cassandra_env('', cassandra_env)
+            with open(cassandra_env, 'r', encoding='UTF-8') as f:
+                generated_env = f.read()
+            for config_key, regexp in overrides:
+                with self.subTest(override=config_key):
+                    self.assertIsNone(regexp.search(generated_env))
+
+            # Settings can be overridden.
+            for config_key, regexp in overrides:
+                hookenv.config()[config_key] = '{} val'.format(config_key)
+            actions.configure_cassandra_env('', cassandra_env)
+            with open(cassandra_env, 'r') as f:
+                generated_env = f.read()
+            for config_key, regexp in overrides:
+                with self.subTest(override=config_key):
+                    match = regexp.search(generated_env)
+                    self.assertIsNotNone(match)
+                    # Note the value has been shell quoted.
+                    self.assertTrue(
+                        match.group(1).startswith(
+                            "'{} val'".format(config_key)))
+
+            # Settings can be returned to the defaults.
+            for config_key, regexp in overrides:
+                hookenv.config()[config_key] = ''
+            actions.configure_cassandra_env('', cassandra_env)
+            with open(cassandra_env, 'r', encoding='UTF-8') as f:
+                generated_env = f.read()
+            for config_key, regexp in overrides:
+                with self.subTest(override=config_key):
+                    self.assertIsNone(regexp.search(generated_env))
 
 
 class TestHelpers(TestCaseBase):
@@ -242,8 +306,8 @@ class TestHelpers(TestCaseBase):
             sorted(['10.20.0.1', '10.20.0.2', '10.20.0.3']),
             sorted(helpers.get_seeds()))
 
-    @patch('helpers.set_io_scheduler')
-    @patch('charmhelpers.core.host.mkdir')
+    @patch('helpers.set_io_scheduler', autospec=True)
+    @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
     def test_ensure_directories_mounted(self, bsb, mkdir, set_io_scheduler):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -259,8 +323,8 @@ class TestHelpers(TestCaseBase):
                                            group='cassandra', perms=0o755)
                 set_io_scheduler.assert_any_call('noop', path)
 
-    @patch('helpers.set_io_scheduler')
-    @patch('charmhelpers.core.host.mkdir')
+    @patch('helpers.set_io_scheduler', autospec=True)
+    @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
     def test_ensure_directories_unmounted(self, bsb, mkdir, set_io_scheduler):
         bsb().is_ready.return_value = True
@@ -275,8 +339,8 @@ class TestHelpers(TestCaseBase):
                                            group='cassandra', perms=0o755)
                 set_io_scheduler.assert_any_call('noop', path)
 
-    @patch('helpers.set_io_scheduler')
-    @patch('charmhelpers.core.host.mkdir')
+    @patch('helpers.set_io_scheduler', autospec=True)
+    @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
     def test_ensure_directories_overrides(self, bsb, mkdir, set_io_scheduler):
         hookenv.config()['io_scheduler'] = 'foo-sched'
@@ -296,8 +360,8 @@ class TestHelpers(TestCaseBase):
                                            group='cassandra', perms=0o755)
                 set_io_scheduler.assert_any_call('foo-sched', path)
 
-    @patch('helpers.set_io_scheduler')
-    @patch('charmhelpers.core.host.mkdir')
+    @patch('helpers.set_io_scheduler', autospec=True)
+    @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
     def test_ensure_directories_abspath(self, bsb, mkdir, set_io_scheduler):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -315,9 +379,9 @@ class TestHelpers(TestCaseBase):
                                            group='cassandra', perms=0o755)
                 set_io_scheduler.assert_any_call('noop', path)
 
-    @patch('charmhelpers.core.host.write_file')
-    @patch('os.path.isdir')
-    @patch('subprocess.check_output')
+    @patch('charmhelpers.core.host.write_file', autospec=True)
+    @patch('os.path.isdir', autospec=True)
+    @patch('subprocess.check_output', autospec=True)
     def test_set_io_scheduler(self, check_output, isdir, write_file):
         check_output.return_value = 'foo\n/dev/sdq 1 2 3 1% /foo\n'
         isdir.return_value = True

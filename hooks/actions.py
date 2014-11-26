@@ -2,6 +2,8 @@ from contextlib import closing
 import errno
 import glob
 import os.path
+import re
+import shlex
 import subprocess
 
 import yaml
@@ -155,3 +157,31 @@ def configure_cassandra_yaml(
 
     host.write_file(cassandra_yaml_path,
                     yaml.safe_dump(cassandra_yaml).encode('UTF-8'))
+
+
+def configure_cassandra_env(
+        servicename, cassandra_env_path='/etc/cassandra/cassandra-env.sh'):
+    assert os.path.exists(cassandra_env_path)
+    # Create a backup of the original cassandra-env.sh in case it is
+    # useful.
+    if not os.path.exists(cassandra_env_path + '.orig'):
+        with open(cassandra_env_path, 'rb') as f:
+            host.write_file(cassandra_env_path + '.orig', f.read())
+
+    overrides = [
+        ('max_heap_size', re.compile(r'^#?(MAX_HEAP_SIZE)=(.*)$', re.M)),
+        ('heap_newsize', re.compile(r'^#?(HEAP_NEWSIZE)=(.*)$', re.M)),
+    ]
+
+    with open(cassandra_env_path, 'r') as f:
+        env = f.read()
+
+    config = hookenv.config()
+    for key, regexp in overrides:
+        if config[key]:
+            val = shlex.quote(config[key])
+            env = regexp.sub(r'\g<1>={}  # Juju service config'.format(val),
+                             env)
+        else:
+            env = regexp.sub(r'#\1=\2  # Juju service config', env)
+    host.write_file(cassandra_env_path, env.encode('UTF-8'))

@@ -30,9 +30,13 @@ class TestDeploymentBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.deployment = AmuletFixture(series=SERIES)
-        cls.deployment.add('cassandra', units=cls.rf)
-        cls.deployment.setUp()
+        deployment = AmuletFixture(series=SERIES)
+        deployment.add('cassandra', units=cls.rf)
+        deployment.configure('cassandra', dict(max_heap_size='128M',
+                                               heap_newsize='32M'))
+        deployment.setUp()
+
+        cls.deployment = deployment
 
     @classmethod
     def tearDownClass(cls):

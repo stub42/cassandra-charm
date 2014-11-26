@@ -75,11 +75,11 @@ class AmuletFixture(amulet.Deployment):
         src_charm_dir = os.path.dirname(__file__)
         while True:
             if os.path.exists(os.path.join(src_charm_dir,
-                                            'metadata.yaml')):
+                                           'metadata.yaml')):
                 break
             assert src_charm_dir != os.sep, 'metadata.yaml not found'
             src_charm_dir = os.path.abspath(os.path.join(src_charm_dir,
-                                                            os.pardir))
+                                                         os.pardir))
 
         with open(os.path.join(src_charm_dir, 'metadata.yaml'), 'r') as s:
             self.charm_name = yaml.safe_load(s)['name']
