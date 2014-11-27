@@ -391,6 +391,23 @@ class TestHelpers(TestCaseBase):
         write_file.assert_called_once_with('/sys/block/sdq/queue/scheduler',
                                            'fnord', perms=0o644)
 
+    @patch('shutil.chown')
+    def test_recursive_chown(self, chown):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, 'a', 'bb', 'ccc'))
+            with open(os.path.join(tmpdir, 'top file'), 'w') as f:
+                f.write('top file')
+            with open(os.path.join(tmpdir, 'a', 'bb', 'midfile'), 'w') as f:
+                f.write('midfile')
+            helpers.recursive_chown(tmpdir, 'un', 'gn')
+        chown.assert_has_calls(
+            [call(os.path.join(tmpdir, 'a'), 'un', 'gn'),
+             call(os.path.join(tmpdir, 'a', 'bb'), 'un', 'gn'),
+             call(os.path.join(tmpdir, 'a', 'bb', 'ccc'), 'un', 'gn'),
+             call(os.path.join(tmpdir, 'top file'), 'un', 'gn'),
+             call(os.path.join(tmpdir, 'a', 'bb', 'midfile'), 'un', 'gn'),
+            ], any_order=True)
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):

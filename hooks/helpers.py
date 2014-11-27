@@ -120,3 +120,15 @@ def set_io_scheduler(io_scheduler, directory):
         # Make no change if we are in an LXC
         hookenv.log("In an LXC. Cannot set io scheduler {}"
                     "".format(io_scheduler))
+
+
+def recursive_chown(directory, user="root", group="root"):
+    '''Change ownership of all files and directories contained in 'directory'.
+
+    Does not modify ownership of 'directory'.
+    '''
+    for root, dirs, files in os.walk(directory):
+        for dirname in dirs:
+            shutil.chown(os.path.join(root, dirname), user, group)
+        for filename in files:
+            shutil.chown(os.path.join(root, filename), user, group)
