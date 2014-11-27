@@ -151,11 +151,12 @@ class TestsActions(TestCaseBase):
         autostart_disabled().__enter__.assert_called_once_with()
         autostart_disabled().__exit__.assert_called_once_with(None, None, None)
 
+    @patch('helpers.get_cassandra_yaml_file', autospec=True)
     @patch('helpers.ensure_directories', autospec=True)
     @patch('helpers.get_seeds', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)
-    def test_configure_cassandra_yaml(self, write_file,
-                                      get_seeds, ensure_directories):
+    def test_configure_cassandra_yaml(self, write_file, get_seeds,
+                                      ensure_directories, yaml_file):
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name=None,
                                      partitioner='my_partitioner'))
@@ -172,10 +173,11 @@ class TestsActions(TestCaseBase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             yaml_config = os.path.join(tmpdir, 'c.yaml')
+            yaml_file.return_value = yaml_config
             with open(yaml_config, 'w', encoding='UTF-8') as f:
                 f.write(existing_config)
 
-            actions.configure_cassandra_yaml('', yaml_config)
+            actions.configure_cassandra_yaml('')
 
             self.assertEqual(write_file.call_count, 2)
             new_config = write_file.call_args[0][1]
@@ -199,13 +201,14 @@ class TestsActions(TestCaseBase):
             # Confirm we can use an explicit cluster_name too.
             write_file.reset_mock()
             hookenv.config()['cluster_name'] = 'fubar'
-            actions.configure_cassandra_yaml('', yaml_config)
+            actions.configure_cassandra_yaml('')
             new_config = write_file.call_args[0][1]
             self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
                              'fubar')
 
+    @patch('helpers.get_cassandra_env_file', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)
-    def test_configure_cassandra_env(self, write_file):
+    def test_configure_cassandra_env(self, write_file, env_file):
         def _wf(path, contents):
             with open(path, 'wb') as f:
                 f.write(contents)
@@ -223,6 +226,7 @@ class TestsActions(TestCaseBase):
 
         with tempfile.TemporaryDirectory() as tempdir:
             cassandra_env = os.path.join(tempdir, 'c.sh')
+            env_file.return_value = cassandra_env
 
             with open(cassandra_env, 'w', encoding='UTF-8') as f:
                 f.write(existing_config)
@@ -234,7 +238,7 @@ class TestsActions(TestCaseBase):
 
             # By default, nothing is overrridden. The settings will be
             # commented out.
-            actions.configure_cassandra_env('', cassandra_env)
+            actions.configure_cassandra_env('')
             with open(cassandra_env, 'r', encoding='UTF-8') as f:
                 generated_env = f.read()
             for config_key, regexp in overrides:
@@ -244,7 +248,7 @@ class TestsActions(TestCaseBase):
             # Settings can be overridden.
             for config_key, regexp in overrides:
                 hookenv.config()[config_key] = '{} val'.format(config_key)
-            actions.configure_cassandra_env('', cassandra_env)
+            actions.configure_cassandra_env('')
             with open(cassandra_env, 'r') as f:
                 generated_env = f.read()
             for config_key, regexp in overrides:
@@ -259,7 +263,7 @@ class TestsActions(TestCaseBase):
             # Settings can be returned to the defaults.
             for config_key, regexp in overrides:
                 hookenv.config()[config_key] = ''
-            actions.configure_cassandra_env('', cassandra_env)
+            actions.configure_cassandra_env('')
             with open(cassandra_env, 'r', encoding='UTF-8') as f:
                 generated_env = f.read()
             for config_key, regexp in overrides:
@@ -396,7 +400,7 @@ class TestHelpers(TestCaseBase):
         write_file.assert_called_once_with('/sys/block/sdq/queue/scheduler',
                                            'fnord', perms=0o644)
 
-    @patch('shutil.chown')
+    @patch('shutil.chown', autospec=True)
     def test_recursive_chown(self, chown):
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, 'a', 'bb', 'ccc'))
@@ -413,13 +417,54 @@ class TestHelpers(TestCaseBase):
              call(os.path.join(tmpdir, 'a', 'bb', 'midfile'), 'un', 'gn')],
             any_order=True)
 
-    @patch('charmhelpers.fetch.apt_cache')
+    @patch('charmhelpers.fetch.apt_cache', autospec=True)
     def test_get_package_version(self, apt_cache):
         version = namedtuple('Version', 'ver_str')('1.0-foo')
         package = namedtuple('Package', 'current_ver')(version)
         apt_cache.return_value = dict(package=package)
         py_ver = helpers.get_package_version('package')
         self.assertEqual(py_ver, '1.0-foo')
+
+    @patch('helpers.get_package_version', autospec=True)
+    def test_get_cassandra_version(self, get_package_version):
+        # Return cassandra package version if it is installed.
+        get_package_version.return_value = '1.2.3-2~64'
+        self.assertEqual(helpers.get_cassandra_version(), '1.2.3-2~64')
+        get_package_version.assert_called_with('cassandra')
+
+        # Return a fake '2.1' if DSE is enabled.
+        hookenv.config()['dse'] = True
+        self.assertEqual(helpers.get_cassandra_version(), '2.1')
+
+        # Return None if cassandra package is not installed and no DSE.
+        hookenv.config()['dse'] = False
+        get_package_version.return_value = None
+        self.assertIsNone(helpers.get_cassandra_version())
+
+    def test_get_cassandra_config_dir(self):
+        self.assertEqual(helpers.get_cassandra_config_dir(),
+                         '/etc/cassandra')
+        hookenv.config()['dse'] = True
+        self.assertEqual(helpers.get_cassandra_config_dir(),
+                         '/etc/dse/cassandra')
+
+    @patch('helpers.get_cassandra_config_dir', autospec=True)
+    def test_get_cassandra_yaml_file(self, get_cassandra_config_dir):
+        get_cassandra_config_dir.return_value = '/foo'
+        self.assertEqual(helpers.get_cassandra_yaml_file(),
+                         '/foo/cassandra.yaml')
+
+    @patch('helpers.get_cassandra_config_dir', autospec=True)
+    def test_get_cassandra_env_file(self, get_cassandra_config_dir):
+        get_cassandra_config_dir.return_value = '/foo'
+        self.assertEqual(helpers.get_cassandra_env_file(),
+                         '/foo/cassandra-env.sh')
+
+    @patch('helpers.get_cassandra_config_dir', autospec=True)
+    def test_get_cassandra_rackdc_file(self, get_cassandra_config_dir):
+        get_cassandra_config_dir.return_value = '/foo'
+        self.assertEqual(helpers.get_cassandra_rackdc_file(),
+                         '/foo/cassandra-rackdc.properties')
 
 
 class TestIsLxc(unittest.TestCase):

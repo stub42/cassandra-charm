@@ -123,8 +123,8 @@ def ensure_cassandra_package_status(servicename):
     ensure_package_status(servicename, ['cassandra', 'cassandra-tools'])
 
 
-def configure_cassandra_yaml(
-        servicename, cassandra_yaml_path='/etc/cassandra/cassandra.yaml'):
+def configure_cassandra_yaml(servicename):
+    cassandra_yaml_path = helpers.get_cassandra_yaml_file()
     config = hookenv.config()
 
     # Create a backup of the original cassandra.yaml, as its comments
@@ -159,8 +159,8 @@ def configure_cassandra_yaml(
                     yaml.safe_dump(cassandra_yaml).encode('UTF-8'))
 
 
-def configure_cassandra_env(
-        servicename, cassandra_env_path='/etc/cassandra/cassandra-env.sh'):
+def configure_cassandra_env(servicename):
+    cassandra_env_path = helpers.get_cassandra_env_file()
     assert os.path.exists(cassandra_env_path)
     # Create a backup of the original cassandra-env.sh in case it is
     # useful.

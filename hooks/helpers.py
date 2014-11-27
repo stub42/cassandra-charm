@@ -153,9 +153,27 @@ def get_package_version(package):
     return None
 
 
-@hookenv.cached
 def get_cassandra_version():
-    version_string = get_package_version('cassandra')
-    # if pkgver is None and hookenv.config('dse'):
-    #     return "2.1"
-    return version_string
+    if hookenv.config('dse'):
+        return "2.1"  # DSE version does not match Cassandra version.
+    return get_package_version('cassandra')
+
+
+def get_cassandra_config_dir():
+    if hookenv.config('dse'):
+        return '/etc/dse/cassandra'
+    else:
+        return '/etc/cassandra'
+
+
+def get_cassandra_yaml_file():
+    return os.path.join(get_cassandra_config_dir(), "cassandra.yaml")
+
+
+def get_cassandra_env_file():
+    return os.path.join(get_cassandra_config_dir(), "cassandra-env.sh")
+
+
+def get_cassandra_rackdc_file():
+    return os.path.join(get_cassandra_config_dir(),
+                        "cassandra-rackdc.properties")
