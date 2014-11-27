@@ -1,5 +1,6 @@
 #!.venv/bin/python3
 
+from collections import namedtuple
 import os.path
 import re
 import subprocess
@@ -327,7 +328,6 @@ class TestHelpers(TestCaseBase):
                                                 group='cassandra')
                 set_io_scheduler.assert_any_call('noop', path)
 
-
     @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
@@ -410,8 +410,16 @@ class TestHelpers(TestCaseBase):
              call(os.path.join(tmpdir, 'a', 'bb'), 'un', 'gn'),
              call(os.path.join(tmpdir, 'a', 'bb', 'ccc'), 'un', 'gn'),
              call(os.path.join(tmpdir, 'top file'), 'un', 'gn'),
-             call(os.path.join(tmpdir, 'a', 'bb', 'midfile'), 'un', 'gn'),
-            ], any_order=True)
+             call(os.path.join(tmpdir, 'a', 'bb', 'midfile'), 'un', 'gn')],
+            any_order=True)
+
+    @patch('charmhelpers.fetch.apt_cache')
+    def test_get_package_version(self, apt_cache):
+        version = namedtuple('Version', 'ver_str')('1.0-foo')
+        package = namedtuple('Package', 'current_ver')(version)
+        apt_cache.return_value = dict(package=package)
+        py_ver = helpers.get_package_version('package')
+        self.assertEqual(py_ver, '1.0-foo')
 
 
 class TestIsLxc(unittest.TestCase):

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 from charmhelpers.core import hookenv, host
+from charmhelpers import fetch
 
 import relations
 
@@ -139,3 +140,22 @@ def recursive_chown(directory, owner="root", group="root"):
             shutil.chown(os.path.join(root, dirname), owner, group)
         for filename in files:
             shutil.chown(os.path.join(root, filename), owner, group)
+
+
+# FOR CHARMHELPERS
+def get_package_version(package):
+    cache = fetch.apt_cache()
+    if package not in cache:
+        return None
+    pkgver = cache[package].current_ver
+    if pkgver is not None:
+        return pkgver.ver_str
+    return None
+
+
+@hookenv.cached
+def get_cassandra_version():
+    version_string = get_package_version('cassandra')
+    # if pkgver is None and hookenv.config('dse'):
+    #     return "2.1"
+    return version_string

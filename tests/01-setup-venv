@@ -3,7 +3,9 @@
 TESTDIR=$(dirname $0)
 CHARMDIR=$(dirname $TESTDIR)
 
-virtualenv -p python3 $TESTDIR/.venv
+# We need --system-site-packages for python3-apt.
+virtualenv -p python3 --system-site-packages $TESTDIR/.venv
+
 # Tests don't consistently run in a particular working directory.
 # Create a symbolic link in the other potential working directory.
 # This symbolic link must be relative to keep amulet and juju-deployer
