@@ -10,8 +10,11 @@ from charmhelpers.core import hookenv, host
 import relations
 
 
+# FOR CHARMHELPERS
 @contextmanager
 def autostart_disabled(policy_rc='/usr/sbin/policy-rc.d'):
+    '''Tell well behaved Debian packages to not start services when installed.
+    '''
     try:
         if os.path.exists(policy_rc):
             shutil.move(policy_rc, "{}-orig".format(policy_rc))
@@ -58,6 +61,9 @@ def ensure_directories():
     def _mkdir(reldir):
         absdir = os.path.join(root, reldir)
         host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o755)
+        # If this is an existing database being remounted, we need to
+        # ensure ownership is correct due to uid and gid mismatches.
+        recursive_chown(absdir, owner='cassandra', group='cassandra')
         set_io_scheduler(config['io_scheduler'], absdir)
         return absdir
 
@@ -122,13 +128,14 @@ def set_io_scheduler(io_scheduler, directory):
                     "".format(io_scheduler))
 
 
-def recursive_chown(directory, user="root", group="root"):
+# FOR CHARMHELPERS
+def recursive_chown(directory, owner="root", group="root"):
     '''Change ownership of all files and directories contained in 'directory'.
 
     Does not modify ownership of 'directory'.
     '''
     for root, dirs, files in os.walk(directory):
         for dirname in dirs:
-            shutil.chown(os.path.join(root, dirname), user, group)
+            shutil.chown(os.path.join(root, dirname), owner, group)
         for filename in files:
-            shutil.chown(os.path.join(root, filename), user, group)
+            shutil.chown(os.path.join(root, filename), owner, group)

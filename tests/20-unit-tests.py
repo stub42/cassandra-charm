@@ -306,10 +306,12 @@ class TestHelpers(TestCaseBase):
             sorted(['10.20.0.1', '10.20.0.2', '10.20.0.3']),
             sorted(helpers.get_seeds()))
 
+    @patch('helpers.recursive_chown', autospec=True)
     @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_mounted(self, bsb, mkdir, set_io_scheduler):
+    def test_ensure_directories_mounted(self, bsb, mkdir, set_io_scheduler,
+                                        recursive_chown):
         with tempfile.TemporaryDirectory() as tmpdir:
             bsb().mountpoint = tmpdir
             bsb().is_ready.return_value = True
@@ -321,7 +323,10 @@ class TestHelpers(TestCaseBase):
                 path = os.path.join(tmpdir, dir)
                 host.mkdir.assert_any_call(path, owner='cassandra',
                                            group='cassandra', perms=0o755)
+                recursive_chown.assert_any_call(path, owner='cassandra',
+                                                group='cassandra')
                 set_io_scheduler.assert_any_call('noop', path)
+
 
     @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
