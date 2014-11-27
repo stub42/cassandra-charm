@@ -5,8 +5,11 @@ import re
 import shutil
 import subprocess
 
+from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
+from charmhelpers.core.hookenv import DEBUG
 from charmhelpers import fetch
+import yaml
 
 import relations
 
@@ -177,3 +180,87 @@ def get_cassandra_env_file():
 def get_cassandra_rackdc_file():
     return os.path.join(get_cassandra_config_dir(),
                         "cassandra-rackdc.properties")
+
+
+# FOR CHARMHELPERS (peerstorage, better default relname)
+def get_peer_relation_name():
+    with open(os.path.join(hookenv.charm_dir(), 'metadata.yaml'), 'r') as mdf:
+        md = yaml.safe_load(mdf)
+    assert 'peers' in md, 'No peer relations in metadata.yaml'
+    if 'peers' not in md:
+        return None
+    return sorted(md['peers'].keys())[0]
+
+
+def get_peers():
+    for relid in hookenv.relation_ids(get_peer_relation_name()):
+        return set(hookenv.related_units(relid))
+    return None
+
+
+def utcnow():
+    return datetime.utcnow()
+
+
+def utcnow_str():
+    return utcnow().strftime('%Y-%m-%d %H:%M:%S.%fZ')
+
+
+def request_rolling_restart():
+    flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
+    if os.path.exists(flag):
+        return
+    host.write_file(flag, utcnow_str().encode('US-ASCII'))
+
+
+# FOR CHARMHELPERS?
+def rolling_restart(restart_hook):
+    '''To ensure availability, only restart one unit at a time.
+
+    Returns True if the restart has occurred, or False if it has been
+    queued. Your hooks must keep invoking rolling_restart() until
+    the restart succeeds.
+    '''
+    # If there are no peers, restart the service now since there is
+    # nobody to coordinate with.
+    peers = get_peers()
+    if len(peers) == 0:
+        hookenv.log('Restart request with no peers')
+        restart_hook()
+        return True
+
+    peer_relname = get_peer_relation_name()
+    local_unit_key = hookenv.local_unit().replace('/', '_')
+    restart_key = 'restart_needed_{}'.format(local_unit_key)
+
+    restart_needed = peerstorage.peer_retrieve_by_prefix('restart_needed',
+                                                         peer_relname)
+
+    # If we are not in the restart queue, join it and restart later.
+    if local_unit_key not in restart_needed:
+        hookenv.log('Restart request, joining queue')
+        peerstorage.peer_store(restart_key, utcnow_str(), peer_relname)
+        return False
+
+    restart_queue = sorted(restart_needed.items(),
+                            key=lambda x: tuple(reversed(x)))
+
+    next_unit = restart_queue[0][0]
+    if next_unit == local_unit_key:
+        hookenv.log('Restart request and next in queue')
+        restart_hook()
+        peerstorage.peer_store(restart_key, None, peer_relname)
+        return True
+
+    hookenv.log('Restart request and already waiting in queue')
+    for when, unit in restart_queue:
+        hookenv.log('Waiting on {} {}'.format(unit, when), DEBUG)
+    return False
+
+
+def rolling_restart_cassandra():
+    rolling_restart(restart_cassandra)
+
+
+def restart_cassandra():
+    raise NotImplementedError()

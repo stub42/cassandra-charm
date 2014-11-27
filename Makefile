@@ -30,6 +30,7 @@ unittest: venv lint
 
 clean:
 	rm -rf .venv tests/.venv .stamp-*
+	find . -name __pycache__ -type d | xargs rm -rf
 
 sync:
 	@bzr cat \

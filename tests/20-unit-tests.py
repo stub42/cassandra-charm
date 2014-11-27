@@ -1,6 +1,7 @@
 #!.venv/bin/python3
 
 from collections import namedtuple
+from datetime import datetime, timedelta
 import os.path
 import re
 import subprocess
@@ -8,7 +9,7 @@ import sys
 import tempfile
 from textwrap import dedent
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, mock_open, patch, sentinel
 import yaml
 
 CHARM_DIR = os.path.abspath(os.path.join(
@@ -31,6 +32,17 @@ class TestCaseBase(unittest.TestCase):
         is_lxc = patch('helpers.is_lxc', autospec=True, return_value=False)
         is_lxc.start()
         self.addCleanup(is_lxc.stop)
+
+        _last_utc_now = datetime(2010, 12, 25, 13, 45)
+
+        def _utcnow():
+            nonlocal _last_utc_now
+            _last_utc_now += timedelta(seconds=1)
+            return _last_utc_now
+
+        utcnow = patch('helpers.utcnow', autospec=True, side_effect=_utcnow)
+        utcnow.start()
+        self.addCleanup(utcnow.stop)
 
 
 class TestsActions(TestCaseBase):
@@ -270,6 +282,43 @@ class TestsActions(TestCaseBase):
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
+    @patch('charmhelpers.contrib.peerstorage.peer_echo')
+    def test_peer_echo(self, peer_echo):
+        # peerstorage.peer_echo is not called from most hooks.
+        hookenv.hook_name.return_value = 'cluster-relation-joined'
+        actions.peer_echo('', includes=sentinel.peer_includes)
+        self.assertFalse(peer_echo.called)
+
+        # peerstorage.peer_echo is only called from the peer
+        # relation-changed hook.
+        hookenv.hook_name.return_value = 'cluster-relation-changed'
+        actions.peer_echo('', includes=sentinel.peer_includes)
+        peer_echo.assert_called_once_with(sentinel.peer_includes)
+
+    @patch('helpers.rolling_restart')
+    def test_rolling_restart(self, restart):
+        restart.return_value = False
+
+        # If there is no request, nothing happens
+        actions.rolling_restart('')
+        self.assertFalse(restart.called)
+
+        # After a request, rolling_restart keeps being called...
+        helpers.request_rolling_restart()
+        actions.rolling_restart('')
+        self.assertEqual(restart.call_count, 1)
+        actions.rolling_restart('')
+        self.assertEqual(restart.call_count, 2)
+
+        # ... until it succeeds ...
+        restart.return_value = True
+        actions.rolling_restart('')
+        self.assertEqual(restart.call_count, 3)
+
+        # ... and stops again.
+        actions.rolling_restart('')
+        self.assertEqual(restart.call_count, 3)
+
 
 class TestHelpers(TestCaseBase):
     def test_autostart_disabled(self):
@@ -465,6 +514,99 @@ class TestHelpers(TestCaseBase):
         get_cassandra_config_dir.return_value = '/foo'
         self.assertEqual(helpers.get_cassandra_rackdc_file(),
                          '/foo/cassandra-rackdc.properties')
+
+    def test_peer_relation_name(self):
+        metadata = dict(peers=dict(peer1=dict(interface='int1'),
+                                   peer2=dict(interface='int2')))
+        metadata_yaml = yaml.safe_dump(metadata)
+        with patch('helpers.open', mock_open(read_data=metadata_yaml),
+                   create=True) as m:
+            peer_relname = helpers.get_peer_relation_name()
+            m.assert_called_once_with(os.path.join(hookenv.charm_dir(),
+                                                   'metadata.yaml'), 'r')
+            # First peer relation in alphabetical order.
+            self.assertEqual(peer_relname, 'peer1')
+
+    @patch('helpers.get_peer_relation_name', autospec=True)
+    def test_get_peers(self, get_peer_relation_name):
+        get_peer_relation_name.return_value = 'cluster'
+        self.assertSetEqual(helpers.get_peers(),
+                            set(['service/2', 'service/3']))
+
+    @patch('helpers.rolling_restart', autospec=True)
+    def test_rolling_restart_cassandra(self, rolling_restart):
+        helpers.rolling_restart_cassandra()
+        rolling_restart.assert_called_once_with(helpers.restart_cassandra)
+
+    @patch('helpers.get_peers', autospec=True)
+    @patch('helpers.restart_cassandra', autospec=True)
+    def test_rolling_restart_no_peers(self, restart, get_peers):
+        # If there are no peers, restart happens immediately.
+        # This includes if a restart is requested before the unit
+        # has joined the peer relation, which is fine since we have no
+        # reason to block restarts on a unit that is still being setup.
+        get_peers.return_value = set()
+        self.assertTrue(helpers.rolling_restart(restart))
+        restart.assert_called_once_with()
+
+    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
+    @patch('helpers.restart_cassandra', autospec=True)
+    def test_rolling_restart_empty_queue(self, restart, peer_retrieve,
+                                         peer_store):
+        # If the restart queue is empty, the unit joins it but does
+        # not restart yet.
+        peer_retrieve.return_value = dict(foo='bar')
+        self.assertFalse(helpers.rolling_restart(restart))
+        self.assertFalse(restart.called)
+        peer_retrieve.assert_called_once_with('-', 'cluster')
+        peer_store.assert_called_once_with('restart_needed_service_1',
+                                           '2010-12-25 13:45:01.000000Z',
+                                           'cluster')
+
+    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
+    @patch('helpers.restart_cassandra', autospec=True)
+    def test_rolling_restart_stuck_in_queue(self, restart, peer_retrieve,
+                                            peer_store):
+        # If the unit is already in the restart queue, and there are
+        # other units before it, it must wait.
+        peer_retrieve.return_value = dict(foo='ignored',
+                                          restart_needed_service_1='bbb',
+                                          restart_needed_service_2='aaa')
+        self.assertFalse(helpers.rolling_restart(restart))
+        self.assertFalse(restart.called)
+        peer_retrieve.assert_called_once_with('-', 'cluster')
+        self.assertFalse(peer_store.called)
+
+    def test_utcnow(self):
+        self.assertEqual(helpers.utcnow(),
+                         datetime(2010, 12, 25, 13, 45, 1))
+
+    def test_utcnow_str(self):
+        self.assertEqual(helpers.utcnow_str(),
+                         '2010-12-25 13:45:01.000000Z')
+
+    @patch('os.path.exists', autospec=True)
+    @patch('charmhelpers.core.host.write_file', autospec=True)
+    def test_request_rolling_restart(self, write_file, exists):
+        exists.return_value = False
+        helpers.request_rolling_restart()
+        write_file.assert_called_once_with(
+            os.path.join(hookenv.charm_dir(), '.needs-restart'), ANY)
+
+    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
+    @patch('helpers.restart_cassandra', autospec=True)
+    def test_rolling_restart_next_in_queue(self, restart, peer_retrieve,
+                                           peer_store):
+        peer_retrieve.return_value = dict(restart_needed_service_1='aaa',
+                                          restart_needed_service_2='bbb')
+        self.assertTrue(helpers.rolling_restart(restart))
+        self.assertTrue(restart.called)
+        peer_retrieve.assert_called_once_with('-', 'cluster')
+        peer_store.assert_called_once_with('restart_needed_service_1',
+                                           None, 'cluster')
 
 
 class TestIsLxc(unittest.TestCase):

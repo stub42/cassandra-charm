@@ -2,6 +2,7 @@
 charm-helpers mocks.
 '''
 import os.path
+import shutil
 import tempfile
 from unittest.mock import patch
 
@@ -25,6 +26,8 @@ def mock_charmhelpers(test_case):
     mock_env = patch.dict(os.environ, dict(CHARM_DIR=charm_dir.name))
     mock_env.start()
     test_case.addCleanup(mock_env.stop)
+    shutil.copyfile(os.path.join(CHARM_DIR, 'metadata.yaml'),
+                    os.path.join(charm_dir.name, 'metadata.yaml'))
 
     # Mock config.
     # Set items:

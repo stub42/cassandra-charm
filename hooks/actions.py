@@ -9,10 +9,20 @@ import subprocess
 import yaml
 
 from charmhelpers import fetch
+from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
 
 import helpers
+
+
+# FOR CHARMHELPERS
+def peer_echo(servicename, includes=None):
+    peer_relname = helpers.get_peer_relation_name()
+    required_hook = '{}-relation-changed'.format(peer_relname)
+    if hookenv.hook_name() == required_hook:
+        hookenv.log('peerstorage.peer_echo')
+        peerstorage.peer_echo(includes)
 
 
 # FOR CHARMHELPERS
@@ -185,3 +195,10 @@ def configure_cassandra_env(servicename):
         else:
             env = regexp.sub(r'#\1=\2  # Juju service config', env)
     host.write_file(cassandra_env_path, env.encode('UTF-8'))
+
+
+def rolling_restart(servicename):
+    flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
+    if os.path.exists(flag):
+        if helpers.rolling_restart(helpers.restart_cassandra):
+            os.remove(flag)

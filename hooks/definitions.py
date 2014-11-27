@@ -8,6 +8,10 @@ import relations
 CASSANDRA_PACKAGES = ['cassandra', 'cassandra-tools']
 
 SERVICE_DEFINITIONS = [
+    dict(service='peerstorage', data_ready=actions.peer_echo,
+         start=[], stop=[]),
+    dict(service='rolling-restart', data_read=actions.rolling_restart,
+         start=[], stop=[]),
     dict(service='cassandra',
          ports=[
              7000,  # Cluster communication
