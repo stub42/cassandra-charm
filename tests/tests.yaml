@@ -1,6 +1,6 @@
 bootstrap: true
 reset: false
-tests: "[0-9]*.sh"
+tests: ""
 virtualenv: false
 # sources: []
 # packages: []
