@@ -305,6 +305,12 @@ class TestHelpers(TestCaseBase):
         self.assertSetEqual(helpers.get_peers(),
                             set(['service/2', 'service/3']))
 
+        # If the peer relation has yet to be joined, returns get_peers
+        # returns None.
+        hookenv.relation_ids.side_effect = None
+        hookenv.relation_ids.return_value = []
+        self.assertIsNone(helpers.get_peers())
+
     def test_utcnow(self):
         # helpers.utcnow simply wraps datetime.datetime.utcnow().
         # We use it because, unlike datetime.utcnow(), it can be
@@ -405,10 +411,17 @@ class TestHelpers(TestCaseBase):
     @patch('os.path.exists', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)
     def test_request_rolling_restart(self, write_file, exists):
+        # request_rolling_restart() stores a flag on the filesystem.
+        flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
         exists.return_value = False
         helpers.request_rolling_restart()
-        write_file.assert_called_once_with(
-            os.path.join(hookenv.charm_dir(), '.needs-restart'), ANY)
+        write_file.assert_called_once_with(flag, ANY)
+
+        # It does nothing it the flag already exists.
+        write_file.reset_mock()
+        exists.return_value = True
+        helpers.request_rolling_restart()
+        self.assertFalse(write_file.called)
 
 
 class TestIsLxc(unittest.TestCase):
@@ -417,6 +430,15 @@ class TestIsLxc(unittest.TestCase):
         # Unfortunately we can't sanely test that it is returning the
         # correct value
         helpers.is_lxc()
+
+
+class TestUtc(unittest.TestCase):
+    def test_utcnow(self):
+        # Prove as best we can helpers.utcnow() wraps datetime.utcnow()
+        first_real = datetime.utcnow()
+        second_wrapped = helpers.utcnow()
+        self.assertLessEqual(first_real, second_wrapped)
+        self.assertIsInstance(second_wrapped, datetime)
 
 
 if __name__ == '__main__':
