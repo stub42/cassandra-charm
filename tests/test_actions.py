@@ -1,5 +1,6 @@
 #!.venv3/bin/python3
 
+import errno
 import os.path
 import re
 import subprocess
@@ -56,12 +57,12 @@ class TestsActions(TestCaseBase):
 
         check_call.assert_called_once_with(['swapoff', '-a'])
 
-    @patch('charmhelpers.core.hookenv.log')
-    @patch('subprocess.check_call')
-    def test_swapoff_fails(self, check_call, log):
+    @patch('subprocess.check_call', autospec=True)
+    def test_swapoff_fails(self, check_call):
         check_call.side_effect = RuntimeError()
         actions.swapoff('', '')
-        log.assert_called_once_with(ANY, hookenv.WARNING)
+        # A warning is generated if swapoff fails.
+        hookenv.log.assert_called_once_with(ANY, hookenv.WARNING)
 
     @patch('charmhelpers.fetch.configure_sources', autospec=True)
     def test_configure_sources(self, configure_sources):
@@ -107,6 +108,22 @@ class TestsActions(TestCaseBase):
                                            "vm.max_map_count = 131072\n")
         check_call.assert_called_once_with(['sysctl', '-p',
                                             '/etc/sysctl.d/99-cassandra.conf'])
+
+    @patch('subprocess.check_call', autospec=True)
+    @patch('charmhelpers.core.host.write_file', autospec=True)
+    def test_reset_sysctl_expected_fails(self, write_file, check_call):
+        check_call.side_effect = OSError(errno.EACCES, 'Permission Denied')
+        actions.reset_sysctl('')
+        # A warning is generated if permission denied was raised.
+        hookenv.log.assert_called_once_with(ANY, hookenv.WARNING)
+
+    @patch('subprocess.check_call', autospec=True)
+    @patch('charmhelpers.core.host.write_file', autospec=True)
+    def test_reset_sysctl_expected_fails_badly(self, write_file, check_call):
+        # Other OSErrors are reraised since we don't know how to handle
+        # them.
+        check_call.side_effect = OSError(errno.EFAULT, 'Whoops')
+        self.assertRaises(OSError, actions.reset_sysctl, '')
 
     @patch('subprocess.Popen', autospec=True)
     def test_ensure_package_status(self, popen):

@@ -6,3 +6,4 @@ revision
 tests/.venv2
 tests/.venv3
 .coverage
+coverage

@@ -25,7 +25,7 @@ unittest: lint
 	nosetests -v \
 	    tests.test_actions --cover-package=actions \
 	    tests.test_helpers --cover-package=helpers \
-	    --with-coverage --cover-min-percentage=100
+	    --with-coverage --cover-branches --cover-min-percentage=100 
 
 test: unittest
 	nosetests -v tests.test_integration
@@ -33,8 +33,16 @@ test: unittest
 ftest: unittest
 	nosetests -v tests.test_integration:Test1UnitDeployment
 
+coverage: lint
+	-nosetests -v \
+	    tests.test_actions --cover-package=actions \
+	    tests.test_helpers --cover-package=helpers \
+	    --with-coverage --cover-branches \
+	    --cover-html --cover-html-dir=coverage
+	gnome-open coverage/index.html
+
 clean:
-	rm -rf .venv? tests/.venv? .stamp-*
+	rm -rf .venv? tests/.venv? .stamp-* coverage
 	find . -name __pycache__ -type d | xargs rm -rf
 
 packages: .stamp-packages

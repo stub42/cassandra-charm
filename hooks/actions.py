@@ -88,12 +88,12 @@ def reset_sysctl(servicename):
         try:
             host.write_file(cassandra_sysctl_file, contents)
             subprocess.check_call(['sysctl', '-p', cassandra_sysctl_file])
-        except Exception as e:
+        except OSError as e:
             if e.errno == errno.EACCES:
                 hookenv.log("Got Permission Denied trying to set the "
                             "sysctl settings at {}. We may be in an LXC. "
                             "Exiting gracefully".format(cassandra_sysctl_file),
-                            "WARN")
+                            WARNING)
             else:
                 raise
 
