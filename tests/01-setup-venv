@@ -19,6 +19,8 @@ echo $CHARMDIR >> $TESTDIR/.venv/lib/python3.4/site-packages/tests.pth
 
 PIP=$TESTDIR/.venv/bin/pip3
 
-$PIP install -q amulet
-$PIP install -q cassandra-driver
+$PIP install -q --upgrade amulet
 $PIP install -q flake8
+$PIP install -qI nose
+$PIP install -q coverage
+$PIP install -q cassandra-driver

@@ -1,0 +1,9 @@
+#!/bin/sh -e
+
+TESTDIR=$(readlink -f $(dirname $0))
+$TESTDIR/.venv/bin/nosetests \
+    $TESTDIR/test_actions.py --cover-package=actions \
+    $TESTDIR/test_helpers.py --cover-package=helpers \
+    --cover-branches \
+    --cover-min-percentage=100 \
+    -v --with-coverage

@@ -12,6 +12,7 @@ from charmhelpers import fetch
 from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
+from charmhelpers.core.hookenv import WARN
 
 import helpers
 
@@ -38,7 +39,8 @@ def preinstall(servicename):
                 hookenv.log('Running preinstall hook {}'.format(f))
                 subprocess.check_call(['sh', '-c', f])
             else:
-                hookenv.log('Ingnoring preinstall hook {}'.format(f))
+                hookenv.log('Ingnoring preinstall hook {}'.format(f),
+                            WARN)
         else:
             hookenv.log('No preinstall hooks found')
 

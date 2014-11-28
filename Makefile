@@ -15,18 +15,16 @@ venv: packages .stamp-venv
 	touch .stamp-venv
 
 lint: venv
-	tests/10-lint.sh
+	tests/10-lint
 
-test: venv lint
-	tests/20-unit-tests.py
-	tests/30-integration-tests.py
+unittest: lint
+	tests/20-unit-tests
 
-ftest: venv lint
-	tests/20-unit-tests.py
-	tests/30-integration-tests.py Test1UnitDeployment
+ftest: unittest
+	tests/30-integration-tests Test1UnitDeployment
 
-unittest: venv lint
-	tests/20-unit-tests.py
+test: unittest
+	tests/30-integration-tests
 
 clean:
 	rm -rf .venv tests/.venv .stamp-*

@@ -1,5 +1,6 @@
 #!.venv/bin/python3
 
+import os
 import subprocess
 import unittest
 import warnings
@@ -14,7 +15,7 @@ import yaml
 from testing.amuletfixture import AmuletFixture
 
 
-SERIES = 'trusty'
+SERIES = os.environ.get('SERIES', 'trusty')
 
 
 class TestDeploymentBase(unittest.TestCase):

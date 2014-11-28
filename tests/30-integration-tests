@@ -1,0 +1,4 @@
+#!/bin/sh -e
+
+TESTDIR=$(readlink -f $(dirname $0))
+$TESTDIR/.venv/bin/nosetests -v $TESTDIR/test_integration.py $*
