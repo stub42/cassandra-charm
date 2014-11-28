@@ -360,6 +360,8 @@ class TestHelpers(TestCaseBase):
     @patch('relations.BlockStorageBroker', autospec=True)
     def test_ensure_directories_mounted(self, bsb, mkdir, set_io_scheduler,
                                         recursive_chown):
+        # Directories are relative to the external mount
+        # point if there is one.
         with tempfile.TemporaryDirectory() as tmpdir:
             bsb().mountpoint = tmpdir
             bsb().is_ready.return_value = True
@@ -375,10 +377,14 @@ class TestHelpers(TestCaseBase):
                                                 group='cassandra')
                 set_io_scheduler.assert_any_call('noop', path)
 
+    @patch('helpers.recursive_chown', autospec=True)
     @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_unmounted(self, bsb, mkdir, set_io_scheduler):
+    def test_ensure_directories_unmounted(self, bsb, mkdir, set_io_scheduler,
+                                          recursive_chown):
+        # Directories are relative to the /var/lib/cassandra
+        # if there is no external mount.
         bsb().is_ready.return_value = True
         bsb().mountpoint = None
 
@@ -389,12 +395,16 @@ class TestHelpers(TestCaseBase):
                 path = os.path.join('/var/lib/cassandra', dir)
                 host.mkdir.assert_any_call(path, owner='cassandra',
                                            group='cassandra', perms=0o755)
+                recursive_chown.assert_any_call(path, owner='cassandra',
+                                                group='cassandra')
                 set_io_scheduler.assert_any_call('noop', path)
 
     @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
     def test_ensure_directories_overrides(self, bsb, mkdir, set_io_scheduler):
+        # Directory names may be overridden in the service level
+        # configuration.
         hookenv.config()['io_scheduler'] = 'foo-sched'
         with tempfile.TemporaryDirectory() as tmpdir:
             bsb().mountpoint = tmpdir
@@ -416,6 +426,8 @@ class TestHelpers(TestCaseBase):
     @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
     def test_ensure_directories_abspath(self, bsb, mkdir, set_io_scheduler):
+        # Directory overrides in the service level configuration may be
+        # absolute paths.
         with tempfile.TemporaryDirectory() as tmpdir:
             bsb().mountpoint = tmpdir
             bsb().is_ready.return_value = True
@@ -527,14 +539,35 @@ class TestHelpers(TestCaseBase):
         self.assertSetEqual(helpers.get_peers(),
                             set(['service/2', 'service/3']))
 
+    def test_utcnow(self):
+        # helpers.utcnow simply wraps datetime.datetime.utcnow().
+        # We use it because, unlike datetime.utcnow(), it can be
+        # mocked in tests making them stable.
+        self.assertEqual(helpers.utcnow(), datetime(2010, 12, 25, 13, 45, 1))
+
+        # Our mock always gives predictable values.
+        self.assertEqual(helpers.utcnow(), datetime(2010, 12, 25, 13, 45, 2))
+
+        # Mocked values always increase.
+        self.assertLess(helpers.utcnow(), helpers.utcnow())
+
+    def test_utcnow_str(self):
+        # utcnow() as a readable and sortable string.
+        self.assertEqual(helpers.utcnow_str(),
+                         '2010-12-25 13:45:01.000000Z')
+        # Our mock returns increasing values.
+        self.assertLess(helpers.utcnow_str(), helpers.utcnow_str())
+
     @patch('helpers.rolling_restart', autospec=True)
     def test_rolling_restart_cassandra(self, rolling_restart):
+        # A trivial wrapper around helpers.rolling_restart.
         helpers.rolling_restart_cassandra()
         rolling_restart.assert_called_once_with(helpers.restart_cassandra)
 
+    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
     @patch('helpers.get_peers', autospec=True)
     @patch('helpers.restart_cassandra', autospec=True)
-    def test_rolling_restart_no_peers(self, restart, get_peers):
+    def test_rolling_restart_no_peers(self, restart, get_peers, peer_store):
         # If there are no peers, restart happens immediately.
         # This includes if a restart is requested before the unit
         # has joined the peer relation, which is fine since we have no
@@ -543,6 +576,9 @@ class TestHelpers(TestCaseBase):
         self.assertTrue(helpers.rolling_restart(restart))
         restart.assert_called_once_with()
 
+        # Peer storage was not used. It will fail without any peers.
+        self.assertFalse(peer_store.called)
+
     @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
     @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
     @patch('helpers.restart_cassandra', autospec=True)
@@ -550,10 +586,16 @@ class TestHelpers(TestCaseBase):
                                          peer_store):
         # If the restart queue is empty, the unit joins it but does
         # not restart yet.
-        peer_retrieve.return_value = dict(foo='bar')
+        peer_retrieve.return_value = dict(foo='ignored because unknown')
         self.assertFalse(helpers.rolling_restart(restart))
+
+        # Restart did not happen. We are only queueing.
         self.assertFalse(restart.called)
+
+        # The queue was looked up, returning nothing.
         peer_retrieve.assert_called_once_with('-', 'cluster')
+
+        # An entry for the unit was added to the queue.
         peer_store.assert_called_once_with('restart_needed_service_1',
                                            '2010-12-25 13:45:01.000000Z',
                                            'cluster')
@@ -565,21 +607,34 @@ class TestHelpers(TestCaseBase):
                                             peer_store):
         # If the unit is already in the restart queue, and there are
         # other units before it, it must wait.
+        first, second = helpers.utcnow(), helpers.utcnow()
         peer_retrieve.return_value = dict(foo='ignored',
-                                          restart_needed_service_1='bbb',
-                                          restart_needed_service_2='aaa')
+                                          restart_needed_service_1=second,
+                                          restart_needed_service_2=first)
         self.assertFalse(helpers.rolling_restart(restart))
+
+        # Restart did not happen. We are stuck in the queue.
         self.assertFalse(restart.called)
+
+        # The queue was looked up, returning nothing.
         peer_retrieve.assert_called_once_with('-', 'cluster')
+
+        # No change was made to the queue, since we are already in it.
         self.assertFalse(peer_store.called)
 
-    def test_utcnow(self):
-        self.assertEqual(helpers.utcnow(),
-                         datetime(2010, 12, 25, 13, 45, 1))
-
-    def test_utcnow_str(self):
-        self.assertEqual(helpers.utcnow_str(),
-                         '2010-12-25 13:45:01.000000Z')
+    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
+    @patch('helpers.restart_cassandra', autospec=True)
+    def test_rolling_restart_next_in_queue(self, restart, peer_retrieve,
+                                           peer_store):
+        first, second = helpers.utcnow(), helpers.utcnow()
+        peer_retrieve.return_value = dict(restart_needed_service_1=first,
+                                          restart_needed_service_2=second)
+        self.assertTrue(helpers.rolling_restart(restart))
+        self.assertTrue(restart.called)
+        peer_retrieve.assert_called_once_with('-', 'cluster')
+        peer_store.assert_called_once_with('restart_needed_service_1',
+                                           None, 'cluster')
 
     @patch('os.path.exists', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)
@@ -589,18 +644,6 @@ class TestHelpers(TestCaseBase):
         write_file.assert_called_once_with(
             os.path.join(hookenv.charm_dir(), '.needs-restart'), ANY)
 
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
-    @patch('helpers.restart_cassandra', autospec=True)
-    def test_rolling_restart_next_in_queue(self, restart, peer_retrieve,
-                                           peer_store):
-        peer_retrieve.return_value = dict(restart_needed_service_1='aaa',
-                                          restart_needed_service_2='bbb')
-        self.assertTrue(helpers.rolling_restart(restart))
-        self.assertTrue(restart.called)
-        peer_retrieve.assert_called_once_with('-', 'cluster')
-        peer_store.assert_called_once_with('restart_needed_service_1',
-                                           None, 'cluster')
 
 
 class TestIsLxc(unittest.TestCase):
