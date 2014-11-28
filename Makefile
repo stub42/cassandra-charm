@@ -16,29 +16,34 @@ export PATH:=$(VENV3)/bin:$(PATH)
 
 SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 
+deps: packages venv3
+
 lint: deps
 	charm proof $(CHARM_DIR)
 	flake8 --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
 
-unittest: deps lint
+unittest: lint
 	nosetests -v \
 	    tests.test_actions --cover-package=actions \
 	    tests.test_helpers --cover-package=helpers \
 	    --with-coverage --cover-min-percentage=100
 
-test: deps unittest
+test: unittest
 	nosetests -v tests.test_integration
 	
-ftest: deps unittest
+ftest: unittest
 	nosetests -v tests.test_integration:Test1UnitDeployment
 
-deps: .stamp-deps
-.stamp-deps:
+packages: .stamp-packages
+.stamp-packages:
 	# Install bootstrap debs, and Python packages not available
 	# via pip.
 	sudo apt-get install -y \
 	    python3 python3-pip python3-apt python-virtualenv charm-tools
+	touch .stamp-packages
 
+venv3: .stamp-venv3
+.stamp-venv3: packages
 	# Build a Python virtualenv to run our tests.
 	virtualenv -p python3 --system-site-packages ${CHARM_DIR}/.venv3
 	
@@ -54,14 +59,17 @@ deps: .stamp-deps
 	pip install -q coverage
 	pip install -q cassandra-driver
 
+	# Create a link for test shebang lines.
+	(cd tests && ln -s ${VENV3} .venv3)
+
 	touch .stamp-deps
 
 clean:
 	rm -rf .venv? tests/.venv? .stamp-*
 	find . -name __pycache__ -type d | xargs rm -rf
 
-venv2: deps .stamp-venv2
-.stamp-venv2:
+venv2: .stamp-venv2
+.stamp-venv2: packages
 	virtualenv -p python2.7 --system-site-packages .venv2
 	.venv2/bin/pip install -q bundletester \
  	    --allow-external lazr.authentication \

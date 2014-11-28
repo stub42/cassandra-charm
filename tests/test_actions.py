@@ -11,7 +11,7 @@ import yaml
 
 from charmhelpers.core import hookenv
 
-from .base import TestCaseBase
+from base import TestCaseBase
 import actions
 import helpers
 
