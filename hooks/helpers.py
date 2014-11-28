@@ -242,10 +242,11 @@ def rolling_restart(restart_hook):
         peerstorage.peer_store(restart_key, utcnow_str(), peer_relname)
         return False
 
+    # Order (unit_key, timestamp) items oldest first.
     restart_queue = sorted(restart_needed.items(),
                             key=lambda x: tuple(reversed(x)))
 
-    next_unit = restart_queue[0][0]
+    next_unit = restart_queue[0][0]  # Unit waiting longest to restart.
     if next_unit == local_unit_key:
         hookenv.log('Restart request and next in queue')
         restart_hook()
