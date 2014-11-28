@@ -20,11 +20,15 @@ import helpers
 class TestsActions(TestCaseBase):
     @patch('subprocess.check_call', autospec=True)
     def test_preinstall(self, check_call):
+        # Noop if there are no preinstall hooks found running the
+        # install hook.
         hookenv.hook_name.return_value = 'install'
-        # Noop if there are no preinstall hooks found.
         actions.preinstall('')
         self.assertFalse(check_call.called)
+        hookenv.log.assert_called_once_with('No preinstall hooks found')
 
+        # If preinstall hooks are found running the install hook,
+        # the preinstall hooks are run.
         hook_dirs = []
         hook_files = []
         for i in range(1, 3):
@@ -42,6 +46,28 @@ class TestsActions(TestCaseBase):
 
         calls = [call(['sh', '-c', f2]) for f2 in hook_files]
         check_call.assert_has_calls(calls)
+
+        # If a preinstall hook is not executable, a warning is raised.
+        hook_dir = os.path.join(hookenv.charm_dir(), 'exec.d', '55')
+        hook_file = os.path.join(hook_dir, 'charm-pre-install')
+        os.makedirs(hook_dir)
+        with open(hook_file, 'w') as f1:
+            print('whoops', file=f1)
+        os.chmod(hook_file, 0o644)
+        check_call.reset_mock()
+        hookenv.log.reset_mock()
+        actions.preinstall('')
+        check_call.assert_has_calls(calls)  # Only previous hooks run.
+        hookenv.log.assert_has_calls([
+            call(ANY),
+            call(ANY),
+            call(ANY, hookenv.WARNING)])
+
+        # Nothing happens if the install hook is not being run.
+        hookenv.hook_name.return_value = 'config-changed'
+        check_call.reset_mock()
+        actions.preinstall('')
+        self.assertFalse(check_call.called)
 
     @patch('subprocess.check_call', autospec=True)
     def test_swapoff(self, check_call):

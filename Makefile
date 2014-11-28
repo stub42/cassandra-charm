@@ -34,12 +34,12 @@ ftest: unittest
 	nosetests -v tests.test_integration:Test1UnitDeployment
 
 coverage: lint
-	-nosetests -v \
+	nosetests -v \
 	    tests.test_actions --cover-package=actions \
 	    tests.test_helpers --cover-package=helpers \
 	    --with-coverage --cover-branches \
-	    --cover-html --cover-html-dir=coverage
-	gnome-open coverage/index.html
+	    --cover-html --cover-html-dir=coverage \
+	    --cover-min-percentage=100 || gnome-open coverage/index.html
 
 clean:
 	rm -rf .venv? tests/.venv? .stamp-* coverage
@@ -67,7 +67,7 @@ venv3: packages .stamp-venv3
 	pip install -q amulet
 	pip install -q flake8
 	pip install -qI nose
-	pip install -q coverage
+	pip install -q --upgrade coverage
 	pip install -q cassandra-driver
 
 	# Create a link for test shebang lines.
