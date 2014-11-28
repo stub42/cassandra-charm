@@ -196,8 +196,6 @@ def get_peer_relation_name():
     with open(os.path.join(hookenv.charm_dir(), 'metadata.yaml'), 'r') as mdf:
         md = yaml.safe_load(mdf)
     assert 'peers' in md, 'No peer relations in metadata.yaml'
-    if 'peers' not in md:
-        return None
     return sorted(md['peers'].keys())[0]
 
 
