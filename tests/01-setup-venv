@@ -1,10 +1,15 @@
 #!/bin/sh -ex
 
-TESTDIR=$(dirname $0)
+TESTDIR=$(readlink -f $(dirname $0))
 CHARMDIR=$(dirname $TESTDIR)
 
 # We need --system-site-packages for python3-apt.
 virtualenv -p python3 --system-site-packages $TESTDIR/.venv
+
+# Create a .pth so our tests can locate everything without sys.path
+# hacks.
+echo $CHARMDIR/hooks > $TESTDIR/.venv/lib/python3.4/site-packages/tests.pth
+echo $CHARMDIR >> $TESTDIR/.venv/lib/python3.4/site-packages/tests.pth
 
 # Tests don't consistently run in a particular working directory.
 # Create a symbolic link in the other potential working directory.

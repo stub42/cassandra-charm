@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import datetime
 import errno
 import os.path
 import re
@@ -244,7 +245,7 @@ def rolling_restart(restart_hook):
 
     # Order (unit_key, timestamp) items oldest first.
     restart_queue = sorted(restart_needed.items(),
-                            key=lambda x: tuple(reversed(x)))
+                           key=lambda x: tuple(reversed(x)))
 
     next_unit = restart_queue[0][0]  # Unit waiting longest to restart.
     if next_unit == local_unit_key:

@@ -1,8 +1,6 @@
 #!.venv/bin/python3
 
-import os.path
 import subprocess
-import sys
 import unittest
 import warnings
 
@@ -13,15 +11,10 @@ from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 import yaml
 
-CHARM_DIR = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), os.pardir))
-sys.path.append(CHARM_DIR)
-
 from testing.amuletfixture import AmuletFixture
 
 
 SERIES = 'trusty'
-CHARM_DIR = os.path.join(os.path.dirname(__file__), os.pardir)
 
 
 class TestDeploymentBase(unittest.TestCase):

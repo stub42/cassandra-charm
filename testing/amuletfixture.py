@@ -13,27 +13,33 @@ class AmuletFixture(amulet.Deployment):
 
         self._temp_dirs = []
 
-        # Repackage our charm to a temporary directory, allowing us
-        # to strip our virtualenv symlinks that would otherwise cause
-        # juju to abort. We also strip the .bzr directory, working
-        # around Bug #1394078.
-        self.repackage_charm()
+        try:
+            # Repackage our charm to a temporary directory, allowing us
+            # to strip our virtualenv symlinks that would otherwise cause
+            # juju to abort. We also strip the .bzr directory, working
+            # around Bug #1394078.
+            self.repackage_charm()
 
-        # Fix amulet.Deployment so it doesn't depend on environment
-        # variables or the current working directory, but rather the
-        # environment we have introspected.
-        with open(os.path.join(self.charm_dir, 'metadata.yaml'), 'r') as s:
-            self.charm_name = yaml.safe_load(s)['name']
-        self.charm_cache.test_charm = None
-        self.charm_cache.fetch(self.charm_name, self.charm_dir, self.series)
+            # Fix amulet.Deployment so it doesn't depend on environment
+            # variables or the current working directory, but rather the
+            # environment we have introspected.
+            with open(os.path.join(self.charm_dir, 'metadata.yaml'), 'r') as s:
+                self.charm_name = yaml.safe_load(s)['name']
+            self.charm_cache.test_charm = None
+            self.charm_cache.fetch(self.charm_name,
+                                   self.charm_dir, self.series)
 
-        # Explicitly reset $JUJU_REPOSITORY to ensure amulet and juju-deployer
-        # does not mess with the real one, per Bug #1393792
-        self.org_repo = os.environ.get('JUJU_REPOSITORY', None)
-        temp_repo = tempfile.TemporaryDirectory(suffix='.repo')
-        self._temp_dirs.append(temp_repo)
-        os.environ['JUJU_REPOSITORY'] = temp_repo.name
-        os.makedirs(os.path.join(temp_repo.name, self.series), mode=0o700)
+            # Explicitly reset $JUJU_REPOSITORY to ensure amulet and
+            # juju-deployer does not mess with the real one, per Bug #1393792
+            self.org_repo = os.environ.get('JUJU_REPOSITORY', None)
+            temp_repo = tempfile.TemporaryDirectory(suffix='.repo')
+            self._temp_dirs.append(temp_repo)
+            os.environ['JUJU_REPOSITORY'] = temp_repo.name
+            os.makedirs(os.path.join(temp_repo.name, self.series), mode=0o700)
+        except Exception:
+            # __del__ not called if __init__ fails.
+            for d in self._temp_dirs:
+                d.cleanup()
 
     def setUp(self, timeout=900):
         self.reset_environment()
@@ -53,6 +59,8 @@ class AmuletFixture(amulet.Deployment):
             del os.environ['JUJU_REPOSITORY']
         else:
             os.environ['JUJU_REPOSITORY'] = self.org_repo
+
+    def __del__(self):
         for temp_dir in self._temp_dirs:
             temp_dir.cleanup()
 

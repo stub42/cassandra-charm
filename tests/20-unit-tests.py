@@ -5,17 +5,11 @@ from datetime import datetime, timedelta
 import os.path
 import re
 import subprocess
-import sys
 import tempfile
 from textwrap import dedent
 import unittest
 from unittest.mock import ANY, call, mock_open, patch, sentinel
 import yaml
-
-CHARM_DIR = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), os.pardir))
-sys.path.append(CHARM_DIR)
-sys.path.append(os.path.join(CHARM_DIR, 'hooks'))
 
 from charmhelpers.core import hookenv, host
 
