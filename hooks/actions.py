@@ -51,6 +51,7 @@ def swapoff(servicename, fstab='/etc/fstab'):
     # Turn off swap in the current session
     if helpers.is_lxc():
         hookenv.log("In an LXC container. Not touching swap.")
+        return
     else:
         try:
             subprocess.check_call(['swapoff', '-a'])
@@ -109,8 +110,8 @@ def ensure_package_status(servicename, packages):
     # else:
 
     if package_status not in ['install', 'hold']:
-        RuntimeError("package_status must be 'install' or 'hold' not '{}'"
-                     "".format(package_status))
+        raise RuntimeError("package_status must be 'install' or 'hold', "
+                           "not {!r}".format(package_status))
 
     selections = []
     for package in packages:
@@ -140,11 +141,7 @@ def configure_cassandra_yaml(servicename):
     cassandra_yaml_path = helpers.get_cassandra_yaml_file()
     config = hookenv.config()
 
-    # Create a backup of the original cassandra.yaml, as its comments
-    # may be useful.
-    if not os.path.exists(cassandra_yaml_path + '.orig'):
-        with open(cassandra_yaml_path, 'rb') as f:
-            host.write_file(cassandra_yaml_path + '.orig', f.read())
+    helpers.maybe_backup(cassandra_yaml_path)  # Its comments may be useful.
 
     with open(cassandra_yaml_path, 'rb') as f:
         cassandra_yaml = yaml.safe_load(f)
@@ -175,11 +172,8 @@ def configure_cassandra_yaml(servicename):
 def configure_cassandra_env(servicename):
     cassandra_env_path = helpers.get_cassandra_env_file()
     assert os.path.exists(cassandra_env_path)
-    # Create a backup of the original cassandra-env.sh in case it is
-    # useful.
-    if not os.path.exists(cassandra_env_path + '.orig'):
-        with open(cassandra_env_path, 'rb') as f:
-            host.write_file(cassandra_env_path + '.orig', f.read())
+
+    helpers.maybe_backup(cassandra_env_path)
 
     overrides = [
         ('max_heap_size', re.compile(r'^#?(MAX_HEAP_SIZE)=(.*)$', re.M)),

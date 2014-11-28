@@ -90,6 +90,14 @@ class TestsActions(TestCaseBase):
         # A warning is generated if swapoff fails.
         hookenv.log.assert_called_once_with(ANY, hookenv.WARNING)
 
+    @patch('subprocess.check_call', autospec=True)
+    def test_swapoff_lxc(self, check_call):
+        # Under LXC, the swapoff action does nothing except log.
+        helpers.is_lxc.return_value = True
+        actions.swapoff('')
+        self.assertFalse(check_call.called)
+        hookenv.log.assert_called_once_with(ANY)
+
     @patch('charmhelpers.fetch.configure_sources', autospec=True)
     def test_configure_sources(self, configure_sources):
         config = hookenv.config()
@@ -145,11 +153,19 @@ class TestsActions(TestCaseBase):
 
     @patch('subprocess.check_call', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)
-    def test_reset_sysctl_expected_fails_badly(self, write_file, check_call):
+    def test_reset_sysctl_fails_badly(self, write_file, check_call):
         # Other OSErrors are reraised since we don't know how to handle
         # them.
         check_call.side_effect = OSError(errno.EFAULT, 'Whoops')
         self.assertRaises(OSError, actions.reset_sysctl, '')
+
+    @patch('subprocess.check_call', autospec=True)
+    def test_reset_sysctl_lxc(self, check_call):
+        helpers.is_lxc.return_value = True
+        actions.reset_sysctl('')
+        self.assertFalse(check_call.called)
+        hookenv.log.assert_called_once_with("In an LXC container. "
+                                            "Leaving sysctl unchanged.")
 
     @patch('subprocess.Popen', autospec=True)
     def test_ensure_package_status(self, popen):
@@ -167,9 +183,31 @@ class TestsActions(TestCaseBase):
                     call().communicate(input=selections),
                     ], popen.mock_calls)
 
+        popen.reset_mock()
+        hookenv.config()['package_status'] = 'invalid'
+        self.assertRaises(RuntimeError,
+                          actions.ensure_package_status,
+                          '', ['a_pack', 'b_back'])
+        self.assertFalse(popen.called)
+
     @patch('helpers.autostart_disabled', autospec=True)
     @patch('charmhelpers.fetch.apt_install', autospec=True)
     def test_install_packages(self, apt_install, autostart_disabled):
+        packages = ['a_pack', 'b_pack']
+        actions.install_packages('', packages)
+
+        # All packages got installed, and hook aborted if package
+        # installation failed.
+        apt_install.assert_called_once_with(['a_pack', 'b_pack'], fatal=True)
+
+        # The autostart_disabled context manager was used to stop
+        # package installation starting services.
+        autostart_disabled().__enter__.assert_called_once_with()
+        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
+
+    @patch('helpers.autostart_disabled', autospec=True)
+    @patch('charmhelpers.fetch.apt_install', autospec=True)
+    def test_install_packages_extras(self, apt_install, autostart_disabled):
         packages = ['a_pack', 'b_pack']
         hookenv.config()['extra_packages'] = 'c_pack d_pack'
         actions.install_packages('', packages)
@@ -183,6 +221,12 @@ class TestsActions(TestCaseBase):
         # package installation starting services.
         autostart_disabled().__enter__.assert_called_once_with()
         autostart_disabled().__exit__.assert_called_once_with(None, None, None)
+
+    @patch('actions.install_packages', autospec=True)
+    def test_install_cassandra_packages(self, install_packages):
+        actions.install_cassandra_packages(sentinel.servicename)
+        install_packages.assert_called_once_with(
+            sentinel.servicename, ['cassandra', 'cassandra-tools'])
 
     @patch('helpers.get_cassandra_yaml_file', autospec=True)
     @patch('helpers.ensure_directories', autospec=True)
@@ -241,7 +285,7 @@ class TestsActions(TestCaseBase):
     @patch('helpers.get_cassandra_env_file', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)
     def test_configure_cassandra_env(self, write_file, env_file):
-        def _wf(path, contents):
+        def _wf(path, contents, perms=None):
             with open(path, 'wb') as f:
                 f.write(contents)
         write_file.side_effect = _wf

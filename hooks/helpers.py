@@ -146,6 +146,14 @@ def recursive_chown(directory, owner="root", group="root"):
             shutil.chown(os.path.join(root, filename), owner, group)
 
 
+def maybe_backup(path):
+    '''Copy a file to file.orig, if file.orig does not already exist.'''
+    backup_path = path + '.orig'
+    if not os.path.exists(backup_path):
+        with open(path, 'rb') as f:
+            host.write_file(backup_path, f.read(), perms=0o600)
+
+
 # FOR CHARMHELPERS
 def get_package_version(package):
     cache = fetch.apt_cache()

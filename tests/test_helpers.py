@@ -181,6 +181,26 @@ class TestHelpers(TestCaseBase):
              call(os.path.join(tmpdir, 'a', 'bb', 'midfile'), 'un', 'gn')],
             any_order=True)
 
+    def test_maybe_backup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Our file is backed up to a .orig
+            path = os.path.join(tmpdir, 'foo.conf')
+            host.write_file(path, b'hello', perms=0o644)
+            helpers.maybe_backup(path)
+            path_orig = path + '.orig'
+            self.assertTrue(os.path.exists(path_orig))
+            with open(path_orig, 'rb') as f:
+                self.assertEqual(f.read(), b'hello')
+            # Safe permissions
+            self.assertEqual(os.lstat(path_orig).st_mode & 0o777, 0o600)
+
+            # A second call, nothing happens as the .orig is already
+            # there.
+            host.write_file(path, b'second')
+            helpers.maybe_backup(path)
+            with open(path_orig, 'rb') as f:
+                self.assertEqual(f.read(), b'hello')
+
     @patch('charmhelpers.fetch.apt_cache', autospec=True)
     def test_get_package_version(self, apt_cache):
         version = namedtuple('Version', 'ver_str')('1.0-foo')
