@@ -8,7 +8,7 @@ import subprocess
 
 from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
-from charmhelpers.core.hookenv import DEBUG
+from charmhelpers.core.hookenv import DEBUG, WARNING
 from charmhelpers import fetch
 import yaml
 
@@ -116,7 +116,7 @@ def set_io_scheduler(io_scheduler, directory):
                 hookenv.log("Got Permission Denied trying to set the "
                             "IO scheduler at {}. We may be in an LXC. "
                             "Exiting gracefully".format(sys_file),
-                            'WARN')
+                            WARNING)
             elif e.errno == errno.ENOENT:
                 hookenv.log("Got no such file or directory trying to "
                             "set the IO scheduler at {}. It may be "
@@ -124,7 +124,7 @@ def set_io_scheduler(io_scheduler, directory):
                             "yet unknown to the charm, or LVM/RAID is "
                             "hiding the underlying device name. "
                             "Exiting gracefully".format(sys_file),
-                            'WARN')
+                            WARNING)
             else:
                 raise e
     else:

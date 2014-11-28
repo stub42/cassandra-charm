@@ -2,6 +2,7 @@
 
 from collections import namedtuple
 from datetime import datetime
+import errno
 import os.path
 import subprocess
 import tempfile
@@ -156,6 +157,8 @@ class TestHelpers(TestCaseBase):
     @patch('os.path.isdir', autospec=True)
     @patch('subprocess.check_output', autospec=True)
     def test_set_io_scheduler(self, check_output, isdir, write_file):
+        # Normal operation, the device is detected and the magic
+        # file written.
         check_output.return_value = 'foo\n/dev/sdq 1 2 3 1% /foo\n'
         isdir.return_value = True
 
@@ -163,6 +166,27 @@ class TestHelpers(TestCaseBase):
 
         write_file.assert_called_once_with('/sys/block/sdq/queue/scheduler',
                                            'fnord', perms=0o644)
+
+        # Some OSErrors we log warnings for, and continue.
+        for e in (errno.EACCES, errno.ENOENT):
+            write_file.side_effect = OSError(e, 'Whoops')
+            hookenv.log.reset_mock()
+            helpers.set_io_scheduler('fnord', '/foo')
+            hookenv.log.assert_has_calls([call(ANY),
+                                          call(ANY, hookenv.WARNING)])
+
+        # Other OSErrors just fail hard.
+        write_file.side_effect = OSError(errno.EFAULT, 'Whoops')
+        self.assertRaises(OSError, helpers.set_io_scheduler, 'fnord', '/foo')
+
+        # If we are not under lxc, nothing happens at all except a log
+        # message.
+        helpers.is_lxc.return_value = True
+        hookenv.log.reset_mock()
+        write_file.reset_mock()
+        helpers.set_io_scheduler('fnord', '/foo')
+        self.assertFalse(write_file.called)
+        hookenv.log.assert_called_once_with(ANY)  # A single INFO message.
 
     @patch('shutil.chown', autospec=True)
     def test_recursive_chown(self, chown):
