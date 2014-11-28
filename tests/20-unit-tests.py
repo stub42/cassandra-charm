@@ -399,10 +399,12 @@ class TestHelpers(TestCaseBase):
                                                 group='cassandra')
                 set_io_scheduler.assert_any_call('noop', path)
 
+    @patch('helpers.recursive_chown', autospec=True)
     @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_overrides(self, bsb, mkdir, set_io_scheduler):
+    def test_ensure_directories_overrides(self, bsb, mkdir, set_io_scheduler,
+                                          recursive_chown):
         # Directory names may be overridden in the service level
         # configuration.
         hookenv.config()['io_scheduler'] = 'foo-sched'
@@ -420,12 +422,16 @@ class TestHelpers(TestCaseBase):
                 path = os.path.join(tmpdir, dir)
                 host.mkdir.assert_any_call(path, owner='cassandra',
                                            group='cassandra', perms=0o755)
+                recursive_chown.assert_any_call(path, owner='cassandra',
+                                                group='cassandra')
                 set_io_scheduler.assert_any_call('foo-sched', path)
 
+    @patch('helpers.recursive_chown', autospec=True)
     @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
     @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_abspath(self, bsb, mkdir, set_io_scheduler):
+    def test_ensure_directories_abspath(self, bsb, mkdir, set_io_scheduler,
+                                        recursive_chown):
         # Directory overrides in the service level configuration may be
         # absolute paths.
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -441,6 +447,8 @@ class TestHelpers(TestCaseBase):
             with self.subTest(path=path):
                 host.mkdir.assert_any_call(path, owner='cassandra',
                                            group='cassandra', perms=0o755)
+                recursive_chown.assert_any_call(path, owner='cassandra',
+                                                group='cassandra')
                 set_io_scheduler.assert_any_call('noop', path)
 
     @patch('charmhelpers.core.host.write_file', autospec=True)
