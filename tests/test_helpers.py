@@ -230,8 +230,21 @@ class TestHelpers(TestCaseBase):
         version = namedtuple('Version', 'ver_str')('1.0-foo')
         package = namedtuple('Package', 'current_ver')(version)
         apt_cache.return_value = dict(package=package)
-        py_ver = helpers.get_package_version('package')
-        self.assertEqual(py_ver, '1.0-foo')
+        ver = helpers.get_package_version('package')
+        self.assertEqual(ver, '1.0-foo')
+
+    @patch('charmhelpers.fetch.apt_cache', autospec=True)
+    def test_get_package_version_not_found(self, apt_cache):
+        version = namedtuple('Version', 'ver_str')('1.0-foo')
+        package = namedtuple('Package', 'current_ver')(version)
+        apt_cache.return_value = dict(package=package)
+        self.assertIsNone(helpers.get_package_version('notfound'))
+
+    @patch('charmhelpers.fetch.apt_cache', autospec=True)
+    def test_get_package_version_not_installed(self, apt_cache):
+        package = namedtuple('Package', 'current_ver')(None)
+        apt_cache.return_value = dict(package=package)
+        self.assertIsNone(helpers.get_package_version('package'))
 
     @patch('helpers.get_package_version', autospec=True)
     def test_get_cassandra_version(self, get_package_version):
