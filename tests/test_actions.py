@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from textwrap import dedent
 import unittest
-from unittest.mock import call, patch, sentinel
+from unittest.mock import ANY, call, patch, sentinel
 import yaml
 
 from charmhelpers.core import hookenv
@@ -55,6 +55,13 @@ class TestsActions(TestCaseBase):
             self.assertTrue(b'swap' not in f.read())
 
         check_call.assert_called_once_with(['swapoff', '-a'])
+
+    @patch('charmhelpers.core.hookenv.log')
+    @patch('subprocess.check_call')
+    def test_swapoff_fails(self, check_call, log):
+        check_call.side_effect = RuntimeError()
+        actions.swapoff('', '')
+        log.assert_called_once_with(ANY, hookenv.WARNING)
 
     @patch('charmhelpers.fetch.configure_sources', autospec=True)
     def test_configure_sources(self, configure_sources):

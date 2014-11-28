@@ -57,7 +57,8 @@ def swapoff(servicename, fstab='/etc/fstab'):
         except Exception as e:
             hookenv.log("Got an error trying to turn off swapping. {}. "
                         "We may be in an LXC. Exiting gracefully"
-                        "".format(e), "WARN")
+                        "".format(e), WARNING)
+            return
 
     # Disable swap permanently
     with closing(Fstab(fstab)) as fstab:
