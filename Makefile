@@ -5,7 +5,6 @@ default:
 	@echo 'Usage: make [ lint | unittest | test | clean | sync ]'
 	env
 
-
 # Calculate the CHARM_DIR (the directory this Makefile is in)
 THIS_MAKEFILE_PATH:=$(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
 CHARM_DIR:=$(shell cd $(dir $(THIS_MAKEFILE_PATH));pwd)
@@ -34,6 +33,10 @@ test: unittest
 ftest: unittest
 	nosetests -v tests.test_integration:Test1UnitDeployment
 
+clean:
+	rm -rf .venv? tests/.venv? .stamp-*
+	find . -name __pycache__ -type d | xargs rm -rf
+
 packages: .stamp-packages
 .stamp-packages:
 	# Install bootstrap debs, and Python packages not available
@@ -42,10 +45,10 @@ packages: .stamp-packages
 	    python3 python3-pip python3-apt python-virtualenv charm-tools
 	touch .stamp-packages
 
-venv3: .stamp-venv3
-.stamp-venv3: packages
+venv3: packages .stamp-venv3
+.stamp-venv3:
 	# Build a Python virtualenv to run our tests.
-	virtualenv -p python3 --system-site-packages ${CHARM_DIR}/.venv3
+	virtualenv -p python3 --system-site-packages ${VENV3}
 	
 	# Create a .pth so our tests can locate everything without
 	# sys.path hacks.
@@ -62,14 +65,10 @@ venv3: .stamp-venv3
 	# Create a link for test shebang lines.
 	(cd tests && ln -s ${VENV3} .venv3)
 
-	touch .stamp-deps
+	touch .stamp-venv3
 
-clean:
-	rm -rf .venv? tests/.venv? .stamp-*
-	find . -name __pycache__ -type d | xargs rm -rf
-
-venv2: .stamp-venv2
-.stamp-venv2: packages
+venv2: packages .stamp-venv2
+.stamp-venv2:
 	virtualenv -p python2.7 --system-site-packages .venv2
 	.venv2/bin/pip install -q bundletester \
  	    --allow-external lazr.authentication \
