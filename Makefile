@@ -21,7 +21,7 @@ unittest: lint
 	tests/20-unit-tests
 
 ftest: unittest
-	tests/30-integration-tests Test1UnitDeployment
+	tests/30-integration-tests test_integration.Test1UnitDeployment
 
 test: unittest
 	tests/30-integration-tests
