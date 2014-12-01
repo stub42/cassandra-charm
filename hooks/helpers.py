@@ -274,7 +274,7 @@ def restart_cassandra():
     raise NotImplementedError()
 
 
-ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'
+ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # hookenv.config() key.
 
 
 def accept_oracle_jvm_license():
