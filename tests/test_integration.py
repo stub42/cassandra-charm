@@ -80,7 +80,7 @@ class TestDeploymentBase(unittest.TestCase):
 class Test3UnitDeployment(TestDeploymentBase):
     """Tests run on both a 3 node cluster and a single node cluster."""
     rf = 3
-    jvm = 'openjdk'
+    jvm = 'oracle'  # At least one test needs to install the Oracle JVM.
 
     def test_database_basics(self):
         session = self.session()
@@ -104,7 +104,9 @@ class Test3UnitDeployment(TestDeploymentBase):
 class Test1UnitDeployment(Test3UnitDeployment):
     """Tests run on a single node cluster."""
     rf = 1
-    jvm = 'oracle'  # At least one test needs to install the Oracle JVM.
+    # 'Fast' tests use OpenJDK to avoid the huge tarball download from
+    # oracle.com
+    jvm = 'openjdk'
 
 
 if __name__ == '__main__':
