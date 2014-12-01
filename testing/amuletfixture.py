@@ -44,6 +44,8 @@ class AmuletFixture(amulet.Deployment):
     def setUp(self, timeout=900):
         self.reset_environment()
         try:
+            # If setUp fails, tearDown is never called leaving the
+            # environment setup. This is useful for debugging.
             self.setup(timeout=timeout)
             self.sentry.wait()
         except amulet.helpers.TimeoutError:

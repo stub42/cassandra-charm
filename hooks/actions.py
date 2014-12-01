@@ -133,8 +133,10 @@ def ensure_package_status(servicename, packages):
 
 # FOR CHARMHELPERS
 def install_packages(servicename, packages):
+    packages = list(packages)
     if hookenv.config('extra_packages'):
         packages.extend(hookenv.config('extra_packages').split())
+    packages = fetch.filter_installed_packages(packages)
     with helpers.autostart_disabled():
         fetch.apt_install(packages, fatal=True)
 

@@ -20,16 +20,16 @@ SERIES = os.environ.get('SERIES', 'trusty')
 
 class TestDeploymentBase(unittest.TestCase):
     rf = 1
-    jvm = 'openjdk'
     deployment = None
+
+    config = dict(max_heap_size='128M',
+                  heap_newsize='32M')
 
     @classmethod
     def setUpClass(cls):
         deployment = AmuletFixture(series=SERIES)
         deployment.add('cassandra', units=cls.rf)
-        deployment.configure('cassandra', dict(max_heap_size='128M',
-                                               heap_newsize='32M',
-                                               jvm=cls.jvm))
+        deployment.configure('cassandra', cls.config)
         deployment.setUp()
 
         cls.deployment = deployment
@@ -80,7 +80,9 @@ class TestDeploymentBase(unittest.TestCase):
 class Test3UnitDeployment(TestDeploymentBase):
     """Tests run on both a 3 node cluster and a single node cluster."""
     rf = 3
-    jvm = 'oracle'  # At least one test needs to install the Oracle JVM.
+    config = dict(max_heap_size='128M',
+                  heap_newsize='32M',
+                  jvm='Oracle')  # At least one test should use Oracle jvm.
 
     def test_database_basics(self):
         session = self.session()
@@ -104,19 +106,26 @@ class Test3UnitDeployment(TestDeploymentBase):
 class Test1UnitDeployment(Test3UnitDeployment):
     """Tests run on a single node cluster."""
     rf = 1
-    # 'Fast' tests use OpenJDK to avoid the huge tarball download from
-    # oracle.com
-    jvm = 'openjdk'
 
 
 class TestDSEDeployment(Test3UnitDeployment):
     """Tests run on a single node DataStax Enterprise cluster.
     """
     rf = 1
-    # 'Fast' tests use OpenJDK to avoid the huge tarball download from
-    # oracle.com
-    jvm = 'openjdk'
-    dse = True
+    jvm = 'Oracle'
+    edition = 'DSE'
+    config = dict(max_heap_size='128M',
+                  heap_newsize='32M',
+                  edition='DSE',
+                  install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
+                                                 'ppa:webupd8team/java']),
+                  install_keys=yaml.safe_dump([None, None]))
+
+    @classmethod
+    @unittest.skipIf('DSE_SOURCE' not in os.environ,
+                     'DSE_SOURCE environment variable not configured')
+    def setUpClass(cls):
+        super(TestDSEDeployment, cls).setUpClass()
 
 
 if __name__ == '__main__':

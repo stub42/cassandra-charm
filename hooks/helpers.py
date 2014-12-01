@@ -295,6 +295,7 @@ def accept_oracle_jvm_license():
                                    b'select true\n')  # newline required
         if p.returncode == 0:
             config[ORACLE_JVM_ACCEPT_KEY] = True
+            hookenv.log('Oracle Java SE licence accepted')
         else:
             hookenv.log('Unable to accept Oracle licence. Using OpenJDK',
                         ERROR)
@@ -319,7 +320,8 @@ def get_jvm():
     config = hookenv.config()
     jvm = config['jvm'].lower()
     if jvm not in ('openjdk', 'oracle'):
-        hookenv.log('Unknown jvm {!r} specified. Using OpenJDK', WARNING)
+        hookenv.log('Unknown jvm {!r} specified. Using OpenJDK'.format(jvm),
+                    ERROR)
         jvm = 'openjdk'
     return jvm
 
