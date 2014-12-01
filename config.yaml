@@ -140,6 +140,14 @@ options:
         default: False
         description:
             True if using DataStax Enterprise. False if community Cassandra.
+    jvm:
+        type: string
+        default: openjdk
+        description: |
+            Which Java runtime environment to use. May be 'openjdk' or
+            'oracle'. Choosing 'oracle' constitutes acceptance of the
+            Oracle Java Standard Edition license per
+            http://www.oracle.com/technetwork/java/javase/terms/license/.
     # Storage configuration
     wait_for_storage_broker:
         type: boolean

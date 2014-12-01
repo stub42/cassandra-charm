@@ -25,7 +25,7 @@ unittest: lint
 	nosetests -v \
 	    tests.test_actions --cover-package=actions \
 	    tests.test_helpers --cover-package=helpers \
-	    --with-coverage --cover-branches --cover-min-percentage=100 
+	    --with-coverage --cover-branches
 
 test: unittest
 	nosetests -v tests.test_integration
@@ -39,7 +39,8 @@ coverage: lint
 	    tests.test_helpers --cover-package=helpers \
 	    --with-coverage --cover-branches \
 	    --cover-html --cover-html-dir=coverage \
-	    --cover-min-percentage=100 || gnome-open coverage/index.html
+	    --cover-min-percentage=100 || \
+		(gnome-open coverage/index.html; false)
 
 clean:
 	rm -rf .venv? tests/.venv? .stamp-* coverage

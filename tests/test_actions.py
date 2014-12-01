@@ -190,6 +190,15 @@ class TestsActions(TestCaseBase):
                           '', ['a_pack', 'b_back'])
         self.assertFalse(popen.called)
 
+    @patch('helpers.get_cassandra_packages', autospec=True)
+    @patch('actions.ensure_package_status', autospec=True)
+    def test_ensure_cassandra_package_status(self, ensure_package_status,
+                                             get_cassandra_packages):
+        get_cassandra_packages.return_value = sentinel.cassandra_packages
+        actions.ensure_cassandra_package_status(sentinel.servicename)
+        ensure_package_status.assert_called_once_with(
+            sentinel.servicename, sentinel.cassandra_packages)
+
     @patch('helpers.autostart_disabled', autospec=True)
     @patch('charmhelpers.fetch.apt_install', autospec=True)
     def test_install_packages(self, apt_install, autostart_disabled):
@@ -222,11 +231,14 @@ class TestsActions(TestCaseBase):
         autostart_disabled().__enter__.assert_called_once_with()
         autostart_disabled().__exit__.assert_called_once_with(None, None, None)
 
+    @patch('helpers.get_cassandra_packages', autospec=True)
     @patch('actions.install_packages', autospec=True)
-    def test_install_cassandra_packages(self, install_packages):
+    def test_install_cassandra_packages(self, install_packages,
+                                        get_cassandra_packages):
+        get_cassandra_packages.return_value = sentinel.cassandra_packages
         actions.install_cassandra_packages(sentinel.servicename)
         install_packages.assert_called_once_with(
-            sentinel.servicename, ['cassandra', 'cassandra-tools'])
+            sentinel.servicename, sentinel.cassandra_packages)
 
     @patch('helpers.get_cassandra_yaml_file', autospec=True)
     @patch('helpers.ensure_directories', autospec=True)
@@ -346,7 +358,7 @@ class TestsActions(TestCaseBase):
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
-    @patch('charmhelpers.contrib.peerstorage.peer_echo')
+    @patch('charmhelpers.contrib.peerstorage.peer_echo', autospec=True)
     def test_peer_echo(self, peer_echo):
         # peerstorage.peer_echo is not called from most hooks.
         hookenv.hook_name.return_value = 'cluster-relation-joined'
@@ -359,7 +371,7 @@ class TestsActions(TestCaseBase):
         actions.peer_echo('', includes=sentinel.peer_includes)
         peer_echo.assert_called_once_with(sentinel.peer_includes)
 
-    @patch('helpers.rolling_restart')
+    @patch('helpers.rolling_restart', autospec=True)
     def test_rolling_restart(self, restart):
         restart.return_value = False
 

@@ -423,6 +423,65 @@ class TestHelpers(TestCaseBase):
         helpers.request_rolling_restart()
         self.assertFalse(write_file.called)
 
+    @patch('subprocess.Popen', autospec=False)
+    def test_accept_oracle_jvm_license(self, popen):
+        # Nothing to do unless the Oracle JVM is selected.
+        popen().returncode = 0
+        popen().communicate.return_value = ('', None)
+        popen.reset_mock()
+        helpers.accept_oracle_jvm_license()
+        self.assertFalse(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
+        self.assertFalse(popen.called)
+
+        # When the user selects the Oracle JVM in the charm service
+        # configuration, they are implicitly accepting the Oracle Java
+        # license per the documentation of the option in config.yaml.
+        hookenv.config()['jvm'] = 'oracle'
+
+        # If the selection fails, the charm warns and continues to use
+        # OpenJDK.
+        hookenv.log.reset_mock()
+        popen().returncode = 1
+        helpers.accept_oracle_jvm_license()
+        hookenv.log.assert_any_call(ANY, hookenv.ERROR)
+        self.assertFalse(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
+
+        # If selection works, the flag is set in the persistent config.
+        popen().returncode = 0
+        popen.reset_mock()
+        helpers.accept_oracle_jvm_license()
+        popen.assert_called_once_with(['debconf-set-selections'],
+                                      stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT)
+        instructions = (b'oracle-java7-installer '
+                        b'shared/accepted-oracle-license-v1-1 '
+                        b'select true\n')  # trailing newline is required.
+        popen().communicate.assert_called_once_with(instructions)
+        self.assertTrue(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
+
+        # Further calls do nothing.
+        popen.reset_mock()
+        helpers.accept_oracle_jvm_license()
+        self.assertFalse(popen.called)
+        self.assertTrue(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
+
+    @patch('helpers.accept_oracle_jvm_license')
+    def test_get_cassandra_packages(self, accept_oracle_jvm_license):
+        # Default
+        self.assertSetEqual(helpers.get_cassandra_packages(),
+                            set(['cassandra', 'cassandra-tools']))
+        self.assertFalse(accept_oracle_jvm_license.called)
+
+        # Oracle JVM
+        hookenv.config()['jvm'] = 'oracle'
+        hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
+        self.assertSetEqual(helpers.get_cassandra_packages(),
+                            set(['cassandra', 'cassandra-tools',
+                                 'oracle-java7-installer',
+                                 'oracle-java7-set-default']))
+        self.assertTrue(accept_oracle_jvm_license.called)
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):

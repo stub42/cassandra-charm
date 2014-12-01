@@ -130,11 +130,11 @@ def install_packages(servicename, packages):
 
 
 def install_cassandra_packages(servicename):
-    install_packages(servicename, ['cassandra', 'cassandra-tools'])
+    install_packages(servicename, helpers.get_cassandra_packages())
 
 
 def ensure_cassandra_package_status(servicename):
-    ensure_package_status(servicename, ['cassandra', 'cassandra-tools'])
+    ensure_package_status(servicename, helpers.get_cassandra_packages())
 
 
 def configure_cassandra_yaml(servicename):

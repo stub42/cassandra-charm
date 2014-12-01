@@ -8,7 +8,7 @@ import subprocess
 
 from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
-from charmhelpers.core.hookenv import DEBUG, WARNING
+from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
 import yaml
 
@@ -272,3 +272,46 @@ def rolling_restart_cassandra():
 
 def restart_cassandra():
     raise NotImplementedError()
+
+
+ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'
+
+
+def accept_oracle_jvm_license():
+    config = hookenv.config()
+    if config.get(ORACLE_JVM_ACCEPT_KEY) is None:
+        config[ORACLE_JVM_ACCEPT_KEY] = False
+    if config[ORACLE_JVM_ACCEPT_KEY] is True:
+        return
+    if hookenv.config()['jvm'] == 'oracle':
+        # Per documentation of the jvm option in config.yaml, selecting
+        # the Oracle JVM implicitly accepts the Oracle license. Because
+        # if it was easy, it wouldn't be Enterprise.
+        p = subprocess.Popen(['debconf-set-selections'],
+                             stdin=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             stdout=subprocess.PIPE)
+        (out, err) = p.communicate(b'oracle-java7-installer '
+                                   b'shared/accepted-oracle-license-v1-1 '
+                                   b'select true\n')  # newline required
+        if p.returncode == 0:
+            config[ORACLE_JVM_ACCEPT_KEY] = True
+        else:
+            hookenv.log('Unable to accept Oracle licence. Using OpenJDK',
+                        ERROR)
+            hookenv.log(out, DEBUG)
+
+
+def get_cassandra_packages():
+    packages = set(['cassandra', 'cassandra-tools'])
+
+    config = hookenv.config()
+    jvm = config['jvm'].lower()
+    if jvm not in ('openjdk', 'oracle'):
+        hookenv.log('Unknown jvm {!r} specified. Using OpenJDK', WARNING)
+        jvm = 'openjdk'
+    if jvm == 'oracle':
+        accept_oracle_jvm_license()  # TODO: Move this side-effect
+        if config[ORACLE_JVM_ACCEPT_KEY]:
+            packages.add('oracle-java7-installer')
+            packages.add('oracle-java7-set-default')
+    return packages

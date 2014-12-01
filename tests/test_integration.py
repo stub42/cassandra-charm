@@ -20,6 +20,7 @@ SERIES = os.environ.get('SERIES', 'trusty')
 
 class TestDeploymentBase(unittest.TestCase):
     rf = 1
+    jvm = 'openjdk'
     deployment = None
 
     @classmethod
@@ -27,7 +28,8 @@ class TestDeploymentBase(unittest.TestCase):
         deployment = AmuletFixture(series=SERIES)
         deployment.add('cassandra', units=cls.rf)
         deployment.configure('cassandra', dict(max_heap_size='128M',
-                                               heap_newsize='32M'))
+                                               heap_newsize='32M',
+                                               jvm=cls.jvm))
         deployment.setUp()
 
         cls.deployment = deployment
@@ -78,6 +80,7 @@ class TestDeploymentBase(unittest.TestCase):
 class Test3UnitDeployment(TestDeploymentBase):
     """Tests run on both a 3 node cluster and a single node cluster."""
     rf = 3
+    jvm = 'openjdk'
 
     def test_database_basics(self):
         session = self.session()
@@ -101,6 +104,7 @@ class Test3UnitDeployment(TestDeploymentBase):
 class Test1UnitDeployment(Test3UnitDeployment):
     """Tests run on a single node cluster."""
     rf = 1
+    jvm = 'oracle'  # At least one test needs to install the Oracle JVM.
 
 
 if __name__ == '__main__':
