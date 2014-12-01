@@ -474,10 +474,21 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(accept_oracle_jvm_license.called)
 
         # Oracle JVM
-        hookenv.config()['jvm'] = 'oracle'
+        hookenv.config()['jvm'] = 'oRacle'  # Insensitive.
         hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'cassandra-tools',
+                                 'oracle-java7-installer',
+                                 'oracle-java7-set-default']))
+        self.assertTrue(accept_oracle_jvm_license.called)
+
+    @patch('helpers.accept_oracle_jvm_license')
+    def test_get_cassandra_packages_dse(self, accept_oracle_jvm_license):
+        # DataStax Enterprise, and implicit Oracle JVM.
+        hookenv.config()['edition'] = 'dsE'  # Insensitive.
+        hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
+        self.assertSetEqual(helpers.get_cassandra_packages(),
+                            set(['dse-full',
                                  'oracle-java7-installer',
                                  'oracle-java7-set-default']))
         self.assertTrue(accept_oracle_jvm_license.called)

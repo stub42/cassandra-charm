@@ -78,6 +78,16 @@ def configure_sources(servicename):
         fetch.configure_sources(True)
 
 
+def add_implicit_package_signing_keys(servicename):
+    # Rather than blindly add these keys, we should sniff
+    # config['install_sources'] for apache.org or datastax.com urls and
+    # add only the appropriate keys.
+    for key in ('apache', 'datastax'):
+        path = os.path.join(hookenv.charm_dir(), 'lib', '{}.key'.format(key))
+        subprocess.check_call(['apt-key', 'add', path],
+                              stdin=subprocess.DEVNULL)
+
+
 def reset_sysctl(servicename):
     '''Configure sysctl settings for Cassandra'''
     if helpers.is_lxc():

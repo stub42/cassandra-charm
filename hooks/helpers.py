@@ -301,17 +301,47 @@ def accept_oracle_jvm_license():
             hookenv.log(out, DEBUG)
 
 
-def get_cassandra_packages():
-    packages = set(['cassandra', 'cassandra-tools'])
+def get_cassandra_edition():
+    config = hookenv.config()
+    edition = config['edition'].lower()
+    if edition not in ('community', 'dse'):
+        hookenv.log('Unknown edition {!r}. Using community.'.format(edition),
+                    ERROR)
+        edition = 'community'
+    return edition
+
+
+def get_jvm():
+    # DataStax Enterprise requires the Oracle JVM.
+    if get_cassandra_edition() == 'dse':
+        return 'oracle'
 
     config = hookenv.config()
     jvm = config['jvm'].lower()
     if jvm not in ('openjdk', 'oracle'):
         hookenv.log('Unknown jvm {!r} specified. Using OpenJDK', WARNING)
         jvm = 'openjdk'
+    return jvm
+
+
+def get_cassandra_packages():
+    config = hookenv.config()
+
+    edition = get_cassandra_edition()
+    if edition == 'dse':
+        packages = set(['dse-full'])
+    else:
+        packages = set(['cassandra', 'cassandra-tools'])
+
+    jvm = get_jvm()
     if jvm == 'oracle':
-        accept_oracle_jvm_license()  # TODO: Move this side-effect
+        accept_oracle_jvm_license()
         if config[ORACLE_JVM_ACCEPT_KEY]:
             packages.add('oracle-java7-installer')
             packages.add('oracle-java7-set-default')
+    else:
+        # Packages pull in OpenJDK, or use what is already installed.
+        # Should this explitly ensure OpenJDK 1.7?
+        pass
+
     return packages

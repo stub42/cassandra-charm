@@ -131,6 +131,25 @@ class TestsActions(TestCaseBase):
         actions.configure_sources('')
         configure_sources.assert_called_once_with(True)
 
+    @patch('charmhelpers.core.hookenv.charm_dir')
+    @patch('subprocess.check_call')
+    def test_add_implicit_package_signing_keys(self, check_call, charm_dir):
+        charm_dir.return_value = os.path.join(os.path.dirname(__file__),
+                                              os.pardir)
+        actions.add_implicit_package_signing_keys('')
+
+        keys = ['apache', 'datastax']
+
+        self.assertEqual(check_call.call_count, len(keys))
+
+        for k in keys:
+            with self.subTest(key=k):
+                path = os.path.join(hookenv.charm_dir(),
+                                    'lib', '{}.key'.format(k))
+                self.assertTrue(os.path.exists(path))
+                check_call.assert_any_call(['apt-key', 'add', path],
+                                           stdin=subprocess.DEVNULL)
+
     @patch('charmhelpers.core.host.write_file', autospec=True)
     @patch('subprocess.check_call', autospec=True)
     def test_reset_sysctl(self, check_call, write_file):

@@ -29,6 +29,7 @@ SERVICE_DEFINITIONS = [
          ],
          data_ready=[
              actions.preinstall,
+             actions.add_implicit_package_signing_keys,
              actions.configure_sources,
              actions.swapoff,
              actions.reset_sysctl,

@@ -109,5 +109,15 @@ class Test1UnitDeployment(Test3UnitDeployment):
     jvm = 'openjdk'
 
 
+class TestDSEDeployment(Test3UnitDeployment):
+    """Tests run on a single node DataStax Enterprise cluster.
+    """
+    rf = 1
+    # 'Fast' tests use OpenJDK to avoid the huge tarball download from
+    # oracle.com
+    jvm = 'openjdk'
+    dse = True
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
