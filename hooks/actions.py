@@ -209,5 +209,8 @@ def configure_cassandra_env(servicename):
 def rolling_restart(servicename):
     flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
     if os.path.exists(flag):
-        if helpers.rolling_restart(helpers.restart_cassandra):
+        if not helpers.is_cassandra_running():
+            helpers.restart_cassandra()
+            os.remove(flag)
+        elif helpers.rolling_restart(helpers.restart_cassandra):
             os.remove(flag)

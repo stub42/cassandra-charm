@@ -5,9 +5,10 @@ import os.path
 import re
 import shutil
 import subprocess
+import time
 
 from charmhelpers.contrib import peerstorage
-from charmhelpers.core import hookenv, host, services
+from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
 import yaml
@@ -241,10 +242,7 @@ def rolling_restart(restart_hook):
 
 
 def rolling_restart_cassandra():
-    if is_cassandra_running():
-        return rolling_restart(restart_cassandra)
-    restart_cassandra()
-    return True
+    return rolling_restart(restart_cassandra)
 
 
 ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # hookenv.config() key.
@@ -332,6 +330,17 @@ def get_cassandra_rackdc_file():
                         "cassandra-rackdc.properties")
 
 
+def get_cassandra_pid_file():
+    edition = get_cassandra_edition()
+    if edition == 'dse':
+        pid_file = "/var/run/dse/dse.pid"
+    # elif apt_pkg.version_compare(get_cassandra_version(), "2.0") < 0:
+    #     pid_file = "/var/run/cassandra.pid"
+    else:
+        pid_file = "/var/run/cassandra/cassandra.pid"
+    return pid_file
+
+
 def get_cassandra_packages():
     config = hookenv.config()
 
@@ -356,8 +365,67 @@ def get_cassandra_packages():
 
 
 def stop_cassandra():
-    services.service_stop(get_cassandra_service())
+    if is_cassandra_running():
+        host.service_stop(get_cassandra_service())
 
 
 def restart_cassandra():
-    services.service_restart(get_cassandra_service())
+    if is_cassandra_running():
+        host.service_restart(get_cassandra_service())
+    else:
+        host.service_start(get_cassandra_service())
+
+
+def is_cassandra_running():
+    pid_file = get_cassandra_pid_file()
+
+    # XXX needs to wait after a stop somehow
+    if not os.path.exists(pid_file):
+        hookenv.log("Cassandra is stopped", 'INFO')
+        return False
+
+    for line in open(pid_file, "r"):
+        pid = int(line.strip())
+        break
+
+    if not pid > 1:
+        hookenv.log("Cassandra pid is less than or equal to 1. Aborting",
+                    ERROR)
+        raise SystemExit(1)
+    try:
+        # This does not kill the process but checks for its existence
+        os.kill(pid, 0)
+        hookenv.log("Cassandra PID {} is running".format(pid), 'INFO')
+    except OSError:
+        # XXX: Is this a problem worth failing on? Or should we just
+        # remove the errant PID file and return False?
+        hookenv.log("Cassandra PID file exists but PID {} is not "
+                    "running. Please manually check on the state "
+                    "of Cassandra".format(pid), ERROR)
+        raise SystemExit(1)
+    # Wait for full up state with binary backoff
+    # up to 256 seconds
+    for i in range(9):
+        try:
+            # This does not kill the process but checks for its existence
+            os.kill(pid, 0)
+            hookenv.log("Cassandra PID {} is still running".format(pid))
+        except OSError:
+            hookenv.log("Cassandra PID {} is no longer running. "
+                        "Please manually check on the state of "
+                        "Cassandra".format(pid), ERROR)
+            raise SystemExit(1)
+        try:
+            subprocess.check_call(["nodetool", "-h",
+                                   hookenv.unit_private_ip(), "info"],
+                                  stderr=open(os.devnull, 'wb'))
+            hookenv.log("Cassandra is running", 'INFO')
+            return True
+        except:
+            hookenv.log("Cassandra is still not fully up at attempt {}"
+                        "".format(i))
+            time.sleep(2 ** i)
+    hookenv.log("Cassandra PID {} is running but not responding to "
+                "nodetool. Please manually check on the state of "
+                "Cassandra".format(pid))
+    raise SystemExit(1)
