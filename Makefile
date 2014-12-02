@@ -33,6 +33,16 @@ test: unittest
 ftest: unittest
 	nosetests -v tests.test_integration:Test1UnitDeployment
 
+# Set the DSE_SOURCE environment variable for this to work:
+# DSE_SOURCE="deb http://un:pw@debian.datastax.com/enterprise stable main"
+# You will also need a cache like squid-deb-proxy and have tweaked it to
+# cache the authenticated files, or the tests will likely timeout waiting
+# for huge downloads to complete. Alternatively, mirror the DataStax
+# packages into your own private archive.
+dsetest: unittest
+	AMULET_TIMEOUT=3600 \
+	nosetests -v tests.test_integration:TestDSEDeployment
+
 coverage: lint
 	nosetests -v \
 	    tests.test_actions --cover-package=actions \

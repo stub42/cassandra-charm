@@ -41,7 +41,9 @@ class AmuletFixture(amulet.Deployment):
             for d in self._temp_dirs:
                 d.cleanup()
 
-    def setUp(self, timeout=900):
+    def setUp(self, timeout=None):
+        if timeout is None:
+            timeout = int(os.environ.get('AMULET_TIMEOUT', 900))
         self.reset_environment()
         try:
             # If setUp fails, tearDown is never called leaving the

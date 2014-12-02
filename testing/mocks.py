@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import yaml
 
+from charmhelpers import fetch
 from charmhelpers.core import hookenv
 
 
@@ -71,6 +72,7 @@ def mock_charmhelpers(test_case):
         'charmhelpers.core.hookenv.service_name',
         'charmhelpers.core.hookenv.unit_private_ip',
         'charmhelpers.core.host.log',
+        'charmhelpers.fetch.filter_installed_packages',
         'os.chown', 'os.fchown',
     ]
     for m in methods:
@@ -104,3 +106,5 @@ def mock_charmhelpers(test_case):
         assert uid == 0
         assert gid == 0
     os.fchown.side_effect = mock_fchown
+
+    fetch.filter_installed_packages.side_effect = lambda pkgs: list(pkgs)
