@@ -391,28 +391,28 @@ class TestsActions(TestCaseBase):
         peer_echo.assert_called_once_with(sentinel.peer_includes)
 
     @patch('helpers.rolling_restart', autospec=True)
-    def test_rolling_restart(self, restart):
-        restart.return_value = False
+    def test_rolling_restart(self, helpers_rolling_restart):
+        helpers_rolling_restart.return_value = False
 
         # If there is no request, nothing happens
         actions.rolling_restart('')
-        self.assertFalse(restart.called)
+        self.assertFalse(helpers_rolling_restart.called)
 
         # After a request, rolling_restart keeps being called...
         helpers.request_rolling_restart()
         actions.rolling_restart('')
-        self.assertEqual(restart.call_count, 1)
+        self.assertEqual(helpers_rolling_restart.call_count, 1)
         actions.rolling_restart('')
-        self.assertEqual(restart.call_count, 2)
+        self.assertEqual(helpers_rolling_restart.call_count, 2)
 
         # ... until it succeeds ...
-        restart.return_value = True
+        helpers_rolling_restart.return_value = True
         actions.rolling_restart('')
-        self.assertEqual(restart.call_count, 3)
+        self.assertEqual(helpers_rolling_restart.call_count, 3)
 
         # ... and stops again.
         actions.rolling_restart('')
-        self.assertEqual(restart.call_count, 3)
+        self.assertEqual(helpers_rolling_restart.call_count, 3)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
