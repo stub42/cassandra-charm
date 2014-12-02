@@ -22,16 +22,16 @@ lint: deps
 	flake8 --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
 
 unittest: lint
-	nosetests -v \
+	nosetests -sv \
 	    tests.test_actions --cover-package=actions \
 	    tests.test_helpers --cover-package=helpers \
 	    --with-coverage --cover-branches
 
 test: unittest
-	nosetests -v tests.test_integration
+	nosetests -sv tests.test_integration
 	
 ftest: unittest
-	nosetests -v tests.test_integration:Test1UnitDeployment
+	nosetests -sv tests.test_integration:Test1UnitDeployment
 
 # Set the DSE_SOURCE environment variable for this to work:
 # DSE_SOURCE="deb http://un:pw@debian.datastax.com/enterprise stable main"
@@ -41,10 +41,10 @@ ftest: unittest
 # packages into your own private archive.
 dsetest: unittest
 	AMULET_TIMEOUT=3600 \
-	nosetests -v tests.test_integration:TestDSEDeployment
+	nosetests -sv tests.test_integration:TestDSEDeployment
 
 coverage: lint
-	nosetests -v \
+	nosetests -sv \
 	    tests.test_actions --cover-package=actions \
 	    tests.test_helpers --cover-package=helpers \
 	    --with-coverage --cover-branches \

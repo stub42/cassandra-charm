@@ -28,11 +28,12 @@ class TestDeploymentBase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         deployment = AmuletFixture(series=SERIES)
+        deployment.setUp()
+        cls.deployment = deployment
+
         deployment.add('cassandra', units=cls.rf)
         deployment.configure('cassandra', cls.config)
-        deployment.setUp()
-
-        cls.deployment = deployment
+        deployment.deploy()
 
     @classmethod
     def tearDownClass(cls):
@@ -82,7 +83,7 @@ class Test3UnitDeployment(TestDeploymentBase):
     rf = 3
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
-                  jvm='Oracle')  # At least one test should use Oracle jvm.
+                  jvm='Oracle')
 
     def test_database_basics(self):
         session = self.session()
@@ -106,6 +107,9 @@ class Test3UnitDeployment(TestDeploymentBase):
 class Test1UnitDeployment(Test3UnitDeployment):
     """Tests run on a single node cluster."""
     rf = 1
+    config = dict(max_heap_size='128M',
+                  heap_newsize='32M',
+                  jvm='openjdk')
 
 
 class TestDSEDeployment(Test3UnitDeployment):

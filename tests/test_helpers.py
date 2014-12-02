@@ -254,18 +254,18 @@ class TestHelpers(TestCaseBase):
         get_package_version.assert_called_with('cassandra')
 
         # Return a fake '2.1' if DSE is enabled.
-        hookenv.config()['dse'] = True
+        hookenv.config()['edition'] = 'dse'
         self.assertEqual(helpers.get_cassandra_version(), '2.1')
 
         # Return None if cassandra package is not installed and no DSE.
-        hookenv.config()['dse'] = False
+        hookenv.config()['edition'] = 'community'
         get_package_version.return_value = None
         self.assertIsNone(helpers.get_cassandra_version())
 
     def test_get_cassandra_config_dir(self):
         self.assertEqual(helpers.get_cassandra_config_dir(),
                          '/etc/cassandra')
-        hookenv.config()['dse'] = True
+        hookenv.config()['edition'] = 'dse'
         self.assertEqual(helpers.get_cassandra_config_dir(),
                          '/etc/dse/cassandra')
 
@@ -425,13 +425,14 @@ class TestHelpers(TestCaseBase):
 
     @patch('subprocess.Popen', autospec=False)
     def test_accept_oracle_jvm_license(self, popen):
-        # Nothing to do unless the Oracle JVM is selected.
-        popen().returncode = 0
         popen().communicate.return_value = ('', None)
         popen.reset_mock()
-        helpers.accept_oracle_jvm_license()
-        self.assertFalse(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
+
+        # Fails hard unless a config option specifying the Oracle JVM
+        # has been selected.
+        self.assertRaises(AssertionError, helpers.accept_oracle_jvm_license)
         self.assertFalse(popen.called)
+        self.assertFalse(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
 
         # When the user selects the Oracle JVM in the charm service
         # configuration, they are implicitly accepting the Oracle Java

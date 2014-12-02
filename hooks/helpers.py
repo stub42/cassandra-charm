@@ -7,7 +7,7 @@ import shutil
 import subprocess
 
 from charmhelpers.contrib import peerstorage
-from charmhelpers.core import hookenv, host
+from charmhelpers.core import hookenv, host, services
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
 import yaml
@@ -165,32 +165,6 @@ def get_package_version(package):
     return None
 
 
-def get_cassandra_version():
-    if hookenv.config('dse'):
-        return "2.1"  # DSE version does not match Cassandra version.
-    return get_package_version('cassandra')
-
-
-def get_cassandra_config_dir():
-    if hookenv.config('dse'):
-        return '/etc/dse/cassandra'
-    else:
-        return '/etc/cassandra'
-
-
-def get_cassandra_yaml_file():
-    return os.path.join(get_cassandra_config_dir(), "cassandra.yaml")
-
-
-def get_cassandra_env_file():
-    return os.path.join(get_cassandra_config_dir(), "cassandra-env.sh")
-
-
-def get_cassandra_rackdc_file():
-    return os.path.join(get_cassandra_config_dir(),
-                        "cassandra-rackdc.properties")
-
-
 # FOR CHARMHELPERS (peerstorage, better default relname)
 def get_peer_relation_name():
     with open(os.path.join(hookenv.charm_dir(), 'metadata.yaml'), 'r') as mdf:
@@ -267,11 +241,10 @@ def rolling_restart(restart_hook):
 
 
 def rolling_restart_cassandra():
-    rolling_restart(restart_cassandra)
-
-
-def restart_cassandra():
-    raise NotImplementedError()
+    if is_cassandra_running():
+        return rolling_restart(restart_cassandra)
+    restart_cassandra()
+    return True
 
 
 ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # hookenv.config() key.
@@ -283,23 +256,23 @@ def accept_oracle_jvm_license():
         config[ORACLE_JVM_ACCEPT_KEY] = False
     if config[ORACLE_JVM_ACCEPT_KEY] is True:
         return
-    if hookenv.config()['jvm'] == 'oracle':
-        # Per documentation of the jvm option in config.yaml, selecting
-        # the Oracle JVM implicitly accepts the Oracle license. Because
-        # if it was easy, it wouldn't be Enterprise.
-        p = subprocess.Popen(['debconf-set-selections'],
-                             stdin=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             stdout=subprocess.PIPE)
-        (out, err) = p.communicate(b'oracle-java7-installer '
-                                   b'shared/accepted-oracle-license-v1-1 '
-                                   b'select true\n')  # newline required
-        if p.returncode == 0:
-            config[ORACLE_JVM_ACCEPT_KEY] = True
-            hookenv.log('Oracle Java SE licence accepted')
-        else:
-            hookenv.log('Unable to accept Oracle licence. Using OpenJDK',
-                        ERROR)
-            hookenv.log(out, DEBUG)
+    # Per documentation in config.yaml, selecting the Oracle JVM or
+    # the dse edition implicitly accepts the Oracle license. Because
+    # if it was easy, it wouldn't be Enterprise.
+    assert get_jvm() == 'oracle', 'No implicit license agreement found'
+    p = subprocess.Popen(['debconf-set-selections'],
+                         stdin=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         stdout=subprocess.PIPE)
+    (out, err) = p.communicate(b'oracle-java7-installer '
+                               b'shared/accepted-oracle-license-v1-1 '
+                               b'select true\n')  # newline required
+    if p.returncode == 0:
+        config[ORACLE_JVM_ACCEPT_KEY] = True
+        hookenv.log('Oracle Java SE licence accepted')
+    else:
+        hookenv.log('Unable to accept Oracle licence. Using OpenJDK',
+                    ERROR)
+        hookenv.log(out, DEBUG)
 
 
 def get_cassandra_edition():
@@ -310,6 +283,13 @@ def get_cassandra_edition():
                     ERROR)
         edition = 'community'
     return edition
+
+
+def get_cassandra_service():
+    '''Cassandra upstart service'''
+    if get_cassandra_edition() == 'dse':
+        return 'dse'
+    return 'cassandra'
 
 
 def get_jvm():
@@ -324,6 +304,32 @@ def get_jvm():
                     ERROR)
         jvm = 'openjdk'
     return jvm
+
+
+def get_cassandra_version():
+    if get_cassandra_edition() == 'dse':
+        return "2.1"  # DSE version does not match Cassandra version.
+    return get_package_version('cassandra')
+
+
+def get_cassandra_config_dir():
+    if get_cassandra_edition() == 'dse':
+        return '/etc/dse/cassandra'
+    else:
+        return '/etc/cassandra'
+
+
+def get_cassandra_yaml_file():
+    return os.path.join(get_cassandra_config_dir(), "cassandra.yaml")
+
+
+def get_cassandra_env_file():
+    return os.path.join(get_cassandra_config_dir(), "cassandra-env.sh")
+
+
+def get_cassandra_rackdc_file():
+    return os.path.join(get_cassandra_config_dir(),
+                        "cassandra-rackdc.properties")
 
 
 def get_cassandra_packages():
@@ -347,3 +353,11 @@ def get_cassandra_packages():
         pass
 
     return packages
+
+
+def stop_cassandra():
+    services.service_stop(get_cassandra_service())
+
+
+def restart_cassandra():
+    services.service_restart(get_cassandra_service())

@@ -8,43 +8,49 @@ import yaml
 
 
 class AmuletFixture(amulet.Deployment):
-    def __init__(self, *args, **kw):
-        super(AmuletFixture, self).__init__(*args, **kw)
-
+    def setUp(self):
         self._temp_dirs = []
 
-        try:
-            # Repackage our charm to a temporary directory, allowing us
-            # to strip our virtualenv symlinks that would otherwise cause
-            # juju to abort. We also strip the .bzr directory, working
-            # around Bug #1394078.
-            self.repackage_charm()
+        self.reset_environment()
 
-            # Fix amulet.Deployment so it doesn't depend on environment
-            # variables or the current working directory, but rather the
-            # environment we have introspected.
-            with open(os.path.join(self.charm_dir, 'metadata.yaml'), 'r') as s:
-                self.charm_name = yaml.safe_load(s)['name']
-            self.charm_cache.test_charm = None
-            self.charm_cache.fetch(self.charm_name,
-                                   self.charm_dir, self.series)
+        # Repackage our charm to a temporary directory, allowing us
+        # to strip our virtualenv symlinks that would otherwise cause
+        # juju to abort. We also strip the .bzr directory, working
+        # around Bug #1394078.
+        self.repackage_charm()
 
-            # Explicitly reset $JUJU_REPOSITORY to ensure amulet and
-            # juju-deployer does not mess with the real one, per Bug #1393792
-            self.org_repo = os.environ.get('JUJU_REPOSITORY', None)
-            temp_repo = tempfile.TemporaryDirectory(suffix='.repo')
-            self._temp_dirs.append(temp_repo)
-            os.environ['JUJU_REPOSITORY'] = temp_repo.name
-            os.makedirs(os.path.join(temp_repo.name, self.series), mode=0o700)
-        except Exception:
-            # __del__ not called if __init__ fails.
-            for d in self._temp_dirs:
-                d.cleanup()
+        # Fix amulet.Deployment so it doesn't depend on environment
+        # variables or the current working directory, but rather the
+        # environment we have introspected.
+        with open(os.path.join(self.charm_dir, 'metadata.yaml'), 'r') as s:
+            self.charm_name = yaml.safe_load(s)['name']
+        self.charm_cache.test_charm = None
+        self.charm_cache.fetch(self.charm_name, self.charm_dir, self.series)
 
-    def setUp(self, timeout=None):
+        # Explicitly reset $JUJU_REPOSITORY to ensure amulet and
+        # juju-deployer does not mess with the real one, per Bug #1393792
+        self.org_repo = os.environ.get('JUJU_REPOSITORY', None)
+        temp_repo = tempfile.TemporaryDirectory(suffix='.repo')
+        self._temp_dirs.append(temp_repo)
+        os.environ['JUJU_REPOSITORY'] = temp_repo.name
+        os.makedirs(os.path.join(temp_repo.name, self.series), mode=0o700)
+
+    def tearDown(self, reset_environment=True):
+        if reset_environment:
+            self.reset_environment()
+        if self.org_repo is None:
+            del os.environ['JUJU_REPOSITORY']
+        else:
+            os.environ['JUJU_REPOSITORY'] = self.org_repo
+
+    def deploy(self, timeout=None):
+        '''Deploying or updating the configured system.
+
+        Invokes amulet.Deployer.setup with a nicer name and standard
+        timeout handling.
+        '''
         if timeout is None:
             timeout = int(os.environ.get('AMULET_TIMEOUT', 900))
-        self.reset_environment()
         try:
             # If setUp fails, tearDown is never called leaving the
             # environment setup. This is useful for debugging.
@@ -55,14 +61,6 @@ class AmuletFixture(amulet.Deployment):
             # such as deadlocks between peers.
             # raise unittest.SkipTest("Environment wasn't stood up in time")
             raise
-
-    def tearDown(self, reset_environment=True):
-        if reset_environment:
-            self.reset_environment()
-        if self.org_repo is None:
-            del os.environ['JUJU_REPOSITORY']
-        else:
-            os.environ['JUJU_REPOSITORY'] = self.org_repo
 
     def __del__(self):
         for temp_dir in self._temp_dirs:
