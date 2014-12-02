@@ -188,7 +188,11 @@ def utcnow_str():
     return utcnow().strftime('%Y-%m-%d %H:%M:%S.%fZ')
 
 
+# FOR CHARMHELPERS?
 def request_rolling_restart():
+    # We store a flag on the filesystem, for rolling_restart()
+    # to deal with later. This makes it easy for rolling_restart()
+    # to detect that this is a new request.
     flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
     if os.path.exists(flag):
         return
@@ -199,50 +203,70 @@ def request_rolling_restart():
 def rolling_restart(restart_hook):
     '''To ensure availability, only restart one unit at a time.
 
-    Returns True if the restart has occurred, or False if it has been
-    queued. Your hooks must keep invoking rolling_restart() until
-    the restart succeeds.
+    Returns:
+        True if no restart request has been queued.
+        True if the queued restart has occurred.
+        False if we are still waiting on a queued restart.
+
+    Your hooks must keep invoking rolling_restart() until a
+    requested restart succeeds, or you may deadlock peers.
+
+    charmhelpers.contrib.peerstorage.peer_echo must be invoked from
+    your peer relation-changed hook, or the restart process will fail.
     '''
+    request_flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
+    peer_relname = get_peer_relation_name()
+    local_unit_key = hookenv.local_unit().replace('/', '_')
+    restart_key = 'restart_needed_{}'.format(local_unit_key)
+
+    def _leave_queue():
+        try:
+            peerstorage.peer_store(restart_key, None, peer_relname)
+        except ValueError:
+            pass  # No peer storage, no queue, no problem.
+        if os.path.exists(request_flag):
+            os.remove(request_flag)
+
+    def _restart():
+        restart_hook()
+        _leave_queue()
+        return True
+
+    if not os.path.exists(request_flag):
+        _leave_queue()
+        return True
+
     # If there are no peers, restart the service now since there is
     # nobody to coordinate with.
     peers = get_peers()
     if len(peers) == 0:
         hookenv.log('Restart request with no peers')
-        restart_hook()
-        return True
+        return _restart()
 
-    peer_relname = get_peer_relation_name()
-    local_unit_key = hookenv.local_unit().replace('/', '_')
-    restart_key = 'restart_needed_{}'.format(local_unit_key)
-
-    restart_needed = peerstorage.peer_retrieve_by_prefix('restart_needed',
-                                                         peer_relname)
+    restart_queue = peerstorage.peer_retrieve_by_prefix('restart_needed',
+                                                        peer_relname)
 
     # If we are not in the restart queue, join it and restart later.
-    if local_unit_key not in restart_needed:
+    # If there are peers, we cannot restart in the same hook we made
+    # the request or we will race with other units trying to restart.
+    if local_unit_key not in restart_queue:
         hookenv.log('Restart request, joining queue')
         peerstorage.peer_store(restart_key, utcnow_str(), peer_relname)
         return False
 
     # Order (unit_key, timestamp) items oldest first.
-    restart_queue = sorted(restart_needed.items(),
-                           key=lambda x: tuple(reversed(x)))
+    sorted_restart_queue = sorted(restart_queue.items(),
+                                  key=lambda x: tuple(reversed(x)))
 
-    next_unit = restart_queue[0][0]  # Unit waiting longest to restart.
+    next_unit = sorted_restart_queue[0][0]  # Unit waiting longest to restart.
     if next_unit == local_unit_key:
         hookenv.log('Restart request and next in queue')
-        restart_hook()
-        peerstorage.peer_store(restart_key, None, peer_relname)
-        return True
+        return _restart()
 
     hookenv.log('Restart request and already waiting in queue')
-    for when, unit in restart_queue:
+    for unit, when in sorted_restart_queue:
         hookenv.log('Waiting on {} {}'.format(unit, when), DEBUG)
     return False
-
-
-def rolling_restart_cassandra():
-    return rolling_restart(restart_cassandra)
 
 
 ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # hookenv.config() key.

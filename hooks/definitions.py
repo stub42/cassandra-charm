@@ -9,10 +9,6 @@ import relations
 CASSANDRA_PACKAGES = ['cassandra', 'cassandra-tools']
 
 SERVICE_DEFINITIONS = [
-    dict(service='peerstorage', data_ready=actions.peer_echo,
-         start=[], stop=[]),
-    dict(service='rolling-restart', data_read=actions.rolling_restart,
-         start=[], stop=[]),
     dict(service=helpers.get_cassandra_service(),
          ports=[7000,   # Cluster communication
                 7001,   # SSL cluster communication
@@ -33,7 +29,11 @@ SERVICE_DEFINITIONS = [
                      actions.configure_cassandra_env],
          stop=[lambda sn: helpers.stop_cassandra()],
          start=[lambda sn: helpers.restart_cassandra()]),
-]
+
+    dict(service='peerstorage', data_ready=actions.peer_echo,
+         start=[], stop=[]),
+    dict(service='rolling-restart', data_read=actions.rolling_restart,
+         start=[], stop=[])]
 
 
 if __name__ == '__main__':
