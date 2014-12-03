@@ -377,42 +377,12 @@ class TestsActions(TestCaseBase):
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
-    @patch('charmhelpers.contrib.peerstorage.peer_echo', autospec=True)
-    def test_peer_echo(self, peer_echo):
-        # peerstorage.peer_echo is not called from most hooks.
-        hookenv.hook_name.return_value = 'cluster-relation-joined'
-        actions.peer_echo('', includes=sentinel.peer_includes)
-        self.assertFalse(peer_echo.called)
-
-        # peerstorage.peer_echo is only called from the peer
-        # relation-changed hook.
-        hookenv.hook_name.return_value = 'cluster-relation-changed'
-        actions.peer_echo('', includes=sentinel.peer_includes)
-        peer_echo.assert_called_once_with(sentinel.peer_includes)
-
-    @patch('helpers.rolling_restart', autospec=True)
-    def test_rolling_restart(self, helpers_rolling_restart):
-        helpers_rolling_restart.return_value = False
-
-        # If there is no request, nothing happens
+    @patch('rollingrestart.rolling_restart', autospec=True)
+    def test_rolling_restart(self, rolling_restart):
+        # Simple wrapper.
         actions.rolling_restart('')
-        self.assertFalse(helpers_rolling_restart.called)
+        rolling_restart.assert_called_once_with(helpers.restart_cassandra)
 
-        # After a request, rolling_restart keeps being called...
-        helpers.request_rolling_restart()
-        actions.rolling_restart('')
-        self.assertEqual(helpers_rolling_restart.call_count, 1)
-        actions.rolling_restart('')
-        self.assertEqual(helpers_rolling_restart.call_count, 2)
-
-        # ... until it succeeds ...
-        helpers_rolling_restart.return_value = True
-        actions.rolling_restart('')
-        self.assertEqual(helpers_rolling_restart.call_count, 3)
-
-        # ... and stops again.
-        actions.rolling_restart('')
-        self.assertEqual(helpers_rolling_restart.call_count, 3)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

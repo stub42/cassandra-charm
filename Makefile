@@ -23,8 +23,9 @@ lint: deps
 
 unittest: lint
 	nosetests -sv \
-	    tests.test_actions --cover-package=actions \
-	    tests.test_helpers --cover-package=helpers \
+	    tests.test_actions        --cover-package=actions \
+	    tests.test_helpers        --cover-package=helpers \
+	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    --with-coverage --cover-branches
 
 test: unittest

@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-from datetime import datetime
 import errno
 import os.path
 import re
@@ -7,11 +6,9 @@ import shutil
 import subprocess
 import time
 
-from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
-import yaml
 
 import relations
 
@@ -164,109 +161,6 @@ def get_package_version(package):
     if pkgver is not None:
         return pkgver.ver_str
     return None
-
-
-# FOR CHARMHELPERS (peerstorage, better default relname)
-def get_peer_relation_name():
-    with open(os.path.join(hookenv.charm_dir(), 'metadata.yaml'), 'r') as mdf:
-        md = yaml.safe_load(mdf)
-    assert 'peers' in md, 'No peer relations in metadata.yaml'
-    return sorted(md['peers'].keys())[0]
-
-
-def get_peers():
-    for relid in hookenv.relation_ids(get_peer_relation_name()):
-        return set(hookenv.related_units(relid))
-    return None
-
-
-def utcnow():
-    return datetime.utcnow()
-
-
-def utcnow_str():
-    return utcnow().strftime('%Y-%m-%d %H:%M:%S.%fZ')
-
-
-# FOR CHARMHELPERS?
-def request_rolling_restart():
-    # We store a flag on the filesystem, for rolling_restart()
-    # to deal with later. This makes it easy for rolling_restart()
-    # to detect that this is a new request.
-    flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
-    if os.path.exists(flag):
-        return
-    host.write_file(flag, utcnow_str().encode('US-ASCII'))
-
-
-# FOR CHARMHELPERS?
-def rolling_restart(restart_hook):
-    '''To ensure availability, only restart one unit at a time.
-
-    Returns:
-        True if no restart request has been queued.
-        True if the queued restart has occurred.
-        False if we are still waiting on a queued restart.
-
-    Your hooks must keep invoking rolling_restart() until a
-    requested restart succeeds, or you may deadlock peers.
-
-    charmhelpers.contrib.peerstorage.peer_echo must be invoked from
-    your peer relation-changed hook, or the restart process will fail.
-    '''
-    request_flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
-    peer_relname = get_peer_relation_name()
-    local_unit_key = hookenv.local_unit().replace('/', '_')
-    restart_key = 'restart_needed_{}'.format(local_unit_key)
-
-    def _leave_queue():
-        try:
-            peerstorage.peer_store(restart_key, None, peer_relname)
-        except ValueError:
-            pass  # No peer storage, no queue, no problem.
-        if os.path.exists(request_flag):
-            os.remove(request_flag)
-
-    def _restart():
-        restart_hook()
-        _leave_queue()
-        return True
-
-    if not os.path.exists(request_flag):
-        _leave_queue()
-        return True
-
-    # If there are no peers, restart the service now since there is
-    # nobody to coordinate with.
-    peers = get_peers()
-    if len(peers) == 0:
-        hookenv.log('Restart request with no peers')
-        return _restart()
-
-    restart_queue = peerstorage.peer_retrieve_by_prefix('restart_needed',
-                                                        peer_relname)
-
-    # If we are not in the restart queue, join it and restart later.
-    # If there are peers, we cannot restart in the same hook we made
-    # the request or we will race with other units trying to restart.
-    if local_unit_key not in restart_queue:
-        hookenv.log('Restart request, joining queue')
-        peerstorage.peer_store(restart_key, utcnow_str(), peer_relname)
-        return False
-
-    # Order (unit_key, timestamp) items oldest first.
-    sorted_restart_queue = sorted(restart_queue.items(),
-                                  key=lambda x: tuple(reversed(x)))
-
-    next_unit = sorted_restart_queue[0][0]  # Unit waiting longest to restart.
-    if next_unit == local_unit_key:
-        hookenv.log('Restart request and next in queue')
-        return _restart()
-
-    hookenv.log('Restart request and already waiting in queue')
-    for unit, when in sorted_restart_queue:
-        hookenv.log('Waiting on {} {}'.format(unit, when), DEBUG)
-    return False
 
 
 ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # hookenv.config() key.

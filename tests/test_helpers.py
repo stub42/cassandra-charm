@@ -1,14 +1,12 @@
 #!.venv3/bin/python3
 
 from collections import namedtuple
-from datetime import datetime
 import errno
 import os.path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import ANY, call, mock_open, patch
-import yaml
+from unittest.mock import ANY, call, patch
 
 from charmhelpers.core import hookenv, host
 
@@ -287,142 +285,6 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.get_cassandra_rackdc_file(),
                          '/foo/cassandra-rackdc.properties')
 
-    def test_peer_relation_name(self):
-        metadata = dict(peers=dict(peer1=dict(interface='int1'),
-                                   peer2=dict(interface='int2')))
-        metadata_yaml = yaml.safe_dump(metadata)
-        with patch('helpers.open', mock_open(read_data=metadata_yaml),
-                   create=True) as m:
-            peer_relname = helpers.get_peer_relation_name()
-            m.assert_called_once_with(os.path.join(hookenv.charm_dir(),
-                                                   'metadata.yaml'), 'r')
-            # First peer relation in alphabetical order.
-            self.assertEqual(peer_relname, 'peer1')
-
-    @patch('helpers.get_peer_relation_name', autospec=True)
-    def test_get_peers(self, get_peer_relation_name):
-        get_peer_relation_name.return_value = 'cluster'
-        self.assertSetEqual(helpers.get_peers(),
-                            set(['service/2', 'service/3']))
-
-        # If the peer relation has yet to be joined, returns get_peers
-        # returns None.
-        hookenv.relation_ids.side_effect = None
-        hookenv.relation_ids.return_value = []
-        self.assertIsNone(helpers.get_peers())
-
-    def test_utcnow(self):
-        # helpers.utcnow simply wraps datetime.datetime.utcnow().
-        # We use it because, unlike datetime.utcnow(), it can be
-        # mocked in tests making them stable.
-        self.assertEqual(helpers.utcnow(), datetime(2010, 12, 25, 13, 45, 1))
-
-        # Our mock always gives predictable values.
-        self.assertEqual(helpers.utcnow(), datetime(2010, 12, 25, 13, 45, 2))
-
-        # Mocked values always increase.
-        self.assertLess(helpers.utcnow(), helpers.utcnow())
-
-    def test_utcnow_str(self):
-        # utcnow() as a readable and sortable string.
-        self.assertEqual(helpers.utcnow_str(),
-                         '2010-12-25 13:45:01.000000Z')
-        # Our mock returns increasing values.
-        self.assertLess(helpers.utcnow_str(), helpers.utcnow_str())
-
-    @patch('helpers.rolling_restart', autospec=True)
-    def test_rolling_restart_cassandra(self, rolling_restart):
-        # A trivial wrapper around helpers.rolling_restart.
-        helpers.rolling_restart_cassandra()
-        rolling_restart.assert_called_once_with(helpers.restart_cassandra)
-
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    @patch('helpers.get_peers', autospec=True)
-    @patch('helpers.restart_cassandra', autospec=True)
-    def test_rolling_restart_no_peers(self, restart, get_peers, peer_store):
-        # If there are no peers, restart happens immediately.
-        # This includes if a restart is requested before the unit
-        # has joined the peer relation, which is fine since we have no
-        # reason to block restarts on a unit that is still being setup.
-        get_peers.return_value = set()
-        self.assertTrue(helpers.rolling_restart(restart))
-        restart.assert_called_once_with()
-
-        # Peer storage was not used. It will fail without any peers.
-        self.assertFalse(peer_store.called)
-
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
-    @patch('helpers.restart_cassandra', autospec=True)
-    def test_rolling_restart_empty_queue(self, restart, peer_retrieve,
-                                         peer_store):
-        # If the restart queue is empty, the unit joins it but does
-        # not restart yet.
-        peer_retrieve.return_value = dict(foo='ignored because unknown')
-        self.assertFalse(helpers.rolling_restart(restart))
-
-        # Restart did not happen. We are only queueing.
-        self.assertFalse(restart.called)
-
-        # The queue was looked up, returning nothing.
-        peer_retrieve.assert_called_once_with('-', 'cluster')
-
-        # An entry for the unit was added to the queue.
-        peer_store.assert_called_once_with('restart_needed_service_1',
-                                           '2010-12-25 13:45:01.000000Z',
-                                           'cluster')
-
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
-    @patch('helpers.restart_cassandra', autospec=True)
-    def test_rolling_restart_stuck_in_queue(self, restart, peer_retrieve,
-                                            peer_store):
-        # If the unit is already in the restart queue, and there are
-        # other units before it, it must wait.
-        first, second = helpers.utcnow(), helpers.utcnow()
-        peer_retrieve.return_value = dict(foo='ignored',
-                                          restart_needed_service_1=second,
-                                          restart_needed_service_2=first)
-        self.assertFalse(helpers.rolling_restart(restart))
-
-        # Restart did not happen. We are stuck in the queue.
-        self.assertFalse(restart.called)
-
-        # The queue was looked up, returning nothing.
-        peer_retrieve.assert_called_once_with('-', 'cluster')
-
-        # No change was made to the queue, since we are already in it.
-        self.assertFalse(peer_store.called)
-
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
-    @patch('helpers.restart_cassandra', autospec=True)
-    def test_rolling_restart_next_in_queue(self, restart, peer_retrieve,
-                                           peer_store):
-        first, second = helpers.utcnow(), helpers.utcnow()
-        peer_retrieve.return_value = dict(restart_needed_service_1=first,
-                                          restart_needed_service_2=second)
-        self.assertTrue(helpers.rolling_restart(restart))
-        self.assertTrue(restart.called)
-        peer_retrieve.assert_called_once_with('-', 'cluster')
-        peer_store.assert_called_once_with('restart_needed_service_1',
-                                           None, 'cluster')
-
-    @patch('os.path.exists', autospec=True)
-    @patch('charmhelpers.core.host.write_file', autospec=True)
-    def test_request_rolling_restart(self, write_file, exists):
-        # request_rolling_restart() stores a flag on the filesystem.
-        flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
-        exists.return_value = False
-        helpers.request_rolling_restart()
-        write_file.assert_called_once_with(flag, ANY)
-
-        # It does nothing it the flag already exists.
-        write_file.reset_mock()
-        exists.return_value = True
-        helpers.request_rolling_restart()
-        self.assertFalse(write_file.called)
-
     @patch('subprocess.Popen', autospec=False)
     def test_accept_oracle_jvm_license(self, popen):
         popen().communicate.return_value = ('', None)
@@ -501,15 +363,6 @@ class TestIsLxc(unittest.TestCase):
         # Unfortunately we can't sanely test that it is returning the
         # correct value
         helpers.is_lxc()
-
-
-class TestUtc(unittest.TestCase):
-    def test_utcnow(self):
-        # Prove as best we can helpers.utcnow() wraps datetime.utcnow()
-        first_real = datetime.utcnow()
-        second_wrapped = helpers.utcnow()
-        self.assertLessEqual(first_real, second_wrapped)
-        self.assertIsInstance(second_wrapped, datetime)
 
 
 if __name__ == '__main__':

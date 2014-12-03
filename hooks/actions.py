@@ -9,21 +9,12 @@ import subprocess
 import yaml
 
 from charmhelpers import fetch
-from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
 from charmhelpers.core.hookenv import WARNING
 
 import helpers
-
-
-# FOR CHARMHELPERS
-def peer_echo(servicename, includes=None):
-    peer_relname = helpers.get_peer_relation_name()
-    required_hook = '{}-relation-changed'.format(peer_relname)
-    if hookenv.hook_name() == required_hook:
-        hookenv.log('peerstorage.peer_echo')
-        peerstorage.peer_echo(includes)
+import rollingrestart
 
 
 # FOR CHARMHELPERS
@@ -207,4 +198,4 @@ def configure_cassandra_env(servicename):
 
 
 def rolling_restart(servicename):
-    helpers.rolling_restart(helpers.restart_cassandra):
+    rollingrestart.rolling_restart(helpers.restart_cassandra)
