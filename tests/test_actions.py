@@ -383,6 +383,25 @@ class TestsActions(TestCaseBase):
         actions.rolling_restart('')
         rolling_restart.assert_called_once_with(helpers.restart_cassandra)
 
+    @patch('helpers.stop_cassandra')
+    def test_stop_cassandra(self, helpers_stop_cassandra):
+        actions.stop_cassandra('ignored')
+        helpers_stop_cassandra.assert_called_once_with()
+
+    @patch('helpers.restart_cassandra')
+    def test_stop_cassandra(self, helpers_restart_cassandra):
+        actions.restart_cassandra('ignored')
+        helpers_restart_cassandra.assert_called_once_with()
+
+
+class TestDefinitions(TestCaseBase):
+    @patch('charmhelpers.core.hookenv.relation_get')
+    def test_import_definitions(self, *args):
+        # We can't really test this in unit tests, but at least we can
+        # ensure it is importable before attempting to run the
+        # integration tests.
+        import definitions  # flake8: noqa
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -48,7 +48,8 @@ class BlockStorageBroker(RelationContext):
                                       hookenv.local_unit().replace('/', '_'))
         self._requested_mountpoint = mountpoint
 
-        if len(self) > 0 and mountpoint == self[0].get('mountpoint', None):
+        if 'data' in self and mountpoint == self['data'][0].get('mountpoint',
+                                                                None):
             self.mountpoint == mountpoint
         else:
             self.mountpoint = None

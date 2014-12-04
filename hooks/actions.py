@@ -199,3 +199,11 @@ def configure_cassandra_env(servicename):
 
 def rolling_restart(servicename):
     rollingrestart.rolling_restart(helpers.restart_cassandra)
+
+
+def stop_cassandra(servicename):
+    helpers.stop_cassandra()
+
+
+def start_cassandra(servicename):
+    helpers.start_cassandra()
