@@ -444,6 +444,32 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(service_start.called)
         service_restart.assert_called_once_with('wobbly')
 
+    def test_get_pid_from_file(self):
+        with tempfile.NamedTemporaryFile('w') as pid_file:
+            pid_file.write(' 42\t')
+            pid_file.flush()
+            self.assertEqual(helpers.get_pid_from_file(pid_file.name), 42)
+            pid_file.write('\nSome Noise')
+            pid_file.flush()
+            self.assertEqual(helpers.get_pid_from_file(pid_file.name), 42)
+
+        for invalid_pid in ['-1', '0', 'fred']:
+            with self.subTest(invalid_pid=invalid_pid):
+                with tempfile.NamedTemporaryFile('w') as pid_file:
+                    pid_file.write(invalid_pid)
+                    pid_file.flush()
+                    self.assertRaises(ValueError,
+                                      helpers.get_pid_from_file, pid_file.name)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.assertRaises(OSError, helpers.get_pid_from_file,
+                              os.path.join(tmpdir, 'invalid.pid'))
+
+    @unittest.skip
+    @patch('helpers.get_pid_from_file')
+    @patch('time.sleep')
+    def test_is_cassandra_running(self, sleep, get_pid_from_file):
+        pass
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):
