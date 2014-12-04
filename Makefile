@@ -46,8 +46,9 @@ dsetest: unittest
 
 coverage: lint
 	nosetests -sv \
-	    tests.test_actions --cover-package=actions \
-	    tests.test_helpers --cover-package=helpers \
+	    tests.test_actions        --cover-package=actions \
+	    tests.test_helpers        --cover-package=helpers \
+	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    --with-coverage --cover-branches \
 	    --cover-html --cover-html-dir=coverage \
 	    --cover-min-percentage=100 || \
