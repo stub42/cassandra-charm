@@ -191,6 +191,20 @@ def accept_oracle_jvm_license():
         hookenv.log(out, DEBUG)
 
 
+def get_jvm():
+    # DataStax Enterprise requires the Oracle JVM.
+    if get_cassandra_edition() == 'dse':
+        return 'oracle'
+
+    config = hookenv.config()
+    jvm = config['jvm'].lower()
+    if jvm not in ('openjdk', 'oracle'):
+        hookenv.log('Unknown jvm {!r} specified. Using OpenJDK'.format(jvm),
+                    ERROR)
+        jvm = 'openjdk'
+    return jvm
+
+
 def get_cassandra_edition():
     config = hookenv.config()
     edition = config['edition'].lower()
@@ -208,23 +222,11 @@ def get_cassandra_service():
     return 'cassandra'
 
 
-def get_jvm():
-    # DataStax Enterprise requires the Oracle JVM.
-    if get_cassandra_edition() == 'dse':
-        return 'oracle'
-
-    config = hookenv.config()
-    jvm = config['jvm'].lower()
-    if jvm not in ('openjdk', 'oracle'):
-        hookenv.log('Unknown jvm {!r} specified. Using OpenJDK'.format(jvm),
-                    ERROR)
-        jvm = 'openjdk'
-    return jvm
-
-
 def get_cassandra_version():
     if get_cassandra_edition() == 'dse':
-        return "2.1"  # DSE version does not match Cassandra version.
+        # When we support multiple versions, we will need to map
+        # DataStax versions to Cassandra versions.
+        return '2.1' if get_package_version('dse-full') else None
     return get_package_version('cassandra')
 
 

@@ -244,6 +244,30 @@ class TestHelpers(TestCaseBase):
         apt_cache.return_value = dict(package=package)
         self.assertIsNone(helpers.get_package_version('package'))
 
+    def test_get_jvm(self):
+        hookenv.config()['jvm'] = 'opEnjdk'  # Case insensitive
+        self.assertEqual(helpers.get_jvm(), 'openjdk')
+
+        hookenv.config()['jvm'] = 'oRacle'  # Case insensitive
+        self.assertEqual(helpers.get_jvm(), 'oracle')
+
+    def test_get_jvm_unknown(self):
+        hookenv.config()['jvm'] = 'OopsJDK'
+        self.assertEqual(helpers.get_jvm(), 'openjdk')
+        # An error was logged.
+        hookenv.log.assert_called_once_with(ANY, hookenv.ERROR)
+
+    def test_get_jvm_dse_override(self):
+        hookenv.config()['edition'] = 'dse'
+        self.assertEqual(helpers.get_jvm(), 'oracle')
+
+    def test_get_cassandra_service(self):
+        self.assertEqual(helpers.get_cassandra_service(), 'cassandra')
+
+    def test_get_cassandra_service_dse_override(self):
+        hookenv.config()['edition'] = 'dse'
+        self.assertEqual(helpers.get_cassandra_service(), 'dse')
+
     @patch('helpers.get_package_version', autospec=True)
     def test_get_cassandra_version(self, get_package_version):
         # Return cassandra package version if it is installed.
@@ -251,14 +275,28 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.get_cassandra_version(), '1.2.3-2~64')
         get_package_version.assert_called_with('cassandra')
 
-        # Return a fake '2.1' if DSE is enabled.
-        hookenv.config()['edition'] = 'dse'
-        self.assertEqual(helpers.get_cassandra_version(), '2.1')
-
-        # Return None if cassandra package is not installed and no DSE.
-        hookenv.config()['edition'] = 'community'
+    @patch('helpers.get_package_version', autospec=True)
+    def test_get_cassandra_version_uninstalled(self, get_package_version):
+        # Return none if the main cassandra package is not installed
         get_package_version.return_value = None
-        self.assertIsNone(helpers.get_cassandra_version())
+        self.assertEqual(helpers.get_cassandra_version(), None)
+        get_package_version.assert_called_with('cassandra')
+
+    @patch('helpers.get_package_version', autospec=True)
+    def test_get_cassandra_version_dse(self, get_package_version):
+        # Return the cassandra version equivalent if using dse.
+        hookenv.config()['edition'] = 'dse'
+        get_package_version.return_value = '4.5-beta2~88'
+        self.assertEqual(helpers.get_cassandra_version(), '2.1')
+        get_package_version.assert_called_with('dse-full')
+
+    @patch('helpers.get_package_version', autospec=True)
+    def test_get_cassandra_version_dse_uninstalled(self, get_package_version):
+        # Return the cassandra version equivalent if using dse.
+        hookenv.config()['edition'] = 'dse'
+        get_package_version.return_value = None
+        self.assertEqual(helpers.get_cassandra_version(), None)
+        get_package_version.assert_called_with('dse-full')
 
     def test_get_cassandra_config_dir(self):
         self.assertEqual(helpers.get_cassandra_config_dir(),
@@ -329,23 +367,40 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(popen.called)
         self.assertTrue(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
 
-    @patch('helpers.accept_oracle_jvm_license')
+    @patch('helpers.accept_oracle_jvm_license', autospec=True)
     def test_get_cassandra_packages(self, accept_oracle_jvm_license):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'cassandra-tools']))
         self.assertFalse(accept_oracle_jvm_license.called)
 
+    @patch('helpers.accept_oracle_jvm_license', autospec=True)
+    def test_get_cassandra_packages_oracle_jvm(self,
+                                               accept_oracle_jvm_license):
         # Oracle JVM
-        hookenv.config()['jvm'] = 'oRacle'  # Insensitive.
+        hookenv.config()['jvm'] = 'oracle'
         hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'cassandra-tools',
                                  'oracle-java7-installer',
                                  'oracle-java7-set-default']))
+        # It was called. We don't care that the mock did nothing, as
+        # we explicitly set the magic config item just before.
         self.assertTrue(accept_oracle_jvm_license.called)
 
-    @patch('helpers.accept_oracle_jvm_license')
+    @patch('helpers.accept_oracle_jvm_license', autospec=True)
+    def test_get_cassandra_packages_oracle_jvm_fail(self,
+                                                    accept_oracle_jvm_license):
+        # If we specified the Oracle JVM, but the license could not be
+        # accepted, we fall back to the default jdk.
+        hookenv.config()['jvm'] = 'oracle'
+
+        hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = False
+        self.assertSetEqual(helpers.get_cassandra_packages(),
+                            set(['cassandra', 'cassandra-tools']))
+        self.assertTrue(accept_oracle_jvm_license.called)
+
+    @patch('helpers.accept_oracle_jvm_license', autospec=True)
     def test_get_cassandra_packages_dse(self, accept_oracle_jvm_license):
         # DataStax Enterprise, and implicit Oracle JVM.
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
@@ -355,6 +410,39 @@ class TestHelpers(TestCaseBase):
                                  'oracle-java7-installer',
                                  'oracle-java7-set-default']))
         self.assertTrue(accept_oracle_jvm_license.called)
+
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_stop')
+    @patch('helpers.is_cassandra_running', autospec=True)
+    def test_stop_cassandra(self, is_cassandra_running,
+                            service_stop, get_service):
+        get_service.return_value = 'wobbly'
+        is_cassandra_running.return_value = False
+        helpers.stop_cassandra()
+        self.assertFalse(service_stop.called)
+
+        is_cassandra_running.return_value = True
+        helpers.stop_cassandra()
+        service_stop.assert_called_once_with('wobbly')
+
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_restart')
+    @patch('charmhelpers.core.host.service_start')
+    @patch('helpers.is_cassandra_running', autospec=True)
+    def test_restart_cassandra(self, is_cassandra_running,
+                               service_start, service_restart, get_service):
+        get_service.return_value = 'wobbly'
+        is_cassandra_running.return_value = False
+        helpers.restart_cassandra()
+        service_start.assert_called_once_with('wobbly')
+        self.assertFalse(service_restart.called)
+
+        service_start.reset_mock()
+        service_restart.reset_mock()
+        is_cassandra_running.return_value = True
+        helpers.restart_cassandra()
+        self.assertFalse(service_start.called)
+        service_restart.assert_called_once_with('wobbly')
 
 
 class TestIsLxc(unittest.TestCase):
