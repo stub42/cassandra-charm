@@ -313,7 +313,7 @@ def is_cassandra_running():
 
     try:
         # Keep checking for full up state with binary backoff
-        # up to 256 seconds
+        # up to 256 seconds, or 8.5 minutes total.
         for i in range(9):
             # We reload the pid every time, in case it has gone away.
             pid = get_pid_from_file(pid_file)
@@ -345,7 +345,7 @@ def is_cassandra_running():
         # system is up, to avoid races where we are checking as the system
         # is shutting itself down.
         if not os.path.exists(pid_file):
-            hookenv.log("Cassandra is stopped", INFO)
+            hookenv.log("Cassandra is stopped")
             return False
         # If the pid_file exists, but we got an exception, reraise it.
         # The system is insane. For example, the pid_file contains '-1'.

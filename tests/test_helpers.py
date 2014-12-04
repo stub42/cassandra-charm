@@ -6,7 +6,7 @@ import os.path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, call, patch, sentinel
 
 from charmhelpers.core import hookenv, host
 
@@ -465,11 +465,75 @@ class TestHelpers(TestCaseBase):
             self.assertRaises(OSError, helpers.get_pid_from_file,
                               os.path.join(tmpdir, 'invalid.pid'))
 
-    @unittest.skip
-    @patch('helpers.get_pid_from_file')
+    @patch('os.path.exists', autospec=True)
+    @patch('helpers.get_cassandra_pid_file', autospec=True)
+    def test_is_cassandra_running_not_running(self, get_pid_file, exists):
+        # When Cassandra is not running, there is no pidfile.
+        get_pid_file.return_value = sentinel.pid_file
+        exists.return_value = False
+        self.assertFalse(helpers.is_cassandra_running())
+        exists.assert_called_once_with(sentinel.pid_file)
+
+    @patch('os.path.exists', autospec=True)
+    @patch('helpers.get_pid_from_file', autospec=True)
+    def test_is_cassandra_running_invalid_pid(self, get_pid_from_file, exists):
+        # get_pid_from_file raises a ValueError if the pid is illegal.
+        get_pid_from_file.side_effect = ValueError('Whoops')
+        exists.return_value = True  # The pid file is there, just insane.
+
+        # is_cassandra_running() fails hard in this case, since we
+        # cannot safely continue when the system is insane.
+        self.assertRaises(ValueError, helpers.is_cassandra_running)
+
+    @patch('time.sleep', autospec=True)
+    @patch('os.kill', autospec=True)
+    @patch('helpers.get_pid_from_file', autospec=True)
+    @patch('subprocess.call', autospec=True)
+    def test_is_cassandra_running_starting_up(self, call, get_pid_from_file,
+                                              kill, sleep):
+        sleep.return_value = None  # Don't actually sleep in unittests.
+        os.kill.return_value = True  # There is a running pid.
+        get_pid_from_file.return_value = 42
+        subprocess.call.side_effect = iter([3, 2, 1, 0])  # 4th time the charm
+        self.assertTrue(helpers.is_cassandra_running())
+
+    @patch('time.sleep', autospec=True)
+    @patch('os.kill', autospec=True)
+    @patch('subprocess.call', autospec=True)
+    @patch('os.path.exists', autospec=True)
+    @patch('helpers.get_pid_from_file', autospec=True)
+    def test_is_cassandra_running_shutting_down(self, get_pid_from_file,
+                                                exists, call, kill, sleep):
+        # If Cassandra is in the process of shutting down, it might take
+        # several failed checks before the pid file disappears.
+        os.kill.return_value = None  # The process is running
+        call.return_value = 1  # But nodetool is not succeeding.
+        sleep.return_value = None  # Don't actually sleep in unittests.
+
+        # Fourth time, the pid file is gone.
+        get_pid_from_file.side_effect = iter([42, 42, 42, OSError('Whoops')])
+        exists.return_value = False
+        self.assertFalse(helpers.is_cassandra_running())
+        exists.assert_called_once_with(helpers.get_cassandra_pid_file())
+
     @patch('time.sleep')
-    def test_is_cassandra_running(self, sleep, get_pid_from_file):
-        pass
+    @patch('os.kill')
+    @patch('subprocess.call')
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
+    def test_is_cassandra_running_hung(self, get_pid, exists, subprocess_call,
+                                       kill, sleep):
+        get_pid.return_value = 42  # The pid is known.
+        os.kill.return_value = None  # The process is running.
+        subprocess_call.return_value = 1  # nodetool is failing.
+        sleep.return_value = None  # Don't actually sleep between retries.
+
+        self.assertRaises(SystemExit, helpers.is_cassandra_running)
+
+        # Binary backoff up to 256 seconds, or up to 8.5 minutes total.
+        sleep.assert_has_calls([call(i) for i in
+                                [1, 2, 4, 8, 16, 32, 64, 128, 256]])
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):
