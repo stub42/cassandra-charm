@@ -205,5 +205,5 @@ def stop_cassandra(servicename):
     helpers.stop_cassandra()
 
 
-def start_cassandra(servicename):
-    helpers.start_cassandra()
+def restart_cassandra(servicename):
+    helpers.restart_cassandra()

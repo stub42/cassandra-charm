@@ -26,17 +26,6 @@ class TestDefinitions(TestCaseBase):
         self.assertIsInstance(definitions.get_service_manager(),
                               ServiceManager)
 
-    @patch('charmhelpers.core.hookenv.relation_get')
-    @patch('helpers.restart_cassandra')
-    @patch('helpers.stop_cassandra')
-    def test_lambda(self, restart, stop, relation_get):
-        # Ensure the start/stop lambdas work.
-        defs = definitions.get_service_definitions()
-        defs[0]['start'][0]('foo')
-        restart.assert_called_once_with()
-        defs[0]['stop'][0]('foo')
-        stop.assert_called_once_with()
-
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -28,7 +28,7 @@ def get_service_definitions():
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env],
              stop=[actions.stop_cassandra],
-             start=[actions.start_cassandra]),
+             start=[actions.restart_cassandra]),
         dict(service='rolling-restart', data_read=actions.rolling_restart,
              start=[], stop=[])]
 
