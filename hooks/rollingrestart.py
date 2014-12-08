@@ -201,6 +201,6 @@ class RollingRestartService(dict):
         super(RollingRestartService, self).__init__()
         self.restart_hook = restart_hook
         self['service'] = 'rolling-restart'
-        self['data_ready'] = lambda: rolling_restart(restart_hook),
+        self['data_ready'] = lambda sn: rolling_restart(restart_hook),
         self['start'] = []
         self['stop'] = []

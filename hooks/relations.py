@@ -75,7 +75,7 @@ class BlockStorageBroker(RelationContext):
                 return True
             else:
                 log("Waiting for block storage broker to mount {}".format(
-                    self._requested_mountmount), WARNING)
+                    self._requested_mountpoint), WARNING)
                 return False
         return True
 

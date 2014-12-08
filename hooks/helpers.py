@@ -69,15 +69,11 @@ def ensure_database_directory(config_path):
     assert not is_cassandra_running()
     absdir = get_database_directory(config_path)
 
-    host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o755)
+    host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o750)
     # If this is an existing database being remounted, we need to
     # ensure ownership is correct due to uid and gid mismatches.
+    # TODO: Confirm ownership of DSE files
     recursive_chown(absdir, owner='cassandra', group='cassandra')
-    # TODO: This should be done as a separate action, as changing the
-    # scheduler can be done without requiring a remount and while
-    # Cassandra is running.
-    config = hookenv.config()
-    set_io_scheduler(config['io_scheduler'], absdir)
     return absdir
 
 
@@ -300,15 +296,16 @@ def stop_cassandra():
 
 
 def start_cassandra():
+    bsb = relations.BlockStorageBroker()
+    if bsb.mountpoint != config.get('live_mountpoint'):
+        remount()
     if not is_cassandra_running():
         host.service_start(get_cassandra_service())
 
 
 def restart_cassandra():
-    if is_cassandra_running():
-        host.service_restart(get_cassandra_service())
-    else:
-        host.service_start(get_cassandra_service())
+    stop_cassandra()
+    start_cassandra()
 
 
 def restart_and_remount_cassandra():
@@ -388,5 +385,11 @@ def reset_all_io_schedulers():
 
 
 def remount():
-    set_io_scheduler()
+    dirs = get_all_database_directories()
+    for d in dirs['data_file_directories']:
+        ensure_database_directory(d)
+    ensure_database_directory(dirs['commitlog_directory'])
+    ensure_database_directory(dirs['saved_caches_directory'])
+    reset_all_io_schedulers()
+
     raise NotImplementedError()

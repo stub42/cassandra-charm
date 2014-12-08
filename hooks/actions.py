@@ -249,7 +249,7 @@ def maybe_remount_and_restart(servicename):
     # during a restart. Directory config items have already been picked
     # up in the previous check.
     bsb = relations.BlockStorageBroker()
-    if bsb.mountmount != config['live_mountpoint']:
+    if bsb.mountpoint != config.get('live_mountpoint'):
         hookenv.log('Mountpoint changed. Restart and migration required')
         restart = True
 

@@ -64,7 +64,8 @@ class AmuletFixture(amulet.Deployment):
 
     def __del__(self):
         for temp_dir in self._temp_dirs:
-            temp_dir.cleanup()
+            if os.path.exists(temp_dir.name):
+                temp_dir.cleanup()
 
     def reset_environment(self):
         subprocess.check_call(['juju-deployer', '-T'])
