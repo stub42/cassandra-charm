@@ -80,6 +80,8 @@ class StorageRelation(RelationContext):
         return True
 
     def provide_data(self):
+        hookenv.log('**** PROVIDING {} to {}'.format(
+            self._requested_mountpoint, self.name), WARNING)
         return dict(mountpoint=self._requested_mountpoint)
 
     def needs_remount(self):

@@ -34,8 +34,9 @@ class TestDeploymentBase(unittest.TestCase):
         deployment.add('cassandra', units=cls.rf)
         deployment.configure('cassandra', cls.config)
 
-        # deployment.add('cs:trusty/storage')
-        # deployment.configure('storage', dict(provider='local'))
+        # No official trusty branch of the storage charm, yet.
+        deployment.add('storage', 'lp:~stub/charms/trusty/storage/trunk')
+        deployment.configure('storage', dict(provider='local'))
         deployment.deploy()
 
     @classmethod
@@ -105,6 +106,13 @@ class Test3UnitDeployment(TestDeploymentBase):
         # but nice to know anyway...
         r = session.execute('SELECT * FROM Foo LIMIT 1')
         self.assertEqual(r[0].x, 'hello')
+
+    def test_external_mount(self):
+        self.deployment.relate('cassandra:data', 'storage:data')
+        self.deployment.sentry.wait()
+        s = self.deployment.sentry['cassandra/0']
+        self.assertEqual(
+            s.directory_contents('/srv/cassandra_0/cassandra/data'), ['foo'])
 
 
 class Test1UnitDeployment(Test3UnitDeployment):

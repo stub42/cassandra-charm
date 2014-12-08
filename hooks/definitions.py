@@ -24,7 +24,8 @@ def get_service_definitions():
                     9042,   # Native protocol clients
                     7199],  # JMX.
              required_data=[relations.StorageRelation()],
-             provided_data=[relations.DatabaseRelation(),
+             provided_data=[relations.StorageRelation(),
+                            relations.DatabaseRelation(),
                             relations.JmxRelation()],
              data_ready=[actions.preinstall,
                          actions.add_implicit_package_signing_keys,
