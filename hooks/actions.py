@@ -14,6 +14,7 @@ from charmhelpers.core.fstab import Fstab
 from charmhelpers.core.hookenv import WARNING
 
 import helpers
+import relations
 import rollingrestart
 
 
@@ -163,7 +164,8 @@ def configure_cassandra_yaml(servicename):
     cassandra_yaml['native_transport_port'] = 9042
     cassandra_yaml['rpc_port'] = 9160  # Thrift
 
-    cassandra_yaml.update(helpers.ensure_directories())
+    dirs = helpers.get_all_database_directories()
+    cassandra_yaml.update(dirs)
 
     cassandra_yaml['partitioner'] = (config['partitioner']
                                      or 'Murmur3Partitioner')
@@ -197,13 +199,71 @@ def configure_cassandra_env(servicename):
     host.write_file(cassandra_env_path, env.encode('UTF-8'))
 
 
-def rolling_restart(servicename):
-    rollingrestart.rolling_restart(helpers.restart_cassandra)
+# If any of these config items are changed, Cassandra needs to be
+# restarted and maybe remounted.
+RESTART_REQUIRED_KEYS = set([
+    'cluster_name',
+    'data_file_directories',
+    'commitlog_directory',
+    'saved_caches_directory',
+    # 'cluster-port',
+    # 'client-port',
+    'partitioner',
+    'num_tokens',
+    'force_seed_nodes',
+    'max_heap_size',
+    'heap_newsize',
+    'edition',  # TODO: Is it possible to switch edition?
+    'jvm'])
+
+
+# All other config items. By maintaining both lists, we can
+# detect any new config items added or changed and ensure
+# these lists are updated.
+RESTART_NOT_REQUIRED_KEYS = set([
+    'extra_packages',
+    'package_status',
+    'install_sources',
+    'install_keys',
+    'wait_for_storage_broker',
+    'io_scheduler',
+    'nagios_context',
+    'nagios_servicegroups',
+    'nagios_heapchk_warn_pct',
+    'nagios_heapchk_crit_pct',
+    'nagios_disk_warn_pct',
+    'nagios_disk_crit_pct'])
+
+
+def maybe_remount_and_restart(servicename):
+    '''Prepare for and schedule a rolling restart if necessary.'''
+    # If any of these config items changed, a restart is required.
+    config = hookenv.config()
+    restart = False
+    for key in RESTART_REQUIRED_KEYS:
+        if config.changed(key):
+            hookenv.log('{} changed. Restart required'.format(key))
+            restart = True
+
+    # If the directory paths have changed, we need to migrate data
+    # during a restart. Directory config items have already been picked
+    # up in the previous check.
+    bsb = relations.BlockStorageBroker()
+    if bsb.mountmount != config['live_mountpoint']:
+        hookenv.log('Mountpoint changed. Restart and migration required')
+        restart = True
+
+    if restart:
+        rollingrestart.request_restart()
 
 
 def stop_cassandra(servicename):
     helpers.stop_cassandra()
 
 
-def restart_cassandra(servicename):
-    helpers.restart_cassandra()
+def start_cassandra(servicename):
+    helpers.start_cassandra()
+
+
+def reset_all_io_schedulers(servicename):
+    helpers.reset_all_io_schedulers()

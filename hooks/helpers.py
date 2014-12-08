@@ -48,39 +48,49 @@ def get_seeds():
     return seeds
 
 
-def ensure_directories():
-    """Create the directories to store the database (if necessary) and
-    reset all relevant filesystem io-schedulers.
+def get_database_directory(config_path):
+    """Convert a database path from the service config to an absolute path.
 
-    Returns a dictionary containing the full paths to the directories,
-    with the same keys as config.yaml.
+    Entries in the config file may be absolute, relative to
+    /var/lib/cassandra, or relative to the mountpoint.
     """
-    bsb_rel = relations.BlockStorageBroker('data')
+    bsb_rel = relations.BlockStorageBroker()
     assert bsb_rel.is_ready(), 'Block storage broker relation is not ready'
-
-    config = hookenv.config()
     root = bsb_rel.mountpoint or '/var/lib/cassandra'
+    return os.path.join(root, config_path)
 
-    def _mkdir(reldir):
-        absdir = os.path.join(root, reldir)
-        host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o755)
-        # If this is an existing database being remounted, we need to
-        # ensure ownership is correct due to uid and gid mismatches.
-        recursive_chown(absdir, owner='cassandra', group='cassandra')
-        set_io_scheduler(config['io_scheduler'], absdir)
-        return absdir
 
+def ensure_database_directory(config_path):
+    '''Create the database directory if it doesn't exist, resetting
+    ownership and other settings while we are at it.
+
+    Returns the absolute path.
+    '''
+    assert not is_cassandra_running()
+    absdir = get_database_directory(config_path)
+
+    host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o755)
+    # If this is an existing database being remounted, we need to
+    # ensure ownership is correct due to uid and gid mismatches.
+    recursive_chown(absdir, owner='cassandra', group='cassandra')
+    # TODO: This should be done as a separate action, as changing the
+    # scheduler can be done without requiring a remount and while
+    # Cassandra is running.
+    config = hookenv.config()
+    set_io_scheduler(config['io_scheduler'], absdir)
+    return absdir
+
+
+def get_all_database_directories():
+    config = hookenv.config()
     return dict(
-        data_file_directories=[
-            _mkdir(d) for d in (config['data_file_directories']
-                                or 'data').split()],
-        commitlog_directory=_mkdir(config['commitlog_directory']
-                                   or 'commitlog'),
-        saved_caches_directory=_mkdir(config['saved_caches_directory']
-                                      or 'saved_caches_directory'))
-
-
-#         request_cassandra_restart(just_mounted=True)
+        data_file_directories=[get_database_directory(d)
+                               for d in (config['data_file_directories']
+                                         or 'data').split()],
+        commitlog_directory=get_database_directory(
+            config['commitlog_directory'] or 'commitlog'),
+        saved_caches_directory=get_database_directory(
+            config['saved_caches_directory'] or 'saved_caches'))
 
 
 # FOR CHARMHELPERS
@@ -289,11 +299,26 @@ def stop_cassandra():
         host.service_stop(get_cassandra_service())
 
 
+def start_cassandra():
+    if not is_cassandra_running():
+        host.service_start(get_cassandra_service())
+
+
 def restart_cassandra():
     if is_cassandra_running():
         host.service_restart(get_cassandra_service())
     else:
         host.service_start(get_cassandra_service())
+
+
+def restart_and_remount_cassandra():
+    bsb = relations.BlockStorageBroker()
+    if bsb.needs_remount():
+        stop_cassandra()
+        remount()
+        start_cassandra()
+    else:
+        restart_cassandra()
 
 
 def get_pid_from_file(pid_file):
@@ -350,3 +375,18 @@ def is_cassandra_running():
         # If the pid_file exists, but we got an exception, reraise it.
         # The system is insane. For example, the pid_file contains '-1'.
         raise
+
+
+def reset_all_io_schedulers():
+    dirs = get_all_database_directories()
+    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']]
+            + [dirs['saved_caches_directory']])
+    config = hookenv.config()
+    for d in dirs:
+        if os.path.isdir(d):  # Directory may not exist yet.
+            set_io_scheduler(config['io_scheduler'], d)
+
+
+def remount():
+    set_io_scheduler()
+    raise NotImplementedError()

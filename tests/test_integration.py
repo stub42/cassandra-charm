@@ -33,6 +33,9 @@ class TestDeploymentBase(unittest.TestCase):
 
         deployment.add('cassandra', units=cls.rf)
         deployment.configure('cassandra', cls.config)
+
+        deployment.add('storage')
+        deployment.configure('storage', dict(provider='local'))
         deployment.deploy()
 
     @classmethod

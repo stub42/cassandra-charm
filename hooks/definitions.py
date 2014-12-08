@@ -5,9 +5,17 @@ from charmhelpers.core.services import ServiceManager
 import actions
 import helpers
 import relations
+import rollingrestart
 
 
 def get_service_definitions():
+    # This looks like it could be a module level global list, but
+    # unfortunately that makes the module unimportable outside of a
+    # hook context. The main culprit is RelationContext, which invokes
+    # relation-get from its constructor. By wrapping the service
+    # definition list in this function, we can defer constructing it
+    # until we have constructed enough of a mock context and perform
+    # basic tests.
     return [
         dict(service=helpers.get_cassandra_service(),
              ports=[7000,   # Cluster communication
@@ -15,7 +23,7 @@ def get_service_definitions():
                     9160,   # Thrift clients
                     9042,   # Native protocol clients
                     7199],  # JMX.
-             required_data=[relations.BlockStorageBroker('data')],
+             required_data=[relations.BlockStorageBroker()],
              provided_data=[relations.DatabaseRelation(),
                             relations.JmxRelation()],
              data_ready=[actions.preinstall,
@@ -26,11 +34,12 @@ def get_service_definitions():
                          actions.install_cassandra_packages,
                          actions.ensure_cassandra_package_status,
                          actions.configure_cassandra_yaml,
-                         actions.configure_cassandra_env],
+                         actions.configure_cassandra_env,
+                         actions.reset_all_io_schedulers,
+                         actions.maybe_remount_and_restart],
              stop=[actions.stop_cassandra],
-             start=[actions.restart_cassandra]),
-        dict(service='rolling-restart', data_read=actions.rolling_restart,
-             start=[], stop=[])]
+             start=[actions.start_cassandra]),
+        rollingrestart.RollingRestartService(helpers.restart_cassandra)]
 
 
 def get_service_manager():

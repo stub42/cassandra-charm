@@ -259,12 +259,12 @@ class TestsActions(TestCaseBase):
         install_packages.assert_called_once_with(
             sentinel.servicename, sentinel.cassandra_packages)
 
+    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('helpers.get_cassandra_yaml_file', autospec=True)
-    @patch('helpers.ensure_directories', autospec=True)
     @patch('helpers.get_seeds', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)
-    def test_configure_cassandra_yaml(self, write_file, get_seeds,
-                                      ensure_directories, yaml_file):
+    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file,
+                                      relation_get):
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name=None,
                                      partitioner='my_partitioner'))
@@ -301,6 +301,10 @@ class TestsActions(TestCaseBase):
                     - class_name: blah.blah.SimpleSeedProvider
                       parameters:
                         - seeds: '10.20.0.1, 10.20.0.2, 10.20.0.3'
+                data_file_directories:
+                    - /var/lib/cassandra/data
+                commitlog_directory: /var/lib/cassandra/commitlog
+                saved_caches_directory: /var/lib/cassandra/saved_caches
                 ''')
             self.assertEqual(yaml.safe_load(new_config),
                              yaml.safe_load(expected_config))
@@ -377,21 +381,37 @@ class TestsActions(TestCaseBase):
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
-    @patch('rollingrestart.rolling_restart', autospec=True)
-    def test_rolling_restart(self, rolling_restart):
-        # Simple wrapper.
-        actions.rolling_restart('')
-        rolling_restart.assert_called_once_with(helpers.restart_cassandra)
-
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
         actions.stop_cassandra('ignored')
         helpers_stop_cassandra.assert_called_once_with()
 
-    @patch('helpers.restart_cassandra')
-    def test_restart_cassandra(self, helpers_restart_cassandra):
-        actions.restart_cassandra('ignored')
-        helpers_restart_cassandra.assert_called_once_with()
+    @patch('helpers.start_cassandra')
+    def test_start_cassandra(self, helpers_start_cassandra):
+        actions.start_cassandra('ignored')
+        helpers_start_cassandra.assert_called_once_with()
+
+    @patch('helpers.reset_all_io_schedulers')
+    def test_reset_all_io_schedulers(self, helpers_reset_all_io_schedulers):
+        actions.reset_all_io_schedulers('ignored')
+        helpers_reset_all_io_schedulers.assert_called_once_with()
+
+    def test_restart_keys_complete(self):
+        # Ensure that we have listed all keys in either
+        # RESTART_REQUIRED_KEYS or RESTART_NOT_REQUIRED_KEYS. This
+        # is to ensure that RESTART_REQUIRED_KEYS is maintained as new
+        # config items are added over time.
+        config_path = os.path.join(os.path.dirname(__file__), os.pardir,
+                                   'config.yaml')
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        combined = actions.RESTART_REQUIRED_KEYS.union(
+            actions.RESTART_NOT_REQUIRED_KEYS)
+
+        for key in config['options']:
+            with self.subTest(key=key):
+                self.assertIn(key, combined)
 
 
 if __name__ == '__main__':

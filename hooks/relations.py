@@ -1,5 +1,7 @@
 import os.path
 
+import yaml
+
 from charmhelpers.core import hookenv
 from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
@@ -41,6 +43,8 @@ class BlockStorageBroker(RelationContext):
     mountpoint = None
 
     def __init__(self, name=None, mountpoint=None):
+        if name is None:
+            name = self._get_relation_name()
         super(BlockStorageBroker, self).__init__(name)
 
         if mountpoint is None:
@@ -53,6 +57,16 @@ class BlockStorageBroker(RelationContext):
             self.mountpoint == mountpoint
         else:
             self.mountpoint = None
+
+    def _get_relation_name(self):
+        with open(os.path.join(hookenv.charm_dir(),
+                               'metadata.yaml'), 'r') as mdf:
+            md = yaml.safe_load(mdf)
+        for section in ['requires', 'provides']:
+            for relname in md.get(section, {}).keys():
+                if md[section][relname]['interface'] == 'block-storage':
+                    return relname
+        raise LookupError('No block-storage relation defined')
 
     def is_ready(self):
         if hookenv.config('wait_for_storage_broker'):
@@ -67,3 +81,6 @@ class BlockStorageBroker(RelationContext):
 
     def provide_data(self):
         return dict(mountpoint=self._requested_mountpoint)
+
+    def needs_remount(self):
+        raise NotImplementedError()
