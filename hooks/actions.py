@@ -235,7 +235,7 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'nagios_disk_crit_pct'])
 
 
-def maybe_remount_and_restart(servicename):
+def maybe_schedule_restart(servicename):
     '''Prepare for and schedule a rolling restart if necessary.'''
     # If any of these config items changed, a restart is required.
     config = hookenv.config()
@@ -248,8 +248,8 @@ def maybe_remount_and_restart(servicename):
     # If the directory paths have changed, we need to migrate data
     # during a restart. Directory config items have already been picked
     # up in the previous check.
-    bsb = relations.BlockStorageBroker()
-    if bsb.mountpoint != config.get('live_mountpoint'):
+    storage = relations.StorageRelation()
+    if storage.needs_remount():
         hookenv.log('Mountpoint changed. Restart and migration required')
         restart = True
 
@@ -261,8 +261,13 @@ def stop_cassandra(servicename):
     helpers.stop_cassandra()
 
 
+# TODO: Unwanted?
 def start_cassandra(servicename):
     helpers.start_cassandra()
+
+
+def restart_and_remount_cassandra(servicename):
+    helpers.restart_and_remount_cassandra()
 
 
 def reset_all_io_schedulers(servicename):

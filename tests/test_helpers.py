@@ -54,106 +54,57 @@ class TestHelpers(TestCaseBase):
             sorted(['10.20.0.1', '10.20.0.2', '10.20.0.3']),
             sorted(helpers.get_seeds()))
 
-    @unittest.skip('TODO: Test new helper')
+    @patch('relations.StorageRelation', autospec=True)
+    def test_get_database_directory(self, storage_relation):
+        storage_relation().mountpoint = None
+
+        # Relative paths are relative to /var/lib/cassandra
+        self.assertEqual(helpers.get_database_directory('bar'),
+                         '/var/lib/cassandra/bar')
+
+        # If there is an external mount, relative paths are relative to
+        # it. Note the extra 'cassandra' directory - life is easier
+        # if we store all our data in a subdirectory on the external
+        # mount rather than in its root.
+        storage_relation().mountpoint = '/srv/foo'
+        self.assertEqual(helpers.get_database_directory('bar'),
+                         '/srv/foo/cassandra/bar')
+
+        # Absolute paths are absolute and passed through unmolested.
+        self.assertEqual(helpers.get_database_directory('/bar'), '/bar')
+
+    @patch('relations.StorageRelation', autospec=True)
+    def test_get_all_database_directories(self, storage_relation):
+        storage_relation().mountpoint = '/s'
+        self.assertDictEqual(
+            helpers.get_all_database_directories(),
+            dict(data_file_directories=['/s/cassandra/data'],
+                 commitlog_directory='/s/cassandra/commitlog',
+                 saved_caches_directory='/s/cassandra/saved_caches'))
+
     @patch('helpers.recursive_chown', autospec=True)
-    @patch('helpers.set_io_scheduler', autospec=True)
     @patch('charmhelpers.core.host.mkdir', autospec=True)
-    @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_mounted(self, bsb, mkdir, set_io_scheduler,
-                                        recursive_chown):
-        # Directories are relative to the external mount
-        # point if there is one.
-        with tempfile.TemporaryDirectory() as tmpdir:
-            bsb().mountpoint = tmpdir
-            bsb().is_ready.return_value = True
+    @patch('helpers.get_database_directory', autospec=True)
+    @patch('helpers.is_cassandra_running', autospec=True)
+    def test_ensure_database_directory(self, is_running, get_db_dir, mkdir,
+                                       recursive_chown):
+        is_running.return_value = False
+        get_db_dir.return_value = sentinel.absolute_dir
 
-            helpers.ensure_directories()
+        # ensure_database_directory() returns the absolute path.
+        self.assertIs(
+            helpers.ensure_database_directory(sentinel.some_dir),
+            sentinel.absolute_dir)
 
-        for dir in ['data', 'commitlog', 'saved_caches']:
-            with self.subTest(dir=dir):
-                path = os.path.join(tmpdir, dir)
-                host.mkdir.assert_any_call(path, owner='cassandra',
-                                           group='cassandra', perms=0o755)
-                recursive_chown.assert_any_call(path, owner='cassandra',
+        # The directory will have been made.
+        mkdir.assert_called_once_with(sentinel.absolute_dir,
+                                      owner='cassandra', group='cassandra',
+                                      perms=0o750)
+
+        # The ownership of the contents has been reset.
+        recursive_chown.assert_called_once_with(sentinel.absolute_dir,
+                                                owner='cassandra',
                                                 group='cassandra')
-                set_io_scheduler.assert_any_call('noop', path)
-
-    @unittest.skip('TODO: Test new helper')
-    @patch('helpers.recursive_chown', autospec=True)
-    @patch('helpers.set_io_scheduler', autospec=True)
-    @patch('charmhelpers.core.host.mkdir', autospec=True)
-    @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_unmounted(self, bsb, mkdir, set_io_scheduler,
-                                          recursive_chown):
-        # Directories are relative to the /var/lib/cassandra
-        # if there is no external mount.
-        bsb().is_ready.return_value = True
-        bsb().mountpoint = None
-
-        helpers.ensure_directories()
-
-        for dir in ['data', 'commitlog', 'saved_caches']:
-            with self.subTest(dir=dir):
-                path = os.path.join('/var/lib/cassandra', dir)
-                host.mkdir.assert_any_call(path, owner='cassandra',
-                                           group='cassandra', perms=0o755)
-                recursive_chown.assert_any_call(path, owner='cassandra',
-                                                group='cassandra')
-                set_io_scheduler.assert_any_call('noop', path)
-
-    @unittest.skip('TODO: Test new helper')
-    @patch('helpers.recursive_chown', autospec=True)
-    @patch('helpers.set_io_scheduler', autospec=True)
-    @patch('charmhelpers.core.host.mkdir', autospec=True)
-    @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_overrides(self, bsb, mkdir, set_io_scheduler,
-                                          recursive_chown):
-        # Directory names may be overridden in the service level
-        # configuration.
-        hookenv.config()['io_scheduler'] = 'foo-sched'
-        with tempfile.TemporaryDirectory() as tmpdir:
-            bsb().mountpoint = tmpdir
-            bsb().is_ready.return_value = True
-            hookenv.config()['data_file_directories'] = 'd1 d2'
-            hookenv.config()['commitlog_directory'] = 'cl'
-            hookenv.config()['saved_caches_directory'] = 'scd'
-
-            helpers.ensure_directories()
-
-        for dir in ['d1', 'd2', 'cl', 'scd']:
-            with self.subTest(dir=dir):
-                path = os.path.join(tmpdir, dir)
-                host.mkdir.assert_any_call(path, owner='cassandra',
-                                           group='cassandra', perms=0o755)
-                recursive_chown.assert_any_call(path, owner='cassandra',
-                                                group='cassandra')
-                set_io_scheduler.assert_any_call('foo-sched', path)
-
-    @unittest.skip('TODO: Test new helper')
-    @patch('helpers.recursive_chown', autospec=True)
-    @patch('helpers.set_io_scheduler', autospec=True)
-    @patch('charmhelpers.core.host.mkdir', autospec=True)
-    @patch('relations.BlockStorageBroker', autospec=True)
-    def test_ensure_directories_abspath(self, bsb, mkdir, set_io_scheduler,
-                                        recursive_chown):
-        # Directory overrides in the service level configuration may be
-        # absolute paths.
-        with tempfile.TemporaryDirectory() as tmpdir:
-            bsb().mountpoint = tmpdir
-            bsb().is_ready.return_value = True
-            hookenv.config()['data_file_directories'] = '/d'
-            hookenv.config()['commitlog_directory'] = '/cl'
-            hookenv.config()['saved_caches_directory'] = '/scd'
-
-            helpers.ensure_directories()
-
-        for path in ['/d', '/cl', '/scd']:
-            with self.subTest(path=path):
-                host.mkdir.assert_any_call(path, owner='cassandra',
-                                           group='cassandra', perms=0o755)
-                recursive_chown.assert_any_call(path, owner='cassandra',
-                                                group='cassandra')
-                set_io_scheduler.assert_any_call('noop', path)
 
     @patch('charmhelpers.core.host.write_file', autospec=True)
     @patch('os.path.isdir', autospec=True)
@@ -443,23 +394,11 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
-    @patch('helpers.get_cassandra_service')
-    @patch('charmhelpers.core.host.service_restart')
-    @patch('charmhelpers.core.host.service_start')
-    @patch('helpers.is_cassandra_running', autospec=True)
-    def test_restart_cassandra(self, is_cassandra_running,
-                               service_start, service_restart, get_service):
+    @patch('helpers.get_cassandra_service', autospec=True)
+    @patch('charmhelpers.core.host.service_restart', autospec=True)
+    def test_restart_cassandra(self, service_restart, get_service):
         get_service.return_value = sentinel.service_name
-        is_cassandra_running.return_value = False
         helpers.restart_cassandra()
-        service_start.assert_called_once_with(sentinel.service_name)
-        self.assertFalse(service_restart.called)
-
-        service_start.reset_mock()
-        service_restart.reset_mock()
-        is_cassandra_running.return_value = True
-        helpers.restart_cassandra()
-        self.assertFalse(service_start.called)
         service_restart.assert_called_once_with(sentinel.service_name)
 
     def test_get_pid_from_file(self):

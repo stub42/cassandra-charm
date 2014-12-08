@@ -23,7 +23,7 @@ def get_service_definitions():
                     9160,   # Thrift clients
                     9042,   # Native protocol clients
                     7199],  # JMX.
-             required_data=[relations.BlockStorageBroker()],
+             required_data=[relations.StorageRelation()],
              provided_data=[relations.DatabaseRelation(),
                             relations.JmxRelation()],
              data_ready=[actions.preinstall,
@@ -36,10 +36,11 @@ def get_service_definitions():
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env,
                          actions.reset_all_io_schedulers,
-                         actions.maybe_remount_and_restart],
+                         actions.maybe_schedule_restart],
              stop=[actions.stop_cassandra],
-             start=[actions.start_cassandra]),
-        rollingrestart.RollingRestartService(helpers.restart_cassandra)]
+             start=[actions.restart_and_remount_cassandra]),
+        rollingrestart.RollingRestartService(
+            helpers.restart_and_remount_cassandra)]
 
 
 def get_service_manager():

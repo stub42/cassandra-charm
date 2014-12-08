@@ -54,9 +54,11 @@ def get_database_directory(config_path):
     Entries in the config file may be absolute, relative to
     /var/lib/cassandra, or relative to the mountpoint.
     """
-    bsb_rel = relations.BlockStorageBroker()
-    assert bsb_rel.is_ready(), 'Block storage broker relation is not ready'
-    root = bsb_rel.mountpoint or '/var/lib/cassandra'
+    storage = relations.StorageRelation()
+    if storage.mountpoint:
+        root = os.path.join(storage.mountpoint, 'cassandra')
+    else:
+        root = '/var/lib/cassandra'
     return os.path.join(root, config_path)
 
 
@@ -296,23 +298,19 @@ def stop_cassandra():
 
 
 def start_cassandra():
-    bsb = relations.BlockStorageBroker()
-    if bsb.mountpoint != config.get('live_mountpoint'):
-        remount()
     if not is_cassandra_running():
         host.service_start(get_cassandra_service())
 
 
 def restart_cassandra():
-    stop_cassandra()
-    start_cassandra()
+    host.service_restart(get_cassandra_service())
 
 
 def restart_and_remount_cassandra():
-    bsb = relations.BlockStorageBroker()
-    if bsb.needs_remount():
+    storage = relations.StorageRelation()
+    if storage.needs_remount():
         stop_cassandra()
-        remount()
+        storage.migrate('/var/lib/cassandra', 'cassandra')
         start_cassandra()
     else:
         restart_cassandra()
@@ -385,11 +383,19 @@ def reset_all_io_schedulers():
 
 
 def remount():
-    dirs = get_all_database_directories()
-    for d in dirs['data_file_directories']:
-        ensure_database_directory(d)
-    ensure_database_directory(dirs['commitlog_directory'])
-    ensure_database_directory(dirs['saved_caches_directory'])
-    reset_all_io_schedulers()
-
-    raise NotImplementedError()
+    return
+#     assert not is_cassandra_running()
+#
+#     config = hookenv.config()
+#
+#     old_dirs = get_all_database_directories(config.get('live_mountpoint'))
+#
+#     dirs = get_all_database_directories()
+#     for d in dirs['data_file_directories']:
+#         ensure_database_directory(d)
+#     ensure_database_directory(dirs['commitlog_directory'])
+#     ensure_database_directory(dirs['saved_caches_directory'])
+#     reset_all_io_schedulers()
+#
+#     migrated_directories = set()
+#     pass

@@ -2,7 +2,7 @@ import os.path
 
 import yaml
 
-from charmhelpers.core import hookenv
+from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
@@ -24,7 +24,7 @@ class JmxRelation(RelationContext):
 
 
 # FOR CHARMHELPERS
-class BlockStorageBroker(RelationContext):
+class StorageRelation(RelationContext):
     '''Wait for the block storage mount to become available.
 
     Charms using this should add a 'wait_for_storage_broker' boolean
@@ -45,7 +45,7 @@ class BlockStorageBroker(RelationContext):
     def __init__(self, name=None, mountpoint=None):
         if name is None:
             name = self._get_relation_name()
-        super(BlockStorageBroker, self).__init__(name)
+        super(StorageRelation, self).__init__(name)
 
         if mountpoint is None:
             mountpoint = os.path.join('/srv/',
@@ -83,4 +83,33 @@ class BlockStorageBroker(RelationContext):
         return dict(mountpoint=self._requested_mountpoint)
 
     def needs_remount(self):
-        raise NotImplementedError()
+        config = hookenv.config()
+        return config.get('live_mountpoint') != self.mountpoint
+
+    def migrate(self, src_dir, subdir):
+        assert self.needs_remount()
+        assert subdir, 'Can only migrate to a subdirectory on a mount'
+
+        dst_dir = os.path.join(self.mountpoint, subdir)
+        if os.path.exists(dst_dir):
+            hookenv.log('{} already exists. Not migrating data.'.format(
+                dst_dir))
+            return
+
+        # We are migrating the contents of src_dir, so we want a
+        # trailing slash to ensure rsync's behavior.
+        if not src_dir.endswith('/'):
+            src_dir += '/'
+
+        # We don't migrate data directly into the new destination,
+        # which allows us to detect a failed migration and recover.
+        tmp_dst_dir = dst_dir + '.migrating'
+        hookenv.log('Migrating data from {} to {}'.format(
+            src_dir, tmp_dst_dir))
+        host.rsync(src_dir, tmp_dst_dir, flags='-av')
+
+        hookenv.log('Moving {} to {}'.format(tmp_dst_dir, dst_dir))
+        os.rename(tmp_dst_dir, dst_dir)
+
+        config = hookenv.config()
+        config['live_mountpoint'] = self.mountpoint
