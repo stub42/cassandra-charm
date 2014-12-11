@@ -291,12 +291,14 @@ class TestsActions(TestCaseBase):
 
             expected_config = dedent('''\
                 cluster_name: service
-                listen_address: 10.20.0.1
-                native_transport_port: 9042
                 num_tokens: 128
                 partitioner: my_partitioner
+                listen_address: 10.20.0.1
                 rpc_address: 10.20.0.1
                 rpc_port: 9160
+                native_transport_port: 9042
+                storage_port: 7000
+                ssl_storage_port: 7001
                 seed_provider:
                     - class_name: blah.blah.SimpleSeedProvider
                       parameters:
@@ -332,6 +334,7 @@ class TestsActions(TestCaseBase):
                                  unless a regexp matches
                                  #MAX_HEAP_SIZE="1G"
                                  #HEAP_NEWSIZE="800M"
+                                 #JMX_PORT="1234"
                                  And done
                                  ''')
 
@@ -342,27 +345,29 @@ class TestsActions(TestCaseBase):
             with open(cassandra_env, 'w', encoding='UTF-8') as f:
                 f.write(existing_config)
 
-            overrides = [
-                ('max_heap_size', re.compile('^MAX_HEAP_SIZE=(.*)$', re.M)),
-                ('heap_newsize', re.compile('^HEAP_NEWSIZE=(.*)$', re.M)),
-            ]
+            overrides = dict(
+                max_heap_size=re.compile('^MAX_HEAP_SIZE=(.*)$', re.M),
+                heap_newsize=re.compile('^HEAP_NEWSIZE=(.*)$', re.M),
+                jmx_port=re.compile('^JMX_PORT=(.*)$', re.M))
 
-            # By default, nothing is overrridden. The settings will be
-            # commented out.
+            for key in overrides:
+                hookenv.config()[key] = ''
+
+            # By default, the settings will be commented out.
             actions.configure_cassandra_env('')
             with open(cassandra_env, 'r', encoding='UTF-8') as f:
                 generated_env = f.read()
-            for config_key, regexp in overrides:
+            for config_key, regexp in overrides.items():
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
             # Settings can be overridden.
-            for config_key, regexp in overrides:
+            for config_key, regexp in overrides.items():
                 hookenv.config()[config_key] = '{} val'.format(config_key)
             actions.configure_cassandra_env('')
             with open(cassandra_env, 'r') as f:
                 generated_env = f.read()
-            for config_key, regexp in overrides:
+            for config_key, regexp in overrides.items():
                 with self.subTest(override=config_key):
                     match = regexp.search(generated_env)
                     self.assertIsNotNone(match)
@@ -372,12 +377,12 @@ class TestsActions(TestCaseBase):
                             "'{} val'".format(config_key)))
 
             # Settings can be returned to the defaults.
-            for config_key, regexp in overrides:
+            for config_key, regexp in overrides.items():
                 hookenv.config()[config_key] = ''
             actions.configure_cassandra_env('')
             with open(cassandra_env, 'r', encoding='UTF-8') as f:
                 generated_env = f.read()
-            for config_key, regexp in overrides:
+            for config_key, regexp in overrides.items():
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 

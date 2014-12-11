@@ -129,8 +129,12 @@ def install_packages(servicename, packages):
     if hookenv.config('extra_packages'):
         packages.extend(hookenv.config('extra_packages').split())
     packages = fetch.filter_installed_packages(packages)
-    with helpers.autostart_disabled():
-        fetch.apt_install(packages, fatal=True)
+    if 'ntp' in packages:
+        fetch.apt_install(['ntp'], fatal=True)  # With autostart
+        packages.remove('ntp')
+    if packages:
+        with helpers.autostart_disabled():
+            fetch.apt_install(packages, fatal=True)
 
 
 def install_cassandra_packages(servicename):
@@ -161,8 +165,11 @@ def configure_cassandra_yaml(servicename):
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
     cassandra_yaml['rpc_address'] = hookenv.unit_private_ip()
 
-    cassandra_yaml['native_transport_port'] = 9042
-    cassandra_yaml['rpc_port'] = 9160  # Thrift
+    cassandra_yaml['native_transport_port'] = config['native_client_port']
+    cassandra_yaml['rpc_port'] = config['thrift_client_port']
+
+    cassandra_yaml['storage_port'] = config['cluster_port']
+    cassandra_yaml['ssl_storage_port'] = config['cluster_ssl_port']
 
     dirs = helpers.get_all_database_directories()
     cassandra_yaml.update(dirs)
@@ -183,6 +190,7 @@ def configure_cassandra_env(servicename):
     overrides = [
         ('max_heap_size', re.compile(r'^#?(MAX_HEAP_SIZE)=(.*)$', re.M)),
         ('heap_newsize', re.compile(r'^#?(HEAP_NEWSIZE)=(.*)$', re.M)),
+        ('jmx_port', re.compile(r'^#?(JMX_PORT)=(.*)$', re.M)),
     ]
 
     with open(cassandra_env_path, 'r') as f:
@@ -191,7 +199,7 @@ def configure_cassandra_env(servicename):
     config = hookenv.config()
     for key, regexp in overrides:
         if config[key]:
-            val = shlex.quote(config[key])
+            val = shlex.quote(str(config[key]))
             env = regexp.sub(r'\g<1>={}  # Juju service config'.format(val),
                              env)
         else:
@@ -206,8 +214,11 @@ RESTART_REQUIRED_KEYS = set([
     'data_file_directories',
     'commitlog_directory',
     'saved_caches_directory',
-    # 'cluster-port',
-    # 'client-port',
+    'cluster_port',
+    'cluster_ssl_port',
+    'thrift_client_port',
+    'native_client_port',
+    'jmx_port',
     'partitioner',
     'num_tokens',
     'force_seed_nodes',
@@ -261,13 +272,8 @@ def stop_cassandra(servicename):
     helpers.stop_cassandra()
 
 
-# TODO: Unwanted?
 def start_cassandra(servicename):
     helpers.start_cassandra()
-
-
-def restart_and_remount_cassandra(servicename):
-    helpers.restart_and_remount_cassandra()
 
 
 def reset_all_io_schedulers(servicename):

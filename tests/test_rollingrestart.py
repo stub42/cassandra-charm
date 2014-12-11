@@ -3,8 +3,7 @@
 from datetime import datetime, timedelta
 import os.path
 import unittest
-from unittest.mock import MagicMock, mock_open, patch, sentinel
-import yaml
+from unittest.mock import MagicMock, patch, sentinel
 
 from charmhelpers.core import hookenv
 
@@ -336,17 +335,13 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(peer_store.called)
         self.assertFalse(peer_echo.called)
 
-    def test_peer_relation_name(self):
-        metadata = dict(peers=dict(peer1=dict(interface='int1'),
-                                   peer2=dict(interface='int2')))
-        metadata_yaml = yaml.safe_dump(metadata)
-        with patch('rollingrestart.open', mock_open(read_data=metadata_yaml),
-                   create=True) as m:
-            peer_relname = rollingrestart.get_peer_relation_name()
-            m.assert_called_once_with(os.path.join(hookenv.charm_dir(),
-                                                   'metadata.yaml'), 'r')
-            # First peer relation in alphabetical order.
-            self.assertEqual(peer_relname, 'peer1')
+    @patch('charmhelpers.core.hookenv.metadata')
+    def test_peer_relation_name(self, metadata):
+        metadata.return_value = dict(peers=dict(peer1=dict(interface='int1'),
+                                                peer2=dict(interface='int2')))
+        # First peer relation in alphabetical order.
+        peer_relname = rollingrestart.get_peer_relation_name()
+        self.assertEqual(peer_relname, 'peer1')
 
     @patch('rollingrestart.get_peer_relation_name', autospec=True)
     def test_get_peers(self, get_peer_relation_name):

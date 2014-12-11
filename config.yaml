@@ -178,10 +178,6 @@ options:
 ##         description: >
 ##             Size of Java new generation memory, for example 100M.  Only used
 ##             if auto-memory = false.
-##     jmx-port:
-##         type: int
-##         default: 7199
-##         description: JMX management port
 ##     extra-jvm-opts:
 ##         type: string
 ##         default: ""
@@ -226,14 +222,6 @@ options:
             Name of the Cassandra cluster. This is mainly used to
             prevent machines in one logical cluster from joining
             another. Defaults to the Juju service name.
-##     cluster-port:
-##         type: int
-##         default: 7000
-##         description: Cluster communication port
-##     client-port:
-##         type: int
-##         default: 9160
-##         description: Thrift clients port
     partitioner:
         default: Murmur3Partitioner
         type: string
@@ -251,6 +239,28 @@ options:
             A comma separated list of seed node ip addresses. This is
             useful if the cluster being created in this juju environment
             is part of a larger cluser and the seed nodes are remote.
+            
+    # Networking options.
+    cluster_port:
+        type: int
+        default: 7000
+        description: Cluster communication port
+    cluster_ssl_port:
+        type: int
+        default: 7001
+        description: Cluster secure communication port
+    thrift_client_port:
+        type: int
+        default: 9160
+        description: Thrift protocol clients' port
+    native_client_port:
+        type: int
+        default: 9042
+        description: Native protocol clients' port
+    jmx_port:
+        type: int
+        default: 7199
+        description: JMX management port
 
 ##     endpoint_snitch:
 ##         default: "org.apache.cassandra.locator.SimpleSnitch"

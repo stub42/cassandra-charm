@@ -4,7 +4,6 @@ import os.path
 from charmhelpers.contrib import peerstorage
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import DEBUG
-import yaml
 
 
 def request_restart():
@@ -154,19 +153,15 @@ def get_peer_relation_name():
     # Make this the charmhelpers.contrib.peerstorage default?
     # Although it is normal to have a single peer relation, it is
     # possible to have many. We use the first in alphabetical order.
-    with open(os.path.join(hookenv.charm_dir(), 'metadata.yaml'), 'r') as mdf:
-        md = yaml.safe_load(mdf)
+    md = hookenv.metadata()
     assert 'peers' in md, 'No peer relations in metadata.yaml'
     return sorted(md['peers'].keys())[0]
 
 
-# This was for making a RelationContext, but using that class seems
-# unnecessary.
+# Unneeded
 # def get_peer_relation_interface():
 #     relname = get_peer_relation_name()
-#     with open(os.path.join(hookenv.charm_dir(), 'metadata.yaml'),
-#               'r') as mdf:
-#         md = yaml.safe_load(mdf)
+#     md = hookenv.metadata()
 #     return md['peers'][relname]['interface']
 
 
@@ -184,23 +179,12 @@ def utcnow_str():
     return utcnow().strftime('%Y-%m-%d %H:%M:%S.%fZ')
 
 
-class RollingRestartService(dict):
-    '''A service definition item for rolling restarts.
-
-    Place this service somewhere at the end of your services definition
-    list. This is required to allow rolling restarts to happen when
-    there are no peers to coordinate with.
-
-    Rolling restart is done as a service, rather than as a data_ready
-    action, to ensure that rolling_restart() is called even if there
-    are requirements for the main service that are not ready; missing
-    a call to rolling_restart() at the wrong time will deadlock the
-    system due to the charmhelpers.contrib.peerstorage implementation.
-    '''
-    def __init__(self, restart_hook):
-        super(RollingRestartService, self).__init__()
-        self.restart_hook = restart_hook
-        self['service'] = 'rolling-restart'
-        self['data_ready'] = lambda sn: rolling_restart(restart_hook),
-        self['start'] = []
-        self['stop'] = []
+# Unneeded
+# class RollingRestartPeerStorageRelation(RelationContext):
+#     name = None
+#     interface = None
+#     def __init__(self):
+#         self.name = get_peer_relation_name()
+#         self.interface = get_peer_relation_interface()
+#         _peer_echo()
+#         super(RollingRestartPeerStorageRelation, self).__init__()

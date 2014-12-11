@@ -141,10 +141,11 @@ def set_io_scheduler(io_scheduler, directory):
 
 # FOR CHARMHELPERS
 def recursive_chown(directory, owner="root", group="root"):
-    '''Change ownership of all files and directories contained in 'directory'.
+    '''Change ownership of all files and directories in 'directory'.
 
-    Does not modify ownership of 'directory'.
+    Ownership of 'directory' is also reset.
     '''
+    shutil.chown(directory, owner, group)
     for root, dirs, files in os.walk(directory):
         for dirname in dirs:
             shutil.chown(os.path.join(root, dirname), owner, group)
@@ -302,18 +303,15 @@ def start_cassandra():
         host.service_start(get_cassandra_service())
 
 
-def restart_cassandra():
-    host.service_restart(get_cassandra_service())
-
-
 def restart_and_remount_cassandra():
     storage = relations.StorageRelation()
+    stop_cassandra()
     if storage.needs_remount():
-        stop_cassandra()
         storage.migrate('/var/lib/cassandra', 'cassandra')
-        start_cassandra()
-    else:
-        restart_cassandra()
+        root = os.path.join(storage.mountpoint, 'cassandra')
+        os.chmod(root, 0o750)
+        recursive_chown(root)
+    start_cassandra()
 
 
 def get_pid_from_file(pid_file):
@@ -347,7 +345,7 @@ def is_cassandra_running():
             if subprocess.call(["nodetool", "-h",
                                 hookenv.unit_private_ip(), "info"],
                                stderr=subprocess.DEVNULL) == 0:
-                hookenv.log("Cassandra is running")
+                hookenv.log("Cassandra is responding")
                 return True
             else:
                 hookenv.log("Cassandra is still not fully up at attempt {}"

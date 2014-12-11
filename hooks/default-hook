@@ -1,0 +1,23 @@
+#!/usr/bin/python3
+
+import definitions
+import helpers
+import rollingrestart
+
+
+def default_hook():
+    sm = definitions.get_service_manager()
+    sm.manage()
+
+    # This cannot be a data_ready item on the service, as we *must* call
+    # it or risk deadlocking our system; data_ready items will not be
+    # called if the service requirements are not met. It also cannot be a
+    # separate service, as per Bug #1401428 services are not called in a
+    # defined order and we need to ensure this is called at the end of our
+    # hook; restarts need to happen at the end of the hook if there are no
+    # peer units.
+    rollingrestart.rolling_restart(helpers.restart_and_remount_cassandra)
+
+
+if __name__ == '__main__':
+    default_hook()

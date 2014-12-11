@@ -52,9 +52,10 @@ class StorageRelation(RelationContext):
                                       hookenv.local_unit().replace('/', '_'))
         self._requested_mountpoint = mountpoint
 
-        if 'data' in self and mountpoint == self['data'][0].get('mountpoint',
-                                                                None):
-            self.mountpoint == mountpoint
+        if len(self.get('data', [])) == 0:
+            self.mountpoint = None
+        elif mountpoint == self['data'][0].get('mountpoint', None):
+            self.mountpoint = mountpoint
         else:
             self.mountpoint = None
 
@@ -80,8 +81,6 @@ class StorageRelation(RelationContext):
         return True
 
     def provide_data(self):
-        hookenv.log('**** PROVIDING {} to {}'.format(
-            self._requested_mountpoint, self.name), WARNING)
         return dict(mountpoint=self._requested_mountpoint)
 
     def needs_remount(self):

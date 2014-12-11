@@ -394,13 +394,6 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
-    @patch('helpers.get_cassandra_service', autospec=True)
-    @patch('charmhelpers.core.host.service_restart', autospec=True)
-    def test_restart_cassandra(self, service_restart, get_service):
-        get_service.return_value = sentinel.service_name
-        helpers.restart_cassandra()
-        service_restart.assert_called_once_with(sentinel.service_name)
-
     def test_get_pid_from_file(self):
         with tempfile.NamedTemporaryFile('w') as pid_file:
             pid_file.write(' 42\t')
