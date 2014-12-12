@@ -365,8 +365,15 @@ def is_cassandra_running():
         if not os.path.exists(pid_file):
             hookenv.log("Cassandra is stopped")
             return False
-        # If the pid_file exists, but we got an exception, reraise it.
+        else:
+            try:
+                os.kill(get_pid_from_file(pid_file), 0)
+            except ProcessLookupError:
+                hookenv.log("Cassandra is not running, but pid file exists."
+                            WARNING)
+                return False
         # The system is insane. For example, the pid_file contains '-1'.
+        # Reraise the exception.
         raise
 
 

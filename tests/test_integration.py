@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import time
 import unittest
 import warnings
 
@@ -110,9 +111,27 @@ class Test3UnitDeployment(TestDeploymentBase):
     def test_external_mount(self):
         self.deployment.relate('cassandra:data', 'storage:data')
         self.deployment.sentry.wait()
-        s = self.deployment.sentry['cassandra/0']
-        self.assertEqual(
-            s.directory_contents('/srv/cassandra_0/cassandra/data'), ['foo'])
+        # Per Bug #1254766 and Bug #1254766, the sentry.wait() above
+        # will return before the hooks have actually finished running
+        # and data migrated. Instead, keep checking until our condition
+        # is met, or a timeout reached.
+        timeout = time.time() + 300
+        for unit_num in range(0, self.rf):
+            unit = 'cassandra/{}'.format(unit_num)
+            with self.subTest(unit=unit):
+                while True:
+                    s = self.deployment.sentry['cassandra/0']
+                    try:
+                        contents = s.directory_contents(
+                            '/srv/cassandra_0/cassandra/data')
+                        self.assertSetEqual(set(contents['directories']),
+                                            set(['system_traces', 'test',
+                                                 'system']))
+                        break
+                    except Exception:
+                        if time.time() > timeout:
+                            raise
+                        time.sleep(5)
 
 
 class Test1UnitDeployment(Test3UnitDeployment):
