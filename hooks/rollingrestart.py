@@ -53,10 +53,11 @@ def get_restart_queue():
 
 def _enqueue(flag):
     '''Add or remove an entry from peerstorage queue.'''
-    if flag is (hookenv.local_unit() in get_restart_queue()):
+    if flag and (hookenv.local_unit() in get_restart_queue()):
         return
     value = utcnow_str() if flag else None
     try:
+        hookenv.log('Restart queue value {}'.format(value))
         peerstorage.peer_store(_peerstorage_key(), value,
                                get_peer_relation_name())
     except ValueError:
@@ -91,13 +92,15 @@ def rolling_restart(restart_hook):
 
     def _restart():
         restart_hook()
+        hookenv.log('Restart complete.')
         cancel_restart()
+        hookenv.log('Restart queue entries purged.')
         return True
 
     # If there are no peers, restart the service now since there is
     # nobody to coordinate with.
     if len(get_peers()) == 0:
-        hookenv.log('Restart request with no peers')
+        hookenv.log('Restart request with no peers. Restarting.')
         return _restart()
 
     local_unit = hookenv.local_unit()
@@ -131,11 +134,9 @@ def _peer_echo():
     # If we are in the peer relation-changed hook, we must invoke
     # peerstorage.peer_echo() or peerstorage will fail.
     if hookenv.hook_name() == changed_hook:
-
-        # Calculate the includes list, since we can't (yet) ask
-        # peerstorage to echo by prefix.
-        rdata = hookenv.relation_get()
-        includes = [k for k in rdata if k.startswith('rollingrestart_')]
+        # We only want to echo the restart entry for the remote unit, as
+        # any other information it has for other peers may be stale.
+        includes = ['rollingrestart_{}'.format(hookenv.remote_unit())]
         hookenv.log('peerstorage.peer_echo for rolling restart.')
         hookenv.log('peer_echo(includes={!r})'.format(includes), DEBUG)
         # This method only works from the peer relation-changed hook.

@@ -41,11 +41,7 @@ def get_service_definitions():
                          actions.reset_all_io_schedulers,
                          actions.maybe_schedule_restart],
              stop=[actions.stop_cassandra],
-             start=[actions.start_cassandra]),
-
-        # Cassandra requires synchronized clocks.
-        dict(service='ntp', stop=[],
-             data_ready=[lambda sn: actions.install_packages(sn, ['ntp'])])]
+             start=[actions.start_cassandra])]
 
 
 def get_service_manager():

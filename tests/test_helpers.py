@@ -21,7 +21,7 @@ class TestHelpers(TestCaseBase):
             prc = os.path.join(tmpdir, 'policy-rc.d')
             prc_backup = prc + '-orig'
 
-            with helpers.autostart_disabled(prc):
+            with helpers.autostart_disabled(_policy_rc=prc):
                 # No existing policy-rc.d, so no backup made.
                 self.assertFalse(os.path.exists(prc_backup))
 
@@ -30,7 +30,7 @@ class TestHelpers(TestCaseBase):
                 self.assertTrue(os.path.exists(prc))
                 self.assertEqual(subprocess.call([prc]), 101)
 
-                with helpers.autostart_disabled(prc):
+                with helpers.autostart_disabled(_policy_rc=prc):
                     # A second time, we have a backup made.
                     # policy-rc.d still works
                     self.assertTrue(os.path.exists(prc_backup))
@@ -39,6 +39,28 @@ class TestHelpers(TestCaseBase):
                 # Backup removed, and policy-rc.d still works.
                 self.assertFalse(os.path.exists(prc_backup))
                 self.assertEqual(subprocess.call([prc]), 101)
+
+            # Neither backup nor policy-rc.d exist now we are out of the
+            # context manager.
+            self.assertFalse(os.path.exists(prc_backup))
+            self.assertFalse(os.path.exists(prc))
+
+    def test_autostart_disabled_partial(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+
+            prc = os.path.join(tmpdir, 'policy-rc.d')
+            prc_backup = prc + '-orig'
+
+            with helpers.autostart_disabled(['foo', 'bar'], _policy_rc=prc):
+                # No existing policy-rc.d, so no backup made.
+                self.assertFalse(os.path.exists(prc_backup))
+
+                # A policy-rc.d file has been created that will disable
+                # package autostart per spec (ie. returns a 101 exit code).
+                self.assertTrue(os.path.exists(prc))
+                self.assertEqual(subprocess.call([prc, 'foo']), 101)
+                self.assertEqual(subprocess.call([prc, 'bar']), 101)
+                self.assertEqual(subprocess.call([prc, 'baz']), 0)
 
             # Neither backup nor policy-rc.d exist now we are out of the
             # context manager.
@@ -326,7 +348,7 @@ class TestHelpers(TestCaseBase):
     def test_get_cassandra_packages(self, accept_oracle_jvm_license):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools']))
+                            set(['cassandra', 'cassandra-tools', 'ntp']))
         self.assertFalse(accept_oracle_jvm_license.called)
 
     @patch('helpers.accept_oracle_jvm_license', autospec=True)
@@ -336,7 +358,7 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['jvm'] = 'oracle'
         hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools',
+                            set(['cassandra', 'cassandra-tools', 'ntp',
                                  'oracle-java7-installer',
                                  'oracle-java7-set-default']))
         # It was called. We don't care that the mock did nothing, as
@@ -352,7 +374,7 @@ class TestHelpers(TestCaseBase):
 
         hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = False
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools']))
+                            set(['cassandra', 'cassandra-tools', 'ntp']))
         self.assertTrue(accept_oracle_jvm_license.called)
 
     @patch('helpers.accept_oracle_jvm_license', autospec=True)
@@ -361,13 +383,13 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
         hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['dse-full',
+                            set(['dse-full', 'ntp',
                                  'oracle-java7-installer',
                                  'oracle-java7-set-default']))
         self.assertTrue(accept_oracle_jvm_license.called)
 
-    @patch('helpers.get_cassandra_service')
-    @patch('charmhelpers.core.host.service_stop')
+    @patch('helpers.get_cassandra_service', autospec=True)
+    @patch('charmhelpers.core.host.service_stop', autospec=True)
     @patch('helpers.is_cassandra_running', autospec=True)
     def test_stop_cassandra(self, is_cassandra_running,
                             service_stop, get_service):
@@ -380,17 +402,18 @@ class TestHelpers(TestCaseBase):
         helpers.stop_cassandra()
         service_stop.assert_called_once_with(sentinel.service_name)
 
-    @patch('helpers.get_cassandra_service')
-    @patch('charmhelpers.core.host.service_start')
+    @patch('time.sleep', autospec=True)
+    @patch('helpers.get_cassandra_service', autospec=True)
+    @patch('charmhelpers.core.host.service_start', autospec=True)
     @patch('helpers.is_cassandra_running', autospec=True)
     def test_start_cassandra(self, is_cassandra_running,
-                             service_start, get_service):
+                             service_start, get_service, sleep):
         get_service.return_value = sentinel.service_name
         is_cassandra_running.return_value = True
         helpers.start_cassandra()
         self.assertFalse(service_start.called)
 
-        is_cassandra_running.return_value = False
+        is_cassandra_running.side_effect = iter([False, False, False, True])
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 

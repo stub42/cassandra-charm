@@ -30,17 +30,24 @@ unittest: lint
 	    --with-coverage --cover-branches
 
 test: unittest
+	AMULET_TIMEOUT=3600 \
 	nosetests -sv tests.test_integration
 	
 ftest: unittest
 	nosetests -sv tests.test_integration:Test1UnitDeployment
+
+3test: unittest
+	nosetests -sv tests.test_integration:Test3UnitDeployment
 
 # Set the DSE_SOURCE environment variable for this to work:
 # DSE_SOURCE="deb http://un:pw@debian.datastax.com/enterprise stable main"
 # You will also need a cache like squid-deb-proxy and have tweaked it to
 # cache the authenticated files, or the tests will likely timeout waiting
 # for huge downloads to complete. Alternatively, mirror the DataStax
-# packages into your own private archive.
+# packages into your own private archive. Due to the authentication
+# requirement, this test will not be run by the automatic test runners
+# and we can accordingly expect DSE support in this charm to break on
+# occasions.
 dsetest: unittest
 	AMULET_TIMEOUT=3600 \
 	nosetests -sv tests.test_integration:TestDSEDeployment

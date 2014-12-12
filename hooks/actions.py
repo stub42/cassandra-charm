@@ -129,11 +129,11 @@ def install_packages(servicename, packages):
     if hookenv.config('extra_packages'):
         packages.extend(hookenv.config('extra_packages').split())
     packages = fetch.filter_installed_packages(packages)
-    if 'ntp' in packages:
-        fetch.apt_install(['ntp'], fatal=True)  # With autostart
-        packages.remove('ntp')
+    # if 'ntp' in packages:
+    #     fetch.apt_install(['ntp'], fatal=True)  # With autostart
+    #     packages.remove('ntp')
     if packages:
-        with helpers.autostart_disabled():
+        with helpers.autostart_disabled(['cassandra']):
             fetch.apt_install(packages, fatal=True)
 
 

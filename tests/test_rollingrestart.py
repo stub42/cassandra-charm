@@ -281,32 +281,18 @@ class TestRollingRestart(TestCaseBase):
         self.assertEqual(rollingrestart._peerstorage_key(),
                          'rollingrestart_me/42')
 
-    @patch('charmhelpers.core.hookenv.relation_get')
-    @patch('charmhelpers.core.hookenv.hook_name')
-    @patch('charmhelpers.contrib.peerstorage.peer_store')
-    @patch('charmhelpers.contrib.peerstorage.peer_echo')
-    def test_peer_echo_changed(self, peer_echo, peer_store, hook_name,
-                               relation_get):
+    @patch('charmhelpers.core.hookenv.remote_unit', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_echo', autospec=True)
+    def test_peer_echo_changed(self, peer_echo, remote_unit):
+        remote_unit.return_value = 'service/62'
+
         # _peer_echo() calls peerstorage.peer_echo() if we are in the
         # peer relation-changed hook.
         relname = rollingrestart.get_peer_relation_name()
-        hook_name.return_value = '{}-relation-changed'.format(relname)
-
-        # The includes parameter passed to peer_echo is a prefix match
-        # on the peer relation data. Echoing attributes that are not
-        # ours would be bad.
-        rdata = dict(ignored=True, rollingrestart_whatever=42)
-        relation_get.return_value = rdata
+        hookenv.hook_name.return_value = '{}-relation-changed'.format(relname)
 
         rollingrestart._peer_echo()
-        peer_echo.assert_called_once_with(['rollingrestart_whatever'])
-
-        # Only peer_echo changed the peer storage.
-        self.assertFalse(peer_store.called)
-
-        # The relation_get call was as expected, and our mock returned
-        # valid mock data.
-        relation_get.assert_called_once_with()
+        peer_echo.assert_called_once_with(['rollingrestart_service/62'])
 
     @patch('charmhelpers.core.hookenv.remote_unit')
     @patch('charmhelpers.core.hookenv.hook_name')

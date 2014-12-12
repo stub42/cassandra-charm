@@ -21,7 +21,7 @@ options:
         default: |
             - ppa:webupd8team/java
             - deb http://www.apache.org/dist/cassandra/debian 21x main
-            - deb http://debian.datastax.com/community stable main
+        #   - deb http://debian.datastax.com/community stable main
         #   DSE requires you to register and add your username/password here.
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
     install_keys:
@@ -32,7 +32,7 @@ options:
         default: |
             - null  # PPA keys securly added via Launchpad.
             - null  # Apache package signing key added automatically.
-            - null  # DataStack package signing key added automatically.
+            # - null  # DataStack package signing key added automatically.
     edition:
         type: string
         default: community

@@ -15,18 +15,27 @@ import relations
 
 # FOR CHARMHELPERS
 @contextmanager
-def autostart_disabled(policy_rc='/usr/sbin/policy-rc.d'):
+def autostart_disabled(services=None, _policy_rc='/usr/sbin/policy-rc.d'):
     '''Tell well behaved Debian packages to not start services when installed.
     '''
+    script = ['#!/bin/sh']
+    if services is not None:
+        for service in services:
+            script.append(
+                'if [ "$1" = "{}" ]; then exit 101; fi'.format(service))
+        script.append('exit 0')
+    else:
+        script.append('exit 101')  # By default, all daemons disabled.
     try:
-        if os.path.exists(policy_rc):
-            shutil.move(policy_rc, "{}-orig".format(policy_rc))
-        host.write_file(policy_rc, b'#!/bin/sh\nexit 101', perms=0o555)
+        if os.path.exists(_policy_rc):
+            shutil.move(_policy_rc, "{}-orig".format(_policy_rc))
+        host.write_file(_policy_rc, '\n'.join(script).encode('ASCII'),
+                        perms=0o555)
         yield
     finally:
-        os.unlink(policy_rc)
-        if os.path.exists("{}-orig".format(policy_rc)):
-            shutil.move("{}-orig".format(policy_rc), policy_rc)
+        os.unlink(_policy_rc)
+        if os.path.exists("{}-orig".format(_policy_rc)):
+            shutil.move("{}-orig".format(_policy_rc), _policy_rc)
 
 
 def get_seeds():
@@ -279,6 +288,8 @@ def get_cassandra_packages():
     else:
         packages = set(['cassandra', 'cassandra-tools'])
 
+    packages.add('ntp')
+
     jvm = get_jvm()
     if jvm == 'oracle':
         accept_oracle_jvm_license()
@@ -299,8 +310,19 @@ def stop_cassandra():
 
 
 def start_cassandra():
-    if not is_cassandra_running():
-        host.service_start(get_cassandra_service())
+    if is_cassandra_running():
+        return
+
+    host.service_start(get_cassandra_service())
+
+    # Wait for Cassandra to actually start, or abort.
+    timeout = time.time() + 300
+    while time.time() < timeout:
+        if is_cassandra_running():
+            return
+        time.sleep(1)
+    hookenv.log('Cassandra failed to start.', ERROR)
+    raise SystemExit(1)
 
 
 def restart_and_remount_cassandra():
@@ -310,7 +332,12 @@ def restart_and_remount_cassandra():
         storage.migrate('/var/lib/cassandra', 'cassandra')
         root = os.path.join(storage.mountpoint, 'cassandra')
         os.chmod(root, 0o750)
-        recursive_chown(root)
+    db_dirs = get_all_database_directories()
+    unpacked_db_dirs = (db_dirs['data_file_directories']
+                        + [db_dirs['commitlog_directory']]
+                        + [db_dirs['saved_caches_directory']])
+    for db_dir in unpacked_db_dirs:
+        ensure_database_directory(db_dir)
     start_cassandra()
 
 
@@ -369,7 +396,7 @@ def is_cassandra_running():
             try:
                 os.kill(get_pid_from_file(pid_file), 0)
             except ProcessLookupError:
-                hookenv.log("Cassandra is not running, but pid file exists."
+                hookenv.log("Cassandra is not running, but pid file exists.",
                             WARNING)
                 return False
         # The system is insane. For example, the pid_file contains '-1'.

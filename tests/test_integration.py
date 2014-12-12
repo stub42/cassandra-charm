@@ -88,7 +88,7 @@ class Test3UnitDeployment(TestDeploymentBase):
     rf = 3
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
-                  jvm='Oracle')
+                  jvm='openjdk')
 
     def test_database_basics(self):
         session = self.session()
@@ -109,6 +109,13 @@ class Test3UnitDeployment(TestDeploymentBase):
         self.assertEqual(r[0].x, 'hello')
 
     def test_external_mount(self):
+        # Not only does this test migrating data from local disk to an
+        # external mount, it also exercises the rolling restart logic.
+        # If rf==1, the restart will happen in the
+        # storage-relation-changed hook as soon as the mount is ready.
+        # If rf > 1, the restart will happen in the
+        # cluster-relation-changed hook once the unit has determined
+        # that it is its turn to restart.
         self.deployment.relate('cassandra:data', 'storage:data')
         self.deployment.sentry.wait()
         # Per Bug #1254766 and Bug #1254766, the sentry.wait() above
@@ -142,15 +149,35 @@ class Test1UnitDeployment(Test3UnitDeployment):
                   jvm='openjdk')
 
 
-class TestDSEDeployment(Test3UnitDeployment):
-    """Tests run on a single node DataStax Enterprise cluster.
+class TestOracleJVMDeployment(Test3UnitDeployment):
+    """Basic test with the Oracle JVM.
+
+    This test is slow, as downloads of the Oracle JVM have been made
+    deliberately uncachable.
     """
     rf = 1
-    jvm = 'Oracle'
-    edition = 'DSE'
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
-                  edition='DSE',
+                  edition='community',
+                  jvm='Oracle')
+
+
+class TestDSEDeployment(Test3UnitDeployment):
+    """Tests run on a single node DataStax Enterprise cluster.
+
+    These are *very slow* tests, due to the DSE and Oracle JVM
+    downloads. In addition, the DSE_SOURCE environment variable
+    needs to be set as DataStax do not allow unauthenticated
+    downloads of their software.
+
+    Due to the authentication requirement, these tests will not be run
+    by the automatic test runners and we can accordingly expect DSE
+    support in this charm to break on occasions.
+    """
+    rf = 1
+    config = dict(max_heap_size='128M',
+                  heap_newsize='32M',
+                  edition='DSE',  # Forces Oracle JVM
                   install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
                                                  'ppa:webupd8team/java']),
                   install_keys=yaml.safe_dump([None, None]))
