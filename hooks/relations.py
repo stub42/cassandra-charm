@@ -91,6 +91,14 @@ class StorageRelation(RelationContext):
         assert self.needs_remount()
         assert subdir, 'Can only migrate to a subdirectory on a mount'
 
+        config = hookenv.config()
+        config['live_mountpoint'] = self.mountpoint
+
+        if self.mountpoint is None:
+            hookenv.log('External storage AND DATA gone.'
+                        'Reverting to original local storage', WARNING)
+            return
+
         dst_dir = os.path.join(self.mountpoint, subdir)
         if os.path.exists(dst_dir):
             hookenv.log('{} already exists. Not migrating data.'.format(
@@ -112,5 +120,4 @@ class StorageRelation(RelationContext):
         hookenv.log('Moving {} to {}'.format(tmp_dst_dir, dst_dir))
         os.rename(tmp_dst_dir, dst_dir)
 
-        config = hookenv.config()
-        config['live_mountpoint'] = self.mountpoint
+        assert not self.needs_remount()

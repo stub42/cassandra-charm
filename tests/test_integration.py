@@ -51,15 +51,35 @@ class TestDeploymentBase(unittest.TestCase):
             session.execute('DROP KEYSPACE test')
         except Exception:
             pass
-        # We create a keyspace with a replication factor equal to the
-        # number of units. This ensures that all records are replicated
-        # to all nodes, and we can cofirm that all nodes are working by
-        # doing an insert with ConsistencyLevel.ALL.
-        session.execute('''
-                        CREATE KEYSPACE test WITH REPLICATION = {
-                            'class': 'SimpleStrategy',
-                            'replication_factor': %s}
-                        ''', (self.rf,))
+        # It might take a while for the DROP KEYSPACE to propagate,
+        # so retry the CREATE KEYSPACE for a while.
+        timeout = time.time() + 120
+        while True:
+            try:
+                # We create a keyspace with a replication factor equal
+                # to the number of units. This ensures that all records
+                # are replicated to all nodes, and we can cofirm that
+                # all nodes are working by doing an insert with
+                # ConsistencyLevel.ALL.
+                session.execute('''
+                                CREATE KEYSPACE test WITH REPLICATION = {
+                                    'class': 'SimpleStrategy',
+                                    'replication_factor': %s}
+                                ''', (self.rf,))
+                break
+            except Exception:
+                if time.time() > timeout:
+                    raise
+                time.sleep(1)
+
+        while True:
+            try:
+                self.session()  # Ensure the CREATE KEYSPACE has replicated.
+                break
+            except Exception:
+                if time.time() > timeout:
+                    raise
+                time.sleep(1)
 
     def juju_status(self):
         status_yaml = subprocess.check_output(['juju', 'status',

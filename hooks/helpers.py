@@ -54,6 +54,7 @@ def get_seeds():
         seeds.append(peer['private-address'])
 
     seeds.append(hookenv.unit_private_ip())
+    seeds.sort()
     return seeds
 
 
@@ -328,10 +329,16 @@ def start_cassandra():
 def restart_and_remount_cassandra():
     storage = relations.StorageRelation()
     stop_cassandra()
+    assert not is_cassandra_running()
     if storage.needs_remount():
-        storage.migrate('/var/lib/cassandra', 'cassandra')
-        root = os.path.join(storage.mountpoint, 'cassandra')
-        os.chmod(root, 0o750)
+        if storage.mountpoint is None:
+            hookenv.log('External storage AND DATA gone.'
+                        'Reverting to original local storage. '
+                        'Data may be resurrected.', WARNING)
+        else:
+            storage.migrate('/var/lib/cassandra', 'cassandra')
+            root = os.path.join(storage.mountpoint, 'cassandra')
+            os.chmod(root, 0o750)
     db_dirs = get_all_database_directories()
     unpacked_db_dirs = (db_dirs['data_file_directories']
                         + [db_dirs['commitlog_directory']]
@@ -371,6 +378,7 @@ def is_cassandra_running():
 
             if subprocess.call(["nodetool", "-h",
                                 hookenv.unit_private_ip(), "info"],
+                               stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
                 hookenv.log("Cassandra is responding")
                 return True

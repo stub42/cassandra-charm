@@ -157,7 +157,7 @@ def configure_cassandra_yaml(servicename):
     cassandra_yaml['cluster_name'] = (config['cluster_name']
                                       or hookenv.service_name())
 
-    seeds = ', '.join(helpers.get_seeds())
+    seeds = ','.join(helpers.get_seeds())  # Don't include whitespace!
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['num_tokens'] = int(config['num_tokens'])
@@ -253,7 +253,7 @@ def maybe_schedule_restart(servicename):
     restart = False
     for key in RESTART_REQUIRED_KEYS:
         if config.changed(key):
-            hookenv.log('{} changed. Restart required'.format(key))
+            hookenv.log('{} changed. Restart required.'.format(key))
             restart = True
 
     # If the directory paths have changed, we need to migrate data
@@ -261,7 +261,19 @@ def maybe_schedule_restart(servicename):
     # up in the previous check.
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        hookenv.log('Mountpoint changed. Restart and migration required')
+        hookenv.log('Mountpoint changed. Restart and migration required.')
+        restart = True
+
+    # If the seedlist has changed, we need to restart.
+    config['configured_seeds'] = helpers.get_seeds()
+    if config.changed('configured_seeds'):
+        hookenv.log('Seed list changed. Restart required.')
+        restart = True
+
+    # If our IP address has changed, we need to restart.
+    config['unit_private_ip'] = hookenv.unit_private_ip()
+    if config.changed('unit_private_ip'):
+        hookenv.log('Unit IP address changed. Restart required.')
         restart = True
 
     if restart:

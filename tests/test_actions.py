@@ -302,12 +302,14 @@ class TestsActions(TestCaseBase):
                 seed_provider:
                     - class_name: blah.blah.SimpleSeedProvider
                       parameters:
-                        - seeds: '10.20.0.1, 10.20.0.2, 10.20.0.3'
+                        # No whitespace in seeds is important.
+                        - seeds: '10.20.0.1,10.20.0.2,10.20.0.3'
                 data_file_directories:
                     - /var/lib/cassandra/data
                 commitlog_directory: /var/lib/cassandra/commitlog
                 saved_caches_directory: /var/lib/cassandra/saved_caches
                 ''')
+            self.maxDiff = None
             self.assertEqual(yaml.safe_load(new_config),
                              yaml.safe_load(expected_config))
 

@@ -66,29 +66,39 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(os.path.exists(flag))
         enqueue.assert_called_once_with(False)
 
-    @patch('charmhelpers.core.hookenv.local_unit')
-    @patch('rollingrestart.get_peer_relation_name')
-    @patch('charmhelpers.contrib.peerstorage.peer_retrieve')
-    @patch('charmhelpers.contrib.peerstorage.peer_store')
-    def test_restart_queue(self, store, retrieve, relname, local_unit):
-        # The restart queue is stored in peerstorage.
-        relname.return_value = sentinel.relname
-        peer_storage = {sentinel.relname: {}}
+    @patch('rollingrestart.get_peers', autospec=True)
+    @patch('rollingrestart.get_peer_relation_name', autospec=True)
+    @patch('rollingrestart.get_peer_relation_id', autospec=True)
+    @patch('charmhelpers.core.hookenv.local_unit', autospec=True)
+    @patch('charmhelpers.core.hookenv.relation_set', autospec=True)
+    @patch('charmhelpers.core.hookenv.relation_get', autospec=True)
+    def test_restart_queue(self, relation_get, relation_set, local_unit,
+                           get_rid, get_relname, get_peers):
 
-        def _store(key, value, relation_name):
-            if value is None:
-                if key in peer_storage[relation_name]:
-                    del peer_storage[relation_name][key]
-            else:
-                peer_storage[relation_name][key] = value
+        get_rid.return_value = sentinel.peer_rid
+        get_relname.return_value = sentinel.peer_relname
 
-        def _retrieve(key, relation_name):
-            if key == '-':
-                return dict(peer_storage[relation_name])
-            return peer_storage[relation_name].get(key)
+        get_peers.return_value = ['unit/{}'.format(n) for n in range(0, 10)]
 
-        store.side_effect = _store
-        retrieve.side_effect = _retrieve
+        rel_storage = {sentinel.peer_rid: {}}
+
+        def _relation_get(attribute=None, unit=None, rid=None):
+            assert attribute is None or attribute == '-'
+            assert unit is not None
+            assert rid is not None
+            return rel_storage[rid].get(unit, {})
+
+        relation_get.side_effect = _relation_get
+
+        def _relation_set(relation_id, m={}, **kwargs):
+            for k, v in list(m.items()) + list(kwargs.items()):
+                rel_storage[relation_id].setdefault(local_unit(), {})
+                if v is not None:
+                    rel_storage[relation_id][local_unit()][k] = v
+                elif k in rel_storage[relation_id][local_unit()]:
+                    del rel_storage[relation_id][local_unit()][k]
+
+        relation_set.side_effect = _relation_set
 
         # The queue starts empty
         self.assertListEqual(rollingrestart.get_restart_queue(), [])
@@ -124,24 +134,6 @@ class TestRollingRestart(TestCaseBase):
         enqueue_unit('unit/6', False)
         self.assertListEqual(rollingrestart.get_restart_queue(),
                              ['unit/8'])
-
-    @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    def test_restart_queue_no_peers(self, peer_store, peer_retrieve):
-        # Peerstorage signals lack of a suitable peer relation by
-        # raising a ValueError exception. The enqueue helper ignores
-        # this, and silently does nothing. This is desirable, because if
-        # there is no suitable peer relation there are no peers. If
-        # there are no peers, rolling_restart() will restart things
-        # immediately because there are no peers to coordinate with.
-        peer_store.side_effect = ValueError('foo')
-        peer_retrieve.side_effect = ValueError('foo')
-
-        self.assertListEqual(rollingrestart.get_restart_queue(), [])
-        rollingrestart._enqueue(True)
-        self.assertListEqual(rollingrestart.get_restart_queue(), [])
-        rollingrestart._enqueue(False)
-        self.assertListEqual(rollingrestart.get_restart_queue(), [])
 
     @patch('rollingrestart.cancel_restart', autospec=True)
     @patch('rollingrestart.is_waiting_for_restart', autospec=True)

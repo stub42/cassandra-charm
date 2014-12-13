@@ -27,7 +27,8 @@ def is_waiting_for_restart():
 
 def cancel_restart():
     '''Cancel the rolling restart request, if any, and dequeue.'''
-    _enqueue(False)
+    if get_peer_relation_id():
+        _enqueue(False)
     flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
     if os.path.exists(flag):
         os.remove(flag)
@@ -39,16 +40,28 @@ def get_restart_queue():
     The local unit will not be included until after rolling_restart
     has been called.
     '''
-    # Maps unit -> sortable timestamp
-    try:
-        queue_map = peerstorage.peer_retrieve_by_prefix(
-            'rollingrestart', get_peer_relation_name())
-    except ValueError:
-        return []
+    queue = []
 
-    queue = [unit for unit, _ in sorted(queue_map.items(),
-                                        key=lambda x: tuple(reversed(x)))]
-    return queue
+    relid = get_peer_relation_id()
+    if relid is None:
+        return queue
+
+    all_units = set(get_peers())
+    all_units.add(hookenv.local_unit())
+
+    # Iterate over all units, retrieving restartrequest flags.
+    # We can't use the peerstorage helpers here, as that will only
+    # retrieve data that has been echoed and may be out of date if
+    # the necessary relation-changed hooks have not yet been invoked.
+    for unit in all_units:
+        relinfo = hookenv.relation_get(unit=unit, rid=relid)
+        request = relinfo.get('rollingrestart_{}'.format(unit))
+        if request is not None:
+            queue.append((request, unit))
+
+    queue.sort()
+
+    return [unit for _, unit in queue]
 
 
 def _enqueue(flag):
@@ -58,8 +71,8 @@ def _enqueue(flag):
     value = utcnow_str() if flag else None
     try:
         hookenv.log('Restart queue value {}'.format(value))
-        peerstorage.peer_store(_peerstorage_key(), value,
-                               get_peer_relation_name())
+        hookenv.relation_set(get_peer_relation_id(),
+                             {_peerstorage_key(): value})
     except ValueError:
         # No peer storage, no queue, no problem. If there is no peer
         # storage, there are no peers, and restarts will happen
@@ -157,6 +170,12 @@ def get_peer_relation_name():
     md = hookenv.metadata()
     assert 'peers' in md, 'No peer relations in metadata.yaml'
     return sorted(md['peers'].keys())[0]
+
+
+def get_peer_relation_id():
+    for relid in hookenv.relation_ids(get_peer_relation_name()):
+        return relid
+    return None
 
 
 # Unneeded
