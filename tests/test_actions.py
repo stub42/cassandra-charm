@@ -388,6 +388,142 @@ class TestsActions(TestCaseBase):
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
+    @patch('helpers.get_seeds', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    @patch('rollingrestart.request_restart', autospec=True)
+    def test_maybe_schedule_restart_need_remount(self, request_restart,
+                                                 storage_relation, get_seeds):
+        config = hookenv.config()
+
+        # Storage says we need to restart.
+        storage_relation().needs_remount.return_value = True
+
+        # Seedlist does not.
+        get_seeds.return_value = 'seed list'
+        config['configured_seeds'] = get_seeds()
+
+        # IP address is unchanged.
+        config['unit_private_ip'] = hookenv.unit_private_ip()
+
+        # Config items are unchanged.
+        config.save()
+        config.load_previous()
+
+        actions.maybe_schedule_restart('')
+        request_restart.assert_called_once_with()
+        hookenv.log.assert_called_once_with('Mountpoint changed. '
+                                            'Restart and migration required.')
+
+    @patch('helpers.get_seeds', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    @patch('rollingrestart.request_restart', autospec=True)
+    def test_maybe_schedule_restart_seeds_changed(self, request_restart,
+                                                  storage_relation, get_seeds):
+        config = hookenv.config()
+
+        # Storage says we do not need to restart.
+        storage_relation().needs_remount.return_value = False
+
+        # Seedlist has changed.
+        get_seeds.return_value = 'seed list'
+        config['configured_seeds'] = 'old seed list'
+
+        # IP address is unchanged.
+        config['unit_private_ip'] = hookenv.unit_private_ip()
+
+        # Config items are unchanged.
+        config.save()
+        config.load_previous()
+
+        actions.maybe_schedule_restart('')
+        request_restart.assert_called_once_with()
+        hookenv.log.assert_called_once_with('Seed list changed. '
+                                            'Restart required.')
+
+    @patch('helpers.get_seeds', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    @patch('rollingrestart.request_restart', autospec=True)
+    def test_maybe_schedule_restart_unchanged(self, request_restart,
+                                              storage_relation, get_seeds):
+        config = hookenv.config()
+
+        # Storage says we do not need to restart.
+        storage_relation().needs_remount.return_value = False
+
+        # Seedlist does not.
+        get_seeds.return_value = 'seed list'
+        config['configured_seeds'] = get_seeds()
+
+        # IP address is unchanged.
+        config['unit_private_ip'] = hookenv.unit_private_ip()
+
+        # Config items are unchanged, except for ones that do not
+        # matter.
+        config.save()
+        config.load_previous()
+        config['package_status'] = 'new'
+        self.assertTrue(config.changed('package_status'))
+
+        actions.maybe_schedule_restart('')
+        self.assertFalse(request_restart.called)
+
+    @patch('helpers.get_seeds', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    @patch('rollingrestart.request_restart', autospec=True)
+    def test_maybe_schedule_restart_config_changed(self, request_restart,
+                                                   storage_relation,
+                                                   get_seeds):
+        config = hookenv.config()
+
+        # Storage says we do not need to restart.
+        storage_relation().needs_remount.return_value = False
+
+        # Seedlist does not.
+        get_seeds.return_value = 'seed list'
+        config['configured_seeds'] = get_seeds()
+
+        # IP address is unchanged.
+        config['unit_private_ip'] = hookenv.unit_private_ip()
+
+        # Config items are changed.
+        config.save()
+        config.load_previous()
+        config['package_status'] = 'new'
+        self.assertTrue(config.changed('package_status'))  # Doesn't matter.
+        config['max_heap_size'] = 'lots and lots'
+        self.assertTrue(config.changed('max_heap_size'))  # Requires restart.
+
+        actions.maybe_schedule_restart('')
+        request_restart.assert_called_once_with()
+        hookenv.log.assert_called_once_with('max_heap_size changed. '
+                                            'Restart required.')
+
+    @patch('helpers.get_seeds', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    @patch('rollingrestart.request_restart', autospec=True)
+    def test_maybe_schedule_restart_ip_changed(self, request_restart,
+                                               storage_relation, get_seeds):
+        config = hookenv.config()
+
+        # Storage says we do not need to restart.
+        storage_relation().needs_remount.return_value = False
+
+        # Seedlist does not.
+        get_seeds.return_value = 'seed list'
+        config['configured_seeds'] = get_seeds()
+
+        # IP address has changed.
+        config['unit_private_ip'] = 'old ip address'
+
+        # Config items are unchanged.
+        config.save()
+        config.load_previous()
+
+        actions.maybe_schedule_restart('')
+        request_restart.assert_called_once_with()
+        hookenv.log.assert_called_once_with('Unit IP address changed. '
+                                            'Restart required.')
+
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
         actions.stop_cassandra('ignored')
