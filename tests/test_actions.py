@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import ANY, call, patch, sentinel
 import yaml
 
+from charmhelpers import fetch
 from charmhelpers.core import hookenv
 
 from tests.base import TestCaseBase
@@ -249,6 +250,23 @@ class TestsActions(TestCaseBase):
         # package installation starting services.
         autostart_disabled().__enter__.assert_called_once_with()
         autostart_disabled().__exit__.assert_called_once_with(None, None, None)
+
+    @patch('helpers.autostart_disabled', autospec=True)
+    @patch('charmhelpers.fetch.apt_install', autospec=True)
+    def test_install_packages_noop(self, apt_install, autostart_disabled):
+        # Everything is already installed. Nothing to do.
+        fetch.filter_installed_packages.side_effect = lambda pkgs: []
+
+        packages = ['a_pack', 'b_pack']
+        hookenv.config()['extra_packages'] = 'c_pack d_pack'
+        actions.install_packages('', packages)
+
+        # All packages got installed, and hook aborted if package
+        # installation failed.
+        self.assertFalse(apt_install.called)
+
+        # Autostart wasn't messed with.
+        self.assertFalse(autostart_disabled.called)
 
     @patch('helpers.get_cassandra_packages', autospec=True)
     @patch('actions.install_packages', autospec=True)
