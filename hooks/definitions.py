@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 from charmhelpers.core import hookenv
 from charmhelpers.core.services import ServiceManager
 
@@ -46,12 +44,3 @@ def get_service_definitions():
 
 def get_service_manager():
     return ServiceManager(get_service_definitions())
-
-
-if __name__ == '__main__':  # pragma: no cover
-    get_service_manager().manage()
-
-    # This cannot be a data_ready item on the service, as we *must* call
-    # it or risk deadlocking our system; data_ready items will not be
-    # called if the service requirements are not met.
-    rollingrestart.rolling_restart(helpers.restart_and_remount_cassandra)
