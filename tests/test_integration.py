@@ -117,16 +117,25 @@ class Test3UnitDeployment(TestDeploymentBase):
         # Insert some data, ensuring that it has been stored on
         # all of our juju units. Note that the replication factor
         # of our keyspace has been set to the number of units we
-        # deployed.
-        query = SimpleStatement(
-            "INSERT INTO Foo (x) VALUES (%s)",
-            consistency_level=ConsistencyLevel.ALL)
-        session.execute(query, ('hello',))
+        # deployed. Because it might take a while for the cluster to get
+        # its act together, we retry this in a loop with a timeout.
+        timeout = time.time() + 120
+        while True:
+            value = 'hello {}'.format(time.time())
+            query = SimpleStatement(
+                "INSERT INTO Foo (x) VALUES (%s)",
+                consistency_level=ConsistencyLevel.ALL)
+            try:
+                session.execute(query, (value,))
+                break
+            except Exception:
+                if time.time() > timeout:
+                    raise
 
         # We can get the data out again. This isn't testing our charm,
         # but nice to know anyway...
         r = session.execute('SELECT * FROM Foo LIMIT 1')
-        self.assertEqual(r[0].x, 'hello')
+        self.assertTrue(r[0].x.startswith('hello'))
 
     def test_external_mount(self):
         # Not only does this test migrating data from local disk to an

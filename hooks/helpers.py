@@ -332,7 +332,7 @@ def restart_and_remount_cassandra():
     assert not is_cassandra_running()
     if storage.needs_remount():
         if storage.mountpoint is None:
-            hookenv.log('External storage AND DATA gone.'
+            hookenv.log('External storage AND DATA gone. '
                         'Reverting to original local storage. '
                         'Data may be resurrected.', WARNING)
         else:
