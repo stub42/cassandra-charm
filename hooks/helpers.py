@@ -420,22 +420,3 @@ def reset_all_io_schedulers():
     for d in dirs:
         if os.path.isdir(d):  # Directory may not exist yet.
             set_io_scheduler(config['io_scheduler'], d)
-
-
-def remount():
-    return
-#     assert not is_cassandra_running()
-#
-#     config = hookenv.config()
-#
-#     old_dirs = get_all_database_directories(config.get('live_mountpoint'))
-#
-#     dirs = get_all_database_directories()
-#     for d in dirs['data_file_directories']:
-#         ensure_database_directory(d)
-#     ensure_database_directory(dirs['commitlog_directory'])
-#     ensure_database_directory(dirs['saved_caches_directory'])
-#     reset_all_io_schedulers()
-#
-#     migrated_directories = set()
-#     pass
