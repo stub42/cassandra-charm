@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 import os.path
 import unittest
-from unittest.mock import MagicMock, patch, sentinel
+from unittest.mock import ANY, MagicMock, patch, sentinel
 
 from charmhelpers.core import hookenv
 
@@ -26,6 +26,59 @@ class TestRollingRestart(TestCaseBase):
                        side_effect=_utcnow)
         utcnow.start()
         self.addCleanup(utcnow.stop)
+
+    @patch('charmhelpers.core.hookenv.charm_dir')
+    @patch('charmhelpers.core.host.write_file')
+    @patch('os.path.exists')
+    def test_request_restart(self, exists, write_file, charm_dir):
+        charm_dir.return_value = '/foo'
+
+        # If the flag file already exists, nothing happens.
+        exists.return_value = True
+        rollingrestart.request_restart()
+        self.assertFalse(write_file.called)
+
+        # Otherwise, the flag file is created.
+        exists.return_value = False
+        rollingrestart.request_restart()
+        write_file.assert_called_once_with('/foo/.needs-restart', ANY)
+
+    @patch('charmhelpers.core.hookenv.charm_dir')
+    @patch('os.path.exists')
+    def test_is_waiting_for_restart(self, exists, charm_dir):
+        charm_dir.return_value = '/foo'
+        exists.return_value = False
+        self.assertFalse(rollingrestart.is_waiting_for_restart())
+        exists.assert_called_once_with('/foo/.needs-restart')
+
+        exists.reset_mock()
+        exists.return_value = True
+        self.assertTrue(rollingrestart.is_waiting_for_restart())
+        exists.assert_called_once_with('/foo/.needs-restart')
+
+    @patch('os.remove')
+    @patch('os.path.exists')
+    @patch('charmhelpers.core.hookenv.charm_dir')
+    @patch('rollingrestart._enqueue')
+    def test_cancel_restart(self, enqueue, charm_dir, exists, remove):
+        charm_dir.return_value = '/foo'
+        exists.return_value = True
+
+        rollingrestart.cancel_restart()
+        enqueue.assert_called_once_with(False)
+        remove.assert_called_once_with('/foo/.needs-restart')
+
+    @patch('os.remove')
+    @patch('os.path.exists')
+    @patch('charmhelpers.core.hookenv.charm_dir')
+    @patch('rollingrestart._enqueue')
+    def test_cancel_restart_noop(self, enqueue, charm_dir, exists, remove):
+        charm_dir.return_value = '/foo'
+        exists.return_value = False
+
+        rollingrestart.cancel_restart()
+        enqueue.assert_called_once_with(False)
+        self.assertFalse(remove.called)
 
     @patch('rollingrestart._enqueue', autospec=True)
     def test_requests(self, enqueue):

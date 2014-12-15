@@ -417,6 +417,83 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
+    @patch('helpers.ensure_database_directory', autospec=True)
+    @patch('helpers.is_cassandra_running', autospec=True)
+    @patch('helpers.start_cassandra', autospec=True)
+    @patch('helpers.stop_cassandra', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    def test_restart_and_remount_cassandra_simple(self, storage, stop, start,
+                                                  is_running,
+                                                  ensure_directory):
+        storage().needs_remount.return_value = False
+        storage().mountpoint = None
+        is_running.return_value = False
+
+        helpers.restart_and_remount_cassandra()
+        stop.assert_called_once_with()
+        start.assert_called_once_with()
+        ensure_directory.assert_has_calls([
+            call('/var/lib/cassandra/data'),
+            call('/var/lib/cassandra/commitlog'),
+            call('/var/lib/cassandra/saved_caches')], any_order=True)
+
+    @patch('os.chmod', autospec=True)
+    @patch('helpers.ensure_database_directory', autospec=True)
+    @patch('helpers.is_cassandra_running', autospec=True)
+    @patch('helpers.start_cassandra', autospec=True)
+    @patch('helpers.stop_cassandra', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    def test_restart_and_remount_cassandra_mnt(self, storage, stop, start,
+                                               is_running, ensure_directory,
+                                               chmod):
+        storage().needs_remount.return_value = True
+        storage().mountpoint = '/srv/foo'
+        is_running.return_value = False
+        hookenv.config()['data_file_directories'] = '/srv/ext/data1 data2'
+
+        helpers.restart_and_remount_cassandra()
+        stop.assert_called_once_with()
+        storage().migrate.assert_called_once_with('/var/lib/cassandra',
+                                                  'cassandra')
+        chmod.assert_called_once_with('/srv/foo/cassandra', 0o750)
+        start.assert_called_once_with()
+        ensure_directory.assert_has_calls([
+            call('/srv/ext/data1'),
+            call('/srv/foo/cassandra/data2'),
+            call('/srv/foo/cassandra/commitlog'),
+            call('/srv/foo/cassandra/saved_caches')], any_order=True)
+
+    @patch('helpers.ensure_database_directory', autospec=True)
+    @patch('helpers.is_cassandra_running', autospec=True)
+    @patch('helpers.start_cassandra', autospec=True)
+    @patch('helpers.stop_cassandra', autospec=True)
+    @patch('relations.StorageRelation', autospec=True)
+    def test_restart_and_remount_cassandra_unmnt(self, storage, stop, start,
+                                                 is_running, ensure_directory):
+        storage().needs_remount.return_value = True
+        storage().mountpoint = None  # Reverting to local disk.
+        is_running.return_value = False
+        hookenv.config()['data_file_directories'] = '/srv/ext/data1 data2'
+
+        helpers.restart_and_remount_cassandra()
+        stop.assert_called_once_with()
+        start.assert_called_once_with()
+
+        # We cannot migrate data back to local disk, as by the time our
+        # hooks are called the data is gone.
+        self.assertFalse(storage().migrate.called)
+
+        # We warn in this case, as reverting to local disk may resurrect
+        # old data (if the cluster was ever time while using local
+        # disk).
+        hookenv.log.assert_any_call(ANY, hookenv.WARNING)
+
+        ensure_directory.assert_has_calls([
+            call('/srv/ext/data1'),
+            call('/var/lib/cassandra/data2'),
+            call('/var/lib/cassandra/commitlog'),
+            call('/var/lib/cassandra/saved_caches')], any_order=True)
+
     def test_get_pid_from_file(self):
         with tempfile.NamedTemporaryFile('w') as pid_file:
             pid_file.write(' 42\t')
@@ -524,6 +601,12 @@ class TestHelpers(TestCaseBase):
             call(sentinel.io_scheduler, sentinel.cl),
             call(sentinel.io_scheduler, sentinel.sc)],
             any_order=True)
+
+        # If directories don't exist yet, nothing happens.
+        set_io_scheduler.reset_mock()
+        isdir.return_value = False
+        helpers.reset_all_io_schedulers()
+        self.assertFalse(set_io_scheduler.called)
 
 
 class TestIsLxc(unittest.TestCase):

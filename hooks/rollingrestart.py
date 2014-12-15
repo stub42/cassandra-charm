@@ -27,8 +27,7 @@ def is_waiting_for_restart():
 
 def cancel_restart():
     '''Cancel the rolling restart request, if any, and dequeue.'''
-    if get_peer_relation_id():
-        _enqueue(False)
+    _enqueue(False)
     flag = os.path.join(hookenv.charm_dir(), '.needs-restart')
     if os.path.exists(flag):
         os.remove(flag)
@@ -66,12 +65,12 @@ def get_restart_queue():
 
 def _enqueue(flag):
     '''Add or remove an entry from peerstorage queue.'''
-    if flag and (hookenv.local_unit() in get_restart_queue()):
-        return
-
     if not get_peer_relation_id():
         # No peer relation, no problems. If there is no peer relation,
         # there are no peers to coordinate with.
+        return
+
+    if flag and (hookenv.local_unit() in get_restart_queue()):
         return
 
     value = utcnow_str() if flag else None
