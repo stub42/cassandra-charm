@@ -68,16 +68,16 @@ def _enqueue(flag):
     '''Add or remove an entry from peerstorage queue.'''
     if flag and (hookenv.local_unit() in get_restart_queue()):
         return
+
+    if not get_peer_relation_id():
+        # No peer relation, no problems. If there is no peer relation,
+        # there are no peers to coordinate with.
+        return
+
     value = utcnow_str() if flag else None
-    try:
-        hookenv.log('Restart queue value {}'.format(value))
-        hookenv.relation_set(get_peer_relation_id(),
-                             {_peerstorage_key(): value})
-    except ValueError:
-        # No peer storage, no queue, no problem. If there is no peer
-        # storage, there are no peers, and restarts will happen
-        # immediately.
-        pass
+    hookenv.log('Restart queue value {}'.format(value))
+    hookenv.relation_set(get_peer_relation_id(),
+                         {_peerstorage_key(): value})
 
 
 def rolling_restart(restart_hook):

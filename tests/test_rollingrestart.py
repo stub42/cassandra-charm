@@ -75,11 +75,9 @@ class TestRollingRestart(TestCaseBase):
     def test_restart_queue(self, relation_get, relation_set, local_unit,
                            get_rid, get_relname, get_peers):
 
-        get_rid.return_value = sentinel.peer_rid
-        get_relname.return_value = sentinel.peer_relname
-
-        get_peers.return_value = ['unit/{}'.format(n) for n in range(0, 10)]
-
+        get_rid.return_value = None
+        get_relname.return_value = None
+        get_peers.return_value = []
         rel_storage = {sentinel.peer_rid: {}}
 
         def _relation_get(attribute=None, unit=None, rid=None):
@@ -106,6 +104,14 @@ class TestRollingRestart(TestCaseBase):
         def enqueue_unit(unit, flag):
             local_unit.return_value = unit
             rollingrestart._enqueue(flag)
+
+        # If there are no peers, trying to queue a unit does nothing.
+        enqueue_unit('unit/1', True)
+        self.assertListEqual(rollingrestart.get_restart_queue(), [])
+
+        get_rid.return_value = sentinel.peer_rid
+        get_relname.return_value = sentinel.peer_relname
+        get_peers.return_value = ['unit/{}'.format(n) for n in range(0, 10)]
 
         # Adding units grows it.
         enqueue_unit('unit/1', True)
