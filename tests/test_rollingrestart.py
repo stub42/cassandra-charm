@@ -345,40 +345,46 @@ class TestRollingRestart(TestCaseBase):
         rollingrestart._peer_echo()
         peer_echo.assert_called_once_with(['rollingrestart_service/62'])
 
-    @patch('charmhelpers.core.hookenv.remote_unit')
-    @patch('charmhelpers.core.hookenv.hook_name')
-    @patch('charmhelpers.contrib.peerstorage.peer_store')
-    def test_peer_echo_departed(self, peer_store, hook_name, remote_unit):
+    @patch('charmhelpers.core.hookenv.remote_unit', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
+    def test_peer_echo_departed(self, peer_store, remote_unit):
         # When _peer_echo is called from a peer relation-departed hook,
         # it cleans out any entry for the departing unit from peer
         # storage. Note that all surviving peers will clear up any
         # atavism in the queue, which is not optimal but better than
         # none of the surviving peers doing the cleanup.
         relname = rollingrestart.get_peer_relation_name()
-        hook_name.return_value = '{}-relation-departed'.format(relname)
+        hookenv.hook_name.return_value = '{}-relation-departed'.format(relname)
         remote_unit.return_value = 'unit/99'
         rollingrestart._peer_echo()
         peer_store.assert_called_once_with('rollingrestart_unit/99',
                                            None, relname)
 
-    @patch('charmhelpers.core.hookenv.hook_name')
-    @patch('charmhelpers.contrib.peerstorage.peer_store')
-    @patch('charmhelpers.contrib.peerstorage.peer_echo')
-    def test_peer_echo_misc_hook(self, peer_echo, peer_store, hook_name):
+    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_echo', autospec=True)
+    def test_peer_echo_misc_hook(self, peer_echo, peer_store):
         # _peer_echo() does nothing unless it is called for a
         # peer relation-changed or relation-departed hook.
-        hook_name.return_value = 'config-changed'
+        hookenv.hook_name.return_value = 'config-changed'
         rollingrestart._peer_echo()
         self.assertFalse(peer_store.called)
         self.assertFalse(peer_echo.called)
 
-    @patch('charmhelpers.core.hookenv.metadata')
-    def test_peer_relation_name(self, metadata):
+    @patch('charmhelpers.core.hookenv.metadata', autospec=True)
+    def test_get_peer_relation_name(self, metadata):
         metadata.return_value = dict(peers=dict(peer1=dict(interface='int1'),
                                                 peer2=dict(interface='int2')))
         # First peer relation in alphabetical order.
         peer_relname = rollingrestart.get_peer_relation_name()
         self.assertEqual(peer_relname, 'peer1')
+
+    @patch('rollingrestart.get_peer_relation_name', autospec=True)
+    def test_get_peer_relation_id(self, relname):
+        relname.return_value = 'foo'
+        self.assertEqual(rollingrestart.get_peer_relation_id(), 'foo:1')
+
+        relname.return_value = None
+        self.assertEqual(rollingrestart.get_peer_relation_id(), None)
 
     @patch('rollingrestart.get_peer_relation_name', autospec=True)
     def test_get_peers(self, get_peer_relation_name):

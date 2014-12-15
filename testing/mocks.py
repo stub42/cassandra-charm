@@ -85,7 +85,8 @@ def mock_charmhelpers(test_case):
     os.environ['JUJU_UNIT_NAME'] = 'service/1'
     hookenv.unit_private_ip.return_value = '10.20.0.1'
     hookenv.service_name.return_value = 'service'
-    hookenv.relation_ids.side_effect = lambda x: ['{}:1'.format(x)]
+    hookenv.relation_ids.side_effect = (
+        lambda x: ['{}:1'.format(x)] if x else [])
     hookenv.related_units.return_value = ('service/2', 'service/3')
 
     def mock_relation_for_unit(unit=None, rid=None):
