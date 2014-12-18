@@ -311,6 +311,11 @@ def stop_cassandra():
 
 
 def start_cassandra():
+    if hookenv.config().get('dead_node'):
+        hookenv.log('Cassandra node is decommissioned. Not starting.',
+                    WARNING)
+        # TODO: Test this code path
+        return
     if is_cassandra_running():
         return
 
@@ -332,13 +337,14 @@ def restart_and_remount_cassandra():
     assert not is_cassandra_running()
     if storage.needs_remount():
         if storage.mountpoint is None:
-            hookenv.log('External storage AND DATA gone. '
-                        'Reverting to original local storage. '
-                        'Data may be resurrected.', WARNING)
+            hookenv.log('External storage AND DATA gone. Node is dead.',
+                        WARNING)
+            hookenv.config()['dead_node'] = True
         else:
             storage.migrate('/var/lib/cassandra', 'cassandra')
             root = os.path.join(storage.mountpoint, 'cassandra')
             os.chmod(root, 0o750)
+
     db_dirs = get_all_database_directories()
     unpacked_db_dirs = (db_dirs['data_file_directories']
                         + [db_dirs['commitlog_directory']]
@@ -374,17 +380,17 @@ def is_cassandra_running():
             # existence. It raises an OSError if the process is not
             # running.
             os.kill(pid, 0)
-            hookenv.log("Cassandra PID {} is running".format(pid))
 
             if subprocess.call(["nodetool", "-h",
-                                hookenv.unit_private_ip(), "info"],
+                                hookenv.unit_private_ip(), "status"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
-                hookenv.log("Cassandra is responding")
+                hookenv.log(
+                    "Cassandra PID {} is running and responding".format(pid))
                 return True
             else:
-                hookenv.log("Cassandra is still not fully up at attempt {}"
-                            "".format(i), WARNING)
+                hookenv.log("Cassandra PID {} is running but not responding, "
+                            "attempt {}.".format(pid, i))
                 time.sleep(2 ** i)
 
         pid = get_pid_from_file(pid_file)

@@ -177,6 +177,8 @@ def configure_cassandra_yaml(servicename):
     cassandra_yaml['partitioner'] = (config['partitioner']
                                      or 'Murmur3Partitioner')
 
+    # cassandra_yaml['authenticator'] = 'PasswordAuthenticator'
+
     host.write_file(cassandra_yaml_path,
                     yaml.safe_dump(cassandra_yaml).encode('UTF-8'))
 
@@ -205,6 +207,32 @@ def configure_cassandra_env(servicename):
         else:
             env = regexp.sub(r'#\1=\2  # Juju service config', env)
     host.write_file(cassandra_env_path, env.encode('UTF-8'))
+
+
+# Unfortunately, we can't decommission a unit in its peer
+# relation-broken hook. Decomissioning a unit involves streaming its
+# data to the remaining nodes. If the entire service is being torn down,
+# this will almost certainly fail as the data ends up on fewer and fewer
+# units until the remaining units run out of disk space.
+#
+# def maybe_decommission(servicename):
+#     peer_relname = rollingrestart.get_peer_relation_name()
+#     if hookenv.hook_name() == '{}-relation-broken'.format(peer_relname):
+#         i = 1
+#         while True:
+#             hookenv.log('Unit leaving service. '
+#                         'Decommissioning Cassandra node. '
+#                         'Attempt {}.'.format(i), WARNING)
+#             rv = subprocess.call(['nodetool', 'decommission'],
+#                                  stderr=subprocess.DEVNULL)
+#             if rv == 0:
+#                 break
+#             assert rv == 2, 'Unknown return value from nodetool decommission'
+#             time.sleep(max(2 ** i, 120))
+#             i += 1
+#
+#         # Node is dead, so restart will fail.
+#         rollingrestart.cancel_restart()
 
 
 # If any of these config items are changed, Cassandra needs to be

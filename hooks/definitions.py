@@ -4,7 +4,6 @@ from charmhelpers.core.services import ServiceManager
 import actions
 import helpers
 import relations
-import rollingrestart
 
 
 def get_service_definitions():
