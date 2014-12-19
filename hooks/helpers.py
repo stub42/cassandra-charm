@@ -341,6 +341,10 @@ def restart_and_remount_cassandra():
                         WARNING)
             hookenv.config()['dead_node'] = True
         else:
+            # TODO: Once we are using password authentication, if the new
+            # mount already has a database we need to reset the
+            # cassandra superuser password and ensure all required users
+            # exist with their expected passwords.
             storage.migrate('/var/lib/cassandra', 'cassandra')
             root = os.path.join(storage.mountpoint, 'cassandra')
             os.chmod(root, 0o750)

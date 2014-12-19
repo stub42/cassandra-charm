@@ -17,15 +17,13 @@ def get_service_definitions():
     config = hookenv.config()
     return [
         dict(service=helpers.get_cassandra_service(),
-             ports=[config['cluster_port'],        # Cluster communication.
-                    config['cluster_ssl_port'],    # SSL cluster communication.
-                    config['thrift_client_port'],  # Thrift clients.
-                    config['native_client_port'],  # Native protocol clients.
-                    config['jmx_port']],           # JMX management.
+             ports=[config['cluster_port'],         # Cluster communication.
+                    config['cluster_ssl_port'],     # SSL cluster comms.
+                    config['thrift_client_port'],   # Thrift clients.
+                    config['native_client_port']],  # Native protocol clients.
              required_data=[relations.StorageRelation()],
              provided_data=[relations.StorageRelation(),
-                            relations.DatabaseRelation(),
-                            relations.JmxRelation()],
+                            relations.DatabaseRelation()],
              data_ready=[actions.preinstall,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,

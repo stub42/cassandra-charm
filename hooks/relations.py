@@ -12,15 +12,11 @@ class DatabaseRelation(RelationContext):
     interface = 'cassandra'
 
     def provide_data(self):
-        return dict(port=9160, thrift_port=9160, native_port=9042)
-
-
-class JmxRelation(RelationContext):
-    name = 'jmx'
-    interface = 'cassandra'
-
-    def provide_data(self):
-        return dict(port=7199)
+        # TODO: Authentication, or at least firewall
+        config = hookenv.config()
+        return dict(port=config['thrift_client_port'],
+                    thrift_port=config['thrift_client_port'],
+                    native_port=config['native_client_port'])
 
 
 # FOR CHARMHELPERS
