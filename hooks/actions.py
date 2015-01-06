@@ -42,7 +42,7 @@ def swapoff(servicename, fstab='/etc/fstab'):
     '''Turn off swapping in the container, permanently.'''
     # Turn off swap in the current session
     if helpers.is_lxc():
-        hookenv.log("In an LXC container. Not touching swap.")
+        hookenv.log("In an LXC. Not touching swap.")
         return
     else:
         try:
@@ -83,7 +83,7 @@ def add_implicit_package_signing_keys(servicename):
 def reset_sysctl(servicename):
     '''Configure sysctl settings for Cassandra'''
     if helpers.is_lxc():
-        hookenv.log("In an LXC container. Leaving sysctl unchanged.")
+        hookenv.log("In an LXC. Leaving sysctl unchanged.")
     else:
         cassandra_sysctl_file = os.path.join('/', 'etc', 'sysctl.d',
                                              '99-cassandra.conf')
