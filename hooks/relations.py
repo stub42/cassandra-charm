@@ -6,6 +6,8 @@ from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
+import helpers
+
 
 class DatabaseRelation(RelationContext):
     name = 'database'
@@ -17,6 +19,14 @@ class DatabaseRelation(RelationContext):
         return dict(port=config['thrift_client_port'],
                     thrift_port=config['thrift_client_port'],
                     native_port=config['native_client_port'])
+
+
+class ClusterRelation(RelationContext):
+    name = 'cluster'
+    interface = 'cassandra-cluster'
+
+    def provide_data(self):
+        return {'public-address': helpers.unit_public_ip()}
 
 
 # FOR CHARMHELPERS

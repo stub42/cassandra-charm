@@ -17,13 +17,12 @@ def get_service_definitions():
     config = hookenv.config()
     return [
         dict(service=helpers.get_cassandra_service(),
-             ports=[config['cluster_port'],         # Cluster communication.
-                    config['cluster_ssl_port'],     # SSL cluster comms.
-                    config['thrift_client_port'],   # Thrift clients.
+             ports=[config['thrift_client_port'],   # Thrift clients.
                     config['native_client_port']],  # Native protocol clients.
              required_data=[relations.StorageRelation()],
              provided_data=[relations.StorageRelation(),
-                            relations.DatabaseRelation()],
+                            relations.DatabaseRelation(),
+                            relations.ClusterRelation()],
              data_ready=[actions.preinstall,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
@@ -34,6 +33,7 @@ def get_service_definitions():
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env,
                          actions.reset_all_io_schedulers,
+                         actions.reset_auth_keyspace_replication_factor,
                          actions.maybe_schedule_restart],
              stop=[actions.stop_cassandra],
              start=[actions.start_cassandra])]

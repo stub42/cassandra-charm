@@ -18,6 +18,7 @@ from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
 
 import relations
+import rollingrestart
 
 
 # FOR CHARMHELPERS
@@ -400,6 +401,8 @@ def ensure_authentication():
             session.execute(query, (host.pwgen(),))
             break
         except cassandra.cluster.NoHostAvailable as x:
+            assert unit_public_ip() in x.errors, '{} not in {!r}'.format(
+                x.errors.keys())
             actual_exception = x.errors[unit_public_ip()]
             if isinstance(actual_exception, cassandra.AuthenticationFailed):
                 hookenv.log('Default admin password already changed')
@@ -491,7 +494,10 @@ def superuser_credentials():
 
     config = hookenv.config()
 
-    username = 'juju_{}'.format(re.subn('\W', '', hookenv.local_unit())[0])
+    username = 'juju_{}'.format(re.subn(r'\W', '', hookenv.local_unit())[0])
+    hookenv.log('Generated username {}'.format(username))
+    hookenv.log('juju_{}'.format(re.subn(r'[^\w_]', '',
+                                         hookenv.local_unit())[0]))
     password = host.pwgen()
 
     cqlshrc['authentication'] = dict(username=username, password=password)
@@ -504,6 +510,37 @@ def superuser_credentials():
     host.write_file(cqlshrc_path, ini.getvalue().encode('UTF-8'), perms=0o400)
 
     return username, password
+
+
+def get_node_addresses():
+    peer_relid = rollingrestart.get_peer_relation_id()
+    addresses = set(hookenv.relation_get('public-address', peer, peer_relid)
+                    for peer in rollingrestart.get_peers())
+    addresses.add(unit_public_ip())
+    addresses.discard(None)
+    return addresses
+
+
+@contextmanager
+def connect():
+    config = hookenv.config()
+    addresses = get_node_addresses()
+    un, pw = superuser_credentials()
+    auth_provider = cassandra.auth.PlainTextAuthProvider(username=un,
+                                                         password=pw)
+    timeout = time.time() + 30
+    while True:
+        cluster = cassandra.cluster.Cluster(list(addresses),
+                                            port=config['native_client_port'],
+                                            auth_provider=auth_provider)
+        try:
+            yield cluster.connect()
+            break
+        except cassandra.cluster.NoHostAvailable:
+            if time.time() > timeout:
+                raise
+        finally:
+            cluster.shutdown()
 
 
 def configure_cassandra_yaml(overrides={}):

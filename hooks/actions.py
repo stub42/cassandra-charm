@@ -1,10 +1,14 @@
 from contextlib import closing
 import errno
 import glob
+import json
 import os.path
 import re
 import shlex
 import subprocess
+
+import cassandra
+import cassandra.query
 
 from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
@@ -282,3 +286,46 @@ def start_cassandra(servicename):
 
 def reset_all_io_schedulers(servicename):
     helpers.reset_all_io_schedulers()
+
+
+def reset_auth_keyspace_replication_factor(servicename):
+    # Cassandra requires you to manually set the replication factor of
+    # the system_auth keyspace, to ensure availability and redundancy.
+    # The charm can't control how many or which units might get dropped,
+    # so for authentication to work we need to set the replication factor
+    # on the system_auth keyspace so that every node contains all of the
+    # data. Authentication information will remain available, even in the
+    # face of all the other nodes having gone away due to an in progress
+    # 'destroy-service'.
+    if not helpers.is_cassandra_running():
+        # If Cassandra is not running locally, skip. At least one unit
+        # will have a running Cassandra when its cluster-relation-joined
+        # hook is invoked, and that is the important place for this to
+        # happen.
+        return
+    num_nodes = len(rollingrestart.get_peers()) + 1
+    with helpers.connect() as session:
+        r = session.execute(cassandra.query.SimpleStatement('''
+            SELECT strategy_options FROM system.schema_keyspaces
+            WHERE keyspace_name='system_auth'
+            ''', cassandra.ConsistencyLevel.QUORUM))
+        if r:
+            strategy_options = json.loads(r[0][0])
+            rf = int(strategy_options['replication_factor'])
+        else:
+            rf = 1
+        if rf == num_nodes:
+            hookenv.log('system_auth rf={}'.format(num_nodes))
+        else:
+            hookenv.log('Updating system_auth rf={}'.format(num_nodes))
+            session.execute(cassandra.query.SimpleStatement('''
+                ALTER KEYSPACE system_auth WITH REPLICATION =
+                    {'class': 'SimpleStrategy', 'replication_factor': %s}
+                ''', cassandra.ConsistencyLevel.QUORUM), (num_nodes,))
+
+    # If the number of nodes, and thus the system_auth rf, we need to
+    # repair the system_auth keyspace.
+    config = hookenv.config()
+    config['num_nodes'] = num_nodes
+    if config.changed('num_nodes'):
+        subprocess.check_call(['nodetool', 'repair', 'system_auth'])
