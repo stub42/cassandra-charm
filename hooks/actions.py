@@ -6,8 +6,6 @@ import re
 import shlex
 import subprocess
 
-import yaml
-
 from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
@@ -146,41 +144,7 @@ def ensure_cassandra_package_status(servicename):
 
 
 def configure_cassandra_yaml(servicename):
-    cassandra_yaml_path = helpers.get_cassandra_yaml_file()
-    config = hookenv.config()
-
-    helpers.maybe_backup(cassandra_yaml_path)  # Its comments may be useful.
-
-    with open(cassandra_yaml_path, 'rb') as f:
-        cassandra_yaml = yaml.safe_load(f)
-
-    cassandra_yaml['cluster_name'] = (config['cluster_name']
-                                      or hookenv.service_name())
-
-    seeds = ','.join(helpers.get_seeds())  # Don't include whitespace!
-    cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
-
-    cassandra_yaml['num_tokens'] = int(config['num_tokens'])
-
-    cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
-    cassandra_yaml['rpc_address'] = hookenv.unit_private_ip()
-
-    cassandra_yaml['native_transport_port'] = config['native_client_port']
-    cassandra_yaml['rpc_port'] = config['thrift_client_port']
-
-    cassandra_yaml['storage_port'] = config['cluster_port']
-    cassandra_yaml['ssl_storage_port'] = config['cluster_ssl_port']
-
-    dirs = helpers.get_all_database_directories()
-    cassandra_yaml.update(dirs)
-
-    cassandra_yaml['partitioner'] = (config['partitioner']
-                                     or 'Murmur3Partitioner')
-
-    # cassandra_yaml['authenticator'] = 'PasswordAuthenticator'
-
-    host.write_file(cassandra_yaml_path,
-                    yaml.safe_dump(cassandra_yaml).encode('UTF-8'))
+    helpers.configure_cassandra_yaml()
 
 
 def configure_cassandra_env(servicename):
