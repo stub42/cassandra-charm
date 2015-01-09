@@ -72,7 +72,8 @@ packages: .stamp-packages
 	# Install bootstrap debs, and Python packages not available
 	# via pip.
 	sudo apt-get install -y \
-	    python3 python3-pip python3-apt python-virtualenv charm-tools
+	    python3 python3-pip python3-apt python3-dev python-virtualenv \
+	    charm-tools build-essential libev4 libev-dev libffi-dev
 	touch .stamp-packages
 
 venv3: packages .stamp-venv3
@@ -86,11 +87,9 @@ venv3: packages .stamp-venv3
 	    > ${VENV3}/lib/python3.4/site-packages/tests.pth
 
 	# Pip install packages.
-	pip install -q amulet
-	pip install -q flake8
+	pip install -q amulet flake8 bcrypt cassandra-driver
 	pip install -qI nose
 	pip install -q --upgrade coverage
-	pip install -q cassandra-driver
 
 	# Create a link for test shebang lines.
 	(cd tests && ln -s ${VENV3} .venv3)
