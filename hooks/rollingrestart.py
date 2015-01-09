@@ -79,7 +79,7 @@ def _enqueue(flag):
                          {_peerstorage_key(): value})
 
 
-def rolling_restart(restart_hook):
+def rolling_restart(restart_hooks):
     '''To ensure availability, only restart one unit at a time.
 
     Returns:
@@ -87,7 +87,7 @@ def rolling_restart(restart_hook):
         True if no restart request has been queued.
         False if we are still waiting on a queued restart.
 
-    restart_hook takes no parameters, and its return value is ignored.
+    restart_hooks is a list of callables that takes no parameters.
 
     For best results, call rolling_restart() unconditionally at the
     beginning and end of every hook.
@@ -103,7 +103,8 @@ def rolling_restart(restart_hook):
         return True
 
     def _restart():
-        restart_hook()
+        for restart_hook in restart_hooks:
+            restart_hook()
         hookenv.log('Restart complete.')
         cancel_restart()
         hookenv.log('Restart queue entries purged.')
@@ -198,12 +199,17 @@ def utcnow_str():
     return utcnow().strftime('%Y-%m-%d %H:%M:%S.%fZ')
 
 
-# Unneeded
-# class RollingRestartPeerStorageRelation(RelationContext):
-#     name = None
-#     interface = None
-#     def __init__(self):
-#         self.name = get_peer_relation_name()
-#         self.interface = get_peer_relation_interface()
-#         _peer_echo()
-#         super(RollingRestartPeerStorageRelation, self).__init__()
+def make_service(restart_hooks):
+    """Create a service dictionary for rolling restart.
+
+    This needs to be a separate service, rather than a data_ready or
+    provided_data item on an existing service, because the rolling_restart()
+    function must be called for all hooks to avoid deadlocking the system.
+    It would only be safe to list rolling_restart() as a data_ready item in
+    a service with no requirements.
+    """
+    def data_ready(servicename):
+        rolling_restart(restart_hooks)
+
+    return dict(service='rollingrestart', data_ready=data_ready,
+                stop=[], start=[])

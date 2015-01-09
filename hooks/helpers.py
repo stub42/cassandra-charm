@@ -90,6 +90,8 @@ def ensure_database_directory(config_path):
 
     Returns the absolute path.
     '''
+    # Guard against changing perms on a running db. Although probably
+    # harmless, it causes shutil.chown() to fail.
     assert not is_cassandra_running()
     absdir = get_database_directory(config_path)
 
@@ -320,13 +322,13 @@ def get_cassandra_packages():
 def stop_cassandra():
     if is_cassandra_running():
         host.service_stop(get_cassandra_service())
+    assert not is_cassandra_running()
 
 
 def start_cassandra():
     if hookenv.config().get('dead_node'):
         hookenv.log('Cassandra node is decommissioned. Not starting.',
                     WARNING)
-        # TODO: Test this code path
         return
     if is_cassandra_running():
         return
@@ -343,10 +345,10 @@ def start_cassandra():
     raise SystemExit(1)
 
 
-def restart_and_remount_cassandra():
+def remount_cassandra():
+    '''If a new mountpoint is ready, migrate data across to it.'''
+    assert not is_cassandra_running()  # Guard against data loss.
     storage = relations.StorageRelation()
-    stop_cassandra()
-    assert not is_cassandra_running()
     if storage.needs_remount():
         if storage.mountpoint is None:
             hookenv.log('External storage AND DATA gone. Node is dead.',
@@ -357,18 +359,15 @@ def restart_and_remount_cassandra():
             root = os.path.join(storage.mountpoint, 'cassandra')
             os.chmod(root, 0o750)
 
+
+def ensure_database_directories():
+    '''Ensure that directories Cassandra expects to store its data in exist.'''
     db_dirs = get_all_database_directories()
     unpacked_db_dirs = (db_dirs['data_file_directories']
                         + [db_dirs['commitlog_directory']]
                         + [db_dirs['saved_caches_directory']])
     for db_dir in unpacked_db_dirs:
         ensure_database_directory(db_dir)
-    start_cassandra()
-
-    # Ensure that the service's superuser account works, and the default
-    # 'cassandra' user's password has been reset. We do this here as we
-    # may have just mounted a database containing unknown passwords.
-    ensure_authentication()
 
 
 def ensure_authentication():
@@ -396,10 +395,12 @@ def ensure_authentication():
 
 
 def restart_and_reset_superuser_password():
-    # We need to create a superuser account for this unit, but we don't
-    # know any superuser passwords. We restart the node using the
-    # AllowAllAuthenticator and insert our user directly into the
-    # system_auth keyspace. This is an undocumented mechanism.
+    '''Reset the unit's superuser account.
+
+    As there may be no known superuser credentials to use, we restart
+    the node using the AllowAllAuthenticator and insert our user
+    directly into the system_auth keyspace.
+    '''
     username, password = superuser_credentials()
     hookenv.log('Creating unit superuser {}'.format(username))
     stop_cassandra()
@@ -512,9 +513,9 @@ def connect(username=None, password=None):
             yield cluster.connect()
             break
         except cassandra.cluster.NoHostAvailable as x:
-            assert x.errors.keys() == [address]
-            actual_exception = x.errors[address]
-            if isinstance(actual_exception, cassandra.AuthenticationFailed):
+            if address in x.errors:
+                x = x.errors[address]
+            if isinstance(x, cassandra.AuthenticationFailed):
                 raise actual_exception
             if time.time() > timeout:
                 raise actual_exception

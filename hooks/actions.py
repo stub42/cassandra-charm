@@ -280,6 +280,10 @@ def start_cassandra(servicename):
     helpers.start_cassandra()
 
 
+def ensure_authentication(servicename):
+    helpers.ensure_authentication()
+
+
 def reset_all_io_schedulers(servicename):
     helpers.reset_all_io_schedulers()
 

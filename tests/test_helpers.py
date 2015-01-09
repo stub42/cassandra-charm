@@ -401,12 +401,28 @@ class TestHelpers(TestCaseBase):
     def test_stop_cassandra(self, is_cassandra_running,
                             service_stop, get_service):
         get_service.return_value = sentinel.service_name
+        is_cassandra_running.side_effect = [True, False]
+        helpers.stop_cassandra()
+        service_stop.assert_called_once_with(sentinel.service_name)
+
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_stop')
+    @patch('helpers.is_cassandra_running')
+    def test_stop_cassandra_noop(self, is_cassandra_running,
+                                 service_stop, get_service):
+        get_service.return_value = sentinel.service_name
         is_cassandra_running.return_value = False
         helpers.stop_cassandra()
         self.assertFalse(service_stop.called)
 
-        is_cassandra_running.return_value = True
-        helpers.stop_cassandra()
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_stop')
+    @patch('helpers.is_cassandra_running')
+    def test_stop_cassandra_failure(self, is_cassandra_running,
+                                    service_stop, get_service):
+        get_service.return_value = sentinel.service_name
+        is_cassandra_running.side_effect = [True, True]
+        self.assertRaises(AssertionError, helpers.stop_cassandra)
         service_stop.assert_called_once_with(sentinel.service_name)
 
     @patch('time.sleep')
@@ -424,73 +440,41 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
-    @patch('helpers.ensure_authentication')
-    @patch('helpers.ensure_database_directory')
-    @patch('helpers.is_cassandra_running')
-    @patch('helpers.start_cassandra')
-    @patch('helpers.stop_cassandra')
-    @patch('relations.StorageRelation')
-    def test_restart_and_remount_cassandra_simple(self, storage, stop, start,
-                                                  is_running, ensure_directory,
-                                                  ensure_authentication):
-        storage().needs_remount.return_value = False
-        storage().mountpoint = None
-        is_running.return_value = False
-
-        helpers.restart_and_remount_cassandra()
-        stop.assert_called_once_with()
-        start.assert_called_once_with()
-        ensure_directory.assert_has_calls([
-            call('/var/lib/cassandra/data'),
-            call('/var/lib/cassandra/commitlog'),
-            call('/var/lib/cassandra/saved_caches')], any_order=True)
-        ensure_authentication.assert_called_once_with()
-
     @patch('os.chmod')
-    @patch('helpers.ensure_authentication')
-    @patch('helpers.ensure_database_directory')
     @patch('helpers.is_cassandra_running')
-    @patch('helpers.start_cassandra')
-    @patch('helpers.stop_cassandra')
     @patch('relations.StorageRelation')
-    def test_restart_and_remount_cassandra_mnt(self, storage, stop, start,
-                                               is_running, ensure_directory,
-                                               ensure_authentication, chmod):
+    def test_remount_cassandra(self, storage, is_running, chmod):
         storage().needs_remount.return_value = True
         storage().mountpoint = '/srv/foo'
         is_running.return_value = False
         hookenv.config()['data_file_directories'] = '/srv/ext/data1 data2'
 
-        helpers.restart_and_remount_cassandra()
-        stop.assert_called_once_with()
+        helpers.remount_cassandra()
         storage().migrate.assert_called_once_with('/var/lib/cassandra',
                                                   'cassandra')
         chmod.assert_called_once_with('/srv/foo/cassandra', 0o750)
-        start.assert_called_once_with()
-        ensure_directory.assert_has_calls([
-            call('/srv/ext/data1'),
-            call('/srv/foo/cassandra/data2'),
-            call('/srv/foo/cassandra/commitlog'),
-            call('/srv/foo/cassandra/saved_caches')], any_order=True)
-        ensure_authentication.assert_called_once_with()
 
-    @patch('helpers.ensure_authentication')
-    @patch('helpers.ensure_database_directory')
+    @patch('os.chmod')
     @patch('helpers.is_cassandra_running')
-    @patch('helpers.start_cassandra')
-    @patch('helpers.stop_cassandra')
     @patch('relations.StorageRelation')
-    def test_restart_and_remount_cassandra_unmnt(self, storage, stop, start,
-                                                 is_running, ensure_directory,
-                                                 ensure_authentication):
+    def test_remount_cassandra_noop(self, storage, is_running, chmod):
+        storage().needs_remount.return_value = False
+        storage().mountpoint = None
+        is_running.return_value = False
+
+        helpers.remount_cassandra()
+        self.assertFalse(storage().migrate.called)
+        self.assertFalse(chmod.called)
+
+    @patch('helpers.is_cassandra_running')
+    @patch('relations.StorageRelation')
+    def test_remount_cassandra_unmnt(self, storage, is_running):
         storage().needs_remount.return_value = True
         storage().mountpoint = None  # Reverting to local disk.
         is_running.return_value = False
         hookenv.config()['data_file_directories'] = '/srv/ext/data1 data2'
 
-        helpers.restart_and_remount_cassandra()
-        stop.assert_called_once_with()
-        start.assert_called_once_with()
+        helpers.remount_cassandra()
 
         # We cannot migrate data back to local disk, as by the time our
         # hooks are called the data is gone.
@@ -501,12 +485,23 @@ class TestHelpers(TestCaseBase):
         # disk).
         hookenv.log.assert_any_call(ANY, hookenv.WARNING)
 
-        ensure_directory.assert_has_calls([
-            call('/srv/ext/data1'),
-            call('/var/lib/cassandra/data2'),
-            call('/var/lib/cassandra/commitlog'),
-            call('/var/lib/cassandra/saved_caches')], any_order=True)
-        ensure_authentication.assert_called_once_with()
+        # The unit is flagged as dead.
+        self.assertTrue(hookenv.config().get('dead_node'))
+
+    @patch('helpers.ensure_database_directory')
+    @patch('helpers.get_all_database_directories')
+    def test_ensure_database_directories(self, get_all_dirs, ensure_dir):
+        get_all_dirs.return_value = dict(
+            data_file_directories=[sentinel.data_file_dir_1,
+                                   sentinel.data_file_dir_2],
+            commitlog_directory=sentinel.commitlog_dir,
+            saved_caches_directory=sentinel.saved_caches_dir)
+        helpers.ensure_database_directories()
+        ensure_dir.assert_has_calls([
+            call(sentinel.data_file_dir_1),
+            call(sentinel.data_file_dir_2),
+            call(sentinel.commitlog_dir),
+            call(sentinel.saved_caches_dir)], any_order=True)
 
     def test_get_pid_from_file(self):
         with tempfile.NamedTemporaryFile('w') as pid_file:

@@ -26,7 +26,7 @@ class ClusterRelation(RelationContext):
     interface = 'cassandra-cluster'
 
     def provide_data(self):
-        return {'public-address': helpers.unit_public_ip()}
+        return {'public-address': hookenv.unit_public_ip()}
 
 
 # FOR CHARMHELPERS

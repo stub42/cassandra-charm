@@ -205,7 +205,7 @@ class TestRollingRestart(TestCaseBase):
         restart_hook = MagicMock()
         # rolling_restart returns True if there is no outstanding
         # request, without restarting anything.
-        self.assertTrue(rollingrestart.rolling_restart(restart_hook))
+        self.assertTrue(rollingrestart.rolling_restart([restart_hook]))
         self.assertFalse(restart_hook.called)
 
         # It does however remove the unit from the queue using
@@ -225,7 +225,7 @@ class TestRollingRestart(TestCaseBase):
         # immediately. We don't put things in the queue, because without
         # peers there is no peerstorage and no queue, and nobody to
         # coordinate with in any case.
-        self.assertTrue(rollingrestart.rolling_restart(restart_hook))
+        self.assertTrue(rollingrestart.rolling_restart([restart_hook]))
         restart_hook.assert_called_once_with()
 
         # We must always call this, even if there are currently no
@@ -251,7 +251,7 @@ class TestRollingRestart(TestCaseBase):
         # other units attempting to restart at the same time (this is
         # common, as all units in a service will tend to want to restart
         # at the same time).
-        self.assertFalse(rollingrestart.rolling_restart(restart_hook))
+        self.assertFalse(rollingrestart.rolling_restart([restart_hook]))
         enqueue.assert_called_once_with(True)
         self.assertFalse(restart_hook.called)
         peer_echo.assert_called_once_with()  # peer_echo helper called.
@@ -268,7 +268,7 @@ class TestRollingRestart(TestCaseBase):
         get_peers.return_value = ['unit/1', 'unit/2']
         get_queue.return_value = ['unit/1']
 
-        self.assertFalse(rollingrestart.rolling_restart(restart_hook))
+        self.assertFalse(rollingrestart.rolling_restart([restart_hook]))
         enqueue.assert_called_once_with(True)
         self.assertFalse(restart_hook.called)
         peer_echo.assert_called_once_with()  # peer_echo helper called.
@@ -284,7 +284,7 @@ class TestRollingRestart(TestCaseBase):
         get_peers.return_value = ['unit/1', 'unit/2']
         get_queue.return_value = ['unit/1', hookenv.local_unit()]
 
-        self.assertFalse(rollingrestart.rolling_restart(restart_hook))
+        self.assertFalse(rollingrestart.rolling_restart([restart_hook]))
         self.assertFalse(restart_hook.called)
         peer_echo.assert_called_once_with()  # peer_echo helper called.
 
@@ -296,13 +296,14 @@ class TestRollingRestart(TestCaseBase):
     def test_rolling_restart_first_in_queue(self, is_waiting, cancel_restart,
                                             get_peers, get_queue, peer_echo):
         is_waiting.return_value = True
-        restart_hook = MagicMock()
+        restart_hooks = [MagicMock(), MagicMock()]
         get_peers.return_value = ['unit/1', 'unit/2']
         get_queue.return_value = [hookenv.local_unit(), 'unit/1']
 
-        self.assertTrue(rollingrestart.rolling_restart(restart_hook))
+        self.assertTrue(rollingrestart.rolling_restart(restart_hooks))
         cancel_restart.assert_called_once_with()
-        restart_hook.assert_called_once_with()
+        restart_hooks[0].assert_called_once_with()
+        restart_hooks[1].assert_called_once_with()
         peer_echo.assert_called_once_with()  # peer_echo helper called.
 
     @patch('rollingrestart._peer_echo')
@@ -322,7 +323,7 @@ class TestRollingRestart(TestCaseBase):
         # handle it. This is how you communicate a failed restart to
         # your charm.
         self.assertRaises(RuntimeError,
-                          rollingrestart.rolling_restart, restart_hook)
+                          rollingrestart.rolling_restart, [restart_hook])
         restart_hook.assert_called_once_with()
         peer_echo.assert_called_once_with()  # peer_echo helper called.
 
@@ -426,40 +427,17 @@ class TestRollingRestart(TestCaseBase):
         self.assertLess(rollingrestart.utcnow_str(),
                         rollingrestart.utcnow_str())
 
-    # @patch('charmhelpers.contrib.peerstorage.peer_store')
-    # @patch('charmhelpers.contrib.peerstorage.peer_retrieve')
-    # def test_rolling_restart_stuck_in_queue(self, peer_retrieve, peer_store):
-    #     restart = MagicMock()
-
-    #     # If the unit is already in the restart queue, and there are
-    #     # other units before it, it must wait.
-    #     first, second = rollingrestart.utcnow(), rollingrestart.utcnow()
-    #     peer_retrieve.return_value = dict(foo='ignored',
-    #                                       restart_needed_service_1=second,
-    #                                       restart_needed_service_2=first)
-    #     self.assertFalse(rollingrestart.rolling_restart(restart))
-
-    #     # Restart did not happen. We are stuck in the queue.
-    #     self.assertFalse(restart.called)
-
-    #     # The queue was looked up, returning nothing.
-    #     peer_retrieve.assert_called_once_with('-', 'cluster')
-
-    #     # No change was made to the queue, since we are already in it.
-    #     self.assertFalse(peer_store.called)
-
-    # @patch('charmhelpers.contrib.peerstorage.peer_store')
-    # @patch('charmhelpers.contrib.peerstorage.peer_retrieve')
-    # def test_rolling_restart_next_in_queue(self, peer_retrieve, peer_store):
-    #     restart = MagicMock()
-    #     first, second = rollingrestart.utcnow(), rollingrestart.utcnow()
-    #     peer_retrieve.return_value = dict(restart_needed_service_1=first,
-    #                                       restart_needed_service_2=second)
-    #     self.assertTrue(rollingrestart.rolling_restart(restart))
-    #     self.assertTrue(restart.called)
-    #     peer_retrieve.assert_called_once_with('-', 'cluster')
-    #     peer_store.assert_called_once_with('restart_needed_service_1',
-    #                                        None, 'cluster')
+    @patch('rollingrestart.rolling_restart')
+    def test_make_service(self, rolling_restart):
+        service = rollingrestart.make_service(sentinel.restart_hooks)
+        self.assertDictEqual(service,
+                             dict(service='rollingrestart',
+                                  data_ready=ANY,
+                                  stop=[], start=[]))
+        # Call the service's data ready, and the rolling restart is
+        # triggered.
+        service['data_ready']('')
+        rolling_restart.assert_called_once_with(sentinel.restart_hooks)
 
 
 class TestUtc(unittest.TestCase):

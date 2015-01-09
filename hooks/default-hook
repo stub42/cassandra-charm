@@ -36,30 +36,8 @@ def default_hook():
     import helpers
     import rollingrestart
 
-    # We cannot do everything from within the ServiceManager.manage() call.
-    # This means we need to disable implicit saves on hookenv.config(),
-    # and explicitly save at the end of our hook. If we don't do this,
-    # the implicit save at the end of ServiceManager.manage() will
-    # destroy the config.changed() information we need later, and any
-    # config changes made after ServiceManager.manage() will not
-    # persist.
-    config = hookenv.config()
-    config.implicit_save = False
-
     sm = definitions.get_service_manager()
     sm.manage()
-
-    # This cannot be a data_ready item on the service, as we *must* call
-    # it or risk deadlocking our system; data_ready items will not be
-    # called if the service requirements are not met. It also cannot be a
-    # separate service, as per Bug #1401428 services are not called in a
-    # defined order and we need to ensure this is called at the end of our
-    # hook; restarts need to happen at the end of the hook if there are no
-    # peer units.
-    rollingrestart.rolling_restart(helpers.restart_and_remount_cassandra)
-
-    # Explicit config save, since we turned off implicit saves earlier.
-    config.save()
 
 
 if __name__ == '__main__':
