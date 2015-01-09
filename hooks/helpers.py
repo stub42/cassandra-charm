@@ -22,6 +22,9 @@ import relations
 import rollingrestart
 
 
+RESTART_TIMEOUT = 300
+
+
 # FOR CHARMHELPERS
 @contextmanager
 def autostart_disabled(services=None, _policy_rc='/usr/sbin/policy-rc.d'):
@@ -331,7 +334,7 @@ def start_cassandra():
     host.service_start(get_cassandra_service())
 
     # Wait for Cassandra to actually start, or abort.
-    timeout = time.time() + 300
+    timeout = time.time() + RESTART_TIMEOUT
     while time.time() < timeout:
         if is_cassandra_running():
             return
@@ -496,7 +499,12 @@ def connect(username=None, password=None):
 
     auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
                                                          password=password)
+
+    # If Cassandra has just been restarted, we might need to wait a
+    # while until the initial gossiping has finished and connections
+    # start being accepted.
     timeout = time.time() + 30
+
     while True:
         cluster = cassandra.cluster.Cluster([address], port=port,
                                             auth_provider=auth_provider)
