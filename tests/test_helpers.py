@@ -10,6 +10,7 @@ from textwrap import dedent
 import unittest
 from unittest.mock import ANY, call, patch, sentinel
 
+from cassandra import ConsistencyLevel
 import yaml
 
 from charmhelpers.core import hookenv, host
@@ -713,6 +714,26 @@ class TestHelpers(TestCaseBase):
 
             self.assertEqual(yaml.safe_load(new_config)['partitioner'],
                              'overridden_partitioner')
+
+    @patch('helpers.ensure_superuser_credentials')
+    @patch('helpers.reset_default_password')
+    def test_ensure_authentication(self, reset_default_password,
+                                   ensure_superuser_credentials):
+        helpers.ensure_authentication()
+        reset_default_password.assert_called_once_with()
+        ensure_superuser_credentials.assert_called_once_with()
+
+    @patch('charmhelpers.core.host.pwgen')
+    @patch('helpers.query')
+    @patch('helpers.connect')
+    def test_reset_default_password(self, connect, query, pwgen):
+        pwgen.return_value = sentinel.password
+        helpers.reset_default_password()
+        connect.assert_called_once_with('cassandra', 'cassandra')
+        with connect() as session:
+            query.assert_called_once_with(
+                session, 'ALTER USER cassandra WITH PASSWORD %s',
+                ConsistencyLevel.ALL, (sentinel.password,))
 
 
 class TestIsLxc(unittest.TestCase):

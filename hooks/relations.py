@@ -6,8 +6,6 @@ from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
-import helpers
-
 
 class DatabaseRelation(RelationContext):
     name = 'database'

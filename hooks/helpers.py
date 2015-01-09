@@ -7,11 +7,14 @@ import os.path
 import re
 import shutil
 import subprocess
+from textwrap import dedent
 import time
 
 import bcrypt
-import cassandra.cluster
+from cassandra import ConsistencyLevel
 import cassandra.auth
+import cassandra.cluster
+import cassandra.query
 import yaml
 
 from charmhelpers.core import hookenv, host
@@ -371,6 +374,11 @@ def ensure_database_directories():
 
 
 def ensure_authentication():
+    reset_default_password()
+    ensure_superuser_credentials()
+
+
+def reset_default_password():
     # If we can connect using the default superuser password
     # 'cassandra', change it to something random. We do the connection
     # test in a loop, as a newly restarted server may not be accepting
@@ -378,48 +386,85 @@ def ensure_authentication():
     try:
         with connect('cassandra', 'cassandra') as session:
             hookenv.log('Changing default admin password')
-            query = cassandra.query.SimpleStatement(
-                'ALTER USER cassandra WITH PASSWORD %s',
-                cassandra.ConsistencyLevel.ALL)
-            session.execute(query, (host.pwgen(),))
+            query(session, 'ALTER USER cassandra WITH PASSWORD %s',
+                  ConsistencyLevel.ALL, (host.pwgen(),))
     except cassandra.AuthenticationFailed:
         hookenv.log('Default admin password already changed')
 
-    # If we cannot connect using the units's superuser, create this
-    # user with a known password.
-    try:
-        with connect() as session:
-            hookenv.log('Service superuser account already setup')
-    except cassandra.AuthenticationFailed:
-        restart_and_reset_superuser_password()
+
+@contextmanager
+def connect(username=None, password=None):
+    cassandra_yaml = read_cassandra_yaml()
+    address = cassandra_yaml['rpc_address']
+    port = cassandra_yaml['native_transport_port']
+
+    if username is None or password is None:
+        username, password = superuser_credentials()
+
+    auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
+                                                         password=password)
+
+    # If Cassandra has just been restarted, we might need to wait a
+    # while until the initial gossiping has finished and connections
+    # start being accepted.
+    timeout = time.time() + 30
+
+    while True:
+        cluster = cassandra.cluster.Cluster([address], port=port,
+                                            auth_provider=auth_provider)
+        try:
+            yield cluster.connect()
+            break
+        except cassandra.cluster.NoHostAvailable as x:
+            if address in x.errors:
+                actual = x.errors[address]
+                if isinstance(actual, cassandra.AuthenticationFailed):
+                    raise actual
+            if time.time() > timeout:
+                raise
+        finally:
+            cluster.shutdown()
 
 
-def restart_and_reset_superuser_password():
-    '''Reset the unit's superuser account.
+def query(session, statement, consistency_level, args=None):
+    q = cassandra.query.SimpleStatement(statement,
+                                        consistency_level=consistency_level)
+    return session.execute(q, args)
+
+
+def ensure_superuser_credentials():
+    '''Reset the unit's superuser account if necessary.
 
     As there may be no known superuser credentials to use, we restart
     the node using the AllowAllAuthenticator and insert our user
     directly into the system_auth keyspace.
     '''
     username, password = superuser_credentials()
+    try:
+        with connect(username, password):
+            hookenv.log('Unit superuser account {} already setup'.format(
+                username))
+            return
+    except cassandra.AuthenticationFailed:
+        pass
+
     hookenv.log('Creating unit superuser {}'.format(username))
     stop_cassandra()
     configure_cassandra_yaml(dict(authenticator='AllowAllAuthenticator',
                                   rpc_address='127.0.0.1'))
     start_cassandra()
-
     with connect() as session:
         pwhash = bcrypt.hashpw(password, bcrypt.gensalt())  # Cassandra 2.1
-        query = cassandra.query.SimpleStatement('''
+        statement = dedent('''\
             INSERT INTO system_auth.users (name, super)
             VALUES (%s, TRUE)
-            ''', cassandra.ConsistencyLevel.ALL)
-        session.execute(query, (username,))
-        query = cassandra.query.SimpleStatement('''
+            ''')
+        query(session, statement, ConsistencyLevel.ALL, (username,))
+        statement = dedent('''\
             INSERT INTO system_auth.credentials (username, salted_hash)
             VALUES (%s, %s)
-            ''', cassandra.ConsistencyLevel.ALL)
-        session.execute(query, (username, pwhash))
+            ''')
+        query(session, statement, ConsistencyLevel.ALL, (username, pwhash))
     stop_cassandra()
     configure_cassandra_yaml()
     start_cassandra()
@@ -487,40 +532,6 @@ def get_node_private_addresses():
 
 def num_nodes():
     return len(rollingrestart.get_peers()) + 1
-
-
-@contextmanager
-def connect(username=None, password=None):
-    cassandra_yaml = read_cassandra_yaml()
-    address = cassandra_yaml['rpc_address']
-    port = cassandra_yaml['native_transport_port']
-
-    if username is None or password is None:
-        username, password = superuser_credentials()
-
-    auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
-                                                         password=password)
-
-    # If Cassandra has just been restarted, we might need to wait a
-    # while until the initial gossiping has finished and connections
-    # start being accepted.
-    timeout = time.time() + 30
-
-    while True:
-        cluster = cassandra.cluster.Cluster([address], port=port,
-                                            auth_provider=auth_provider)
-        try:
-            yield cluster.connect()
-            break
-        except cassandra.cluster.NoHostAvailable as x:
-            if address in x.errors:
-                x = x.errors[address]
-            if isinstance(x, cassandra.AuthenticationFailed):
-                raise actual_exception
-            if time.time() > timeout:
-                raise actual_exception
-        finally:
-            cluster.shutdown()
 
 
 def read_cassandra_yaml():
@@ -649,10 +660,11 @@ def reset_all_io_schedulers():
 
 def get_auth_keyspace_replication_factor():
     with connect() as session:
-        r = session.execute(cassandra.query.SimpleStatement('''
+        statement = dedent('''\
             SELECT strategy_options FROM system.schema_keyspaces
             WHERE keyspace_name='system_auth'
-            ''', cassandra.ConsistencyLevel.QUORUM))
+            ''')
+        r = query(session, statement, ConsistencyLevel.QUORUM)
         if r:
             strategy_options = json.loads(r[0][0])
             return int(strategy_options['replication_factor'])
@@ -663,7 +675,8 @@ def get_auth_keyspace_replication_factor():
 def set_auth_keyspace_replication_factor(rf):
     hookenv.log('Updating system_auth rf={}'.format(rf))
     with connect() as session:
-        session.execute(cassandra.query.SimpleStatement('''
+        statement = dedent('''\
             ALTER KEYSPACE system_auth WITH REPLICATION =
                 {'class': 'SimpleStrategy', 'replication_factor': %s}
-            ''', cassandra.ConsistencyLevel.QUORUM), (rf,))
+            ''')
+        query(session, statement, ConsistencyLevel.QUORUM, (rf,))
