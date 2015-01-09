@@ -71,6 +71,7 @@ def mock_charmhelpers(test_case):
         'charmhelpers.core.hookenv.relation_type',
         'charmhelpers.core.hookenv.service_name',
         'charmhelpers.core.hookenv.unit_private_ip',
+        'charmhelpers.core.hookenv.unit_public_ip',
         'charmhelpers.core.host.log',
         'charmhelpers.fetch.filter_installed_packages',
         'os.chown', 'os.fchown',
@@ -84,6 +85,7 @@ def mock_charmhelpers(test_case):
 
     os.environ['JUJU_UNIT_NAME'] = 'service/1'
     hookenv.unit_private_ip.return_value = '10.20.0.1'
+    hookenv.unit_public_ip.return_value = '10.30.0.1'
     hookenv.service_name.return_value = 'service'
     hookenv.relation_ids.side_effect = (
         lambda x: ['{}:1'.format(x)] if x else [])

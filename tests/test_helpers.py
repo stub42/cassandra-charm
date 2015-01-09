@@ -2,16 +2,23 @@
 
 from collections import namedtuple
 import errno
+import functools
 import os.path
 import subprocess
 import tempfile
+from textwrap import dedent
 import unittest
 from unittest.mock import ANY, call, patch, sentinel
+
+import yaml
 
 from charmhelpers.core import hookenv, host
 
 from tests.base import TestCaseBase
 import helpers
+
+
+patch = functools.partial(patch)
 
 
 class TestHelpers(TestCaseBase):
@@ -76,7 +83,7 @@ class TestHelpers(TestCaseBase):
             sorted(['10.20.0.1', '10.20.0.2', '10.20.0.3']),
             sorted(helpers.get_seeds()))
 
-    @patch('relations.StorageRelation', autospec=True)
+    @patch('relations.StorageRelation')
     def test_get_database_directory(self, storage_relation):
         storage_relation().mountpoint = None
 
@@ -95,7 +102,7 @@ class TestHelpers(TestCaseBase):
         # Absolute paths are absolute and passed through unmolested.
         self.assertEqual(helpers.get_database_directory('/bar'), '/bar')
 
-    @patch('relations.StorageRelation', autospec=True)
+    @patch('relations.StorageRelation')
     def test_get_all_database_directories(self, storage_relation):
         storage_relation().mountpoint = '/s'
         self.assertDictEqual(
@@ -104,10 +111,10 @@ class TestHelpers(TestCaseBase):
                  commitlog_directory='/s/cassandra/commitlog',
                  saved_caches_directory='/s/cassandra/saved_caches'))
 
-    @patch('helpers.recursive_chown', autospec=True)
-    @patch('charmhelpers.core.host.mkdir', autospec=True)
-    @patch('helpers.get_database_directory', autospec=True)
-    @patch('helpers.is_cassandra_running', autospec=True)
+    @patch('helpers.recursive_chown')
+    @patch('charmhelpers.core.host.mkdir')
+    @patch('helpers.get_database_directory')
+    @patch('helpers.is_cassandra_running')
     def test_ensure_database_directory(self, is_running, get_db_dir, mkdir,
                                        recursive_chown):
         is_running.return_value = False
@@ -128,9 +135,9 @@ class TestHelpers(TestCaseBase):
                                                 owner='cassandra',
                                                 group='cassandra')
 
-    @patch('charmhelpers.core.host.write_file', autospec=True)
-    @patch('os.path.isdir', autospec=True)
-    @patch('subprocess.check_output', autospec=True)
+    @patch('charmhelpers.core.host.write_file')
+    @patch('os.path.isdir')
+    @patch('subprocess.check_output')
     def test_set_io_scheduler(self, check_output, isdir, write_file):
         # Normal operation, the device is detected and the magic
         # file written.
@@ -163,7 +170,7 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(write_file.called)
         hookenv.log.assert_called_once_with(ANY)  # A single INFO message.
 
-    @patch('shutil.chown', autospec=True)
+    @patch('shutil.chown')
     def test_recursive_chown(self, chown):
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, 'a', 'bb', 'ccc'))
@@ -200,7 +207,7 @@ class TestHelpers(TestCaseBase):
             with open(path_orig, 'rb') as f:
                 self.assertEqual(f.read(), b'hello')
 
-    @patch('charmhelpers.fetch.apt_cache', autospec=True)
+    @patch('charmhelpers.fetch.apt_cache')
     def test_get_package_version(self, apt_cache):
         version = namedtuple('Version', 'ver_str')('1.0-foo')
         package = namedtuple('Package', 'current_ver')(version)
@@ -208,14 +215,14 @@ class TestHelpers(TestCaseBase):
         ver = helpers.get_package_version('package')
         self.assertEqual(ver, '1.0-foo')
 
-    @patch('charmhelpers.fetch.apt_cache', autospec=True)
+    @patch('charmhelpers.fetch.apt_cache')
     def test_get_package_version_not_found(self, apt_cache):
         version = namedtuple('Version', 'ver_str')('1.0-foo')
         package = namedtuple('Package', 'current_ver')(version)
         apt_cache.return_value = dict(package=package)
         self.assertIsNone(helpers.get_package_version('notfound'))
 
-    @patch('charmhelpers.fetch.apt_cache', autospec=True)
+    @patch('charmhelpers.fetch.apt_cache')
     def test_get_package_version_not_installed(self, apt_cache):
         package = namedtuple('Package', 'current_ver')(None)
         apt_cache.return_value = dict(package=package)
@@ -245,21 +252,21 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['edition'] = 'dse'
         self.assertEqual(helpers.get_cassandra_service(), 'dse')
 
-    @patch('helpers.get_package_version', autospec=True)
+    @patch('helpers.get_package_version')
     def test_get_cassandra_version(self, get_package_version):
         # Return cassandra package version if it is installed.
         get_package_version.return_value = '1.2.3-2~64'
         self.assertEqual(helpers.get_cassandra_version(), '1.2.3-2~64')
         get_package_version.assert_called_with('cassandra')
 
-    @patch('helpers.get_package_version', autospec=True)
+    @patch('helpers.get_package_version')
     def test_get_cassandra_version_uninstalled(self, get_package_version):
         # Return none if the main cassandra package is not installed
         get_package_version.return_value = None
         self.assertEqual(helpers.get_cassandra_version(), None)
         get_package_version.assert_called_with('cassandra')
 
-    @patch('helpers.get_package_version', autospec=True)
+    @patch('helpers.get_package_version')
     def test_get_cassandra_version_dse(self, get_package_version):
         # Return the cassandra version equivalent if using dse.
         hookenv.config()['edition'] = 'dse'
@@ -267,7 +274,7 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.get_cassandra_version(), '2.1')
         get_package_version.assert_called_with('dse-full')
 
-    @patch('helpers.get_package_version', autospec=True)
+    @patch('helpers.get_package_version')
     def test_get_cassandra_version_dse_uninstalled(self, get_package_version):
         # Return the cassandra version equivalent if using dse.
         hookenv.config()['edition'] = 'dse'
@@ -282,19 +289,19 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.get_cassandra_config_dir(),
                          '/etc/dse/cassandra')
 
-    @patch('helpers.get_cassandra_config_dir', autospec=True)
+    @patch('helpers.get_cassandra_config_dir')
     def test_get_cassandra_yaml_file(self, get_cassandra_config_dir):
         get_cassandra_config_dir.return_value = '/foo'
         self.assertEqual(helpers.get_cassandra_yaml_file(),
                          '/foo/cassandra.yaml')
 
-    @patch('helpers.get_cassandra_config_dir', autospec=True)
+    @patch('helpers.get_cassandra_config_dir')
     def test_get_cassandra_env_file(self, get_cassandra_config_dir):
         get_cassandra_config_dir.return_value = '/foo'
         self.assertEqual(helpers.get_cassandra_env_file(),
                          '/foo/cassandra-env.sh')
 
-    @patch('helpers.get_cassandra_config_dir', autospec=True)
+    @patch('helpers.get_cassandra_config_dir')
     def test_get_cassandra_rackdc_file(self, get_cassandra_config_dir):
         get_cassandra_config_dir.return_value = '/foo'
         self.assertEqual(helpers.get_cassandra_rackdc_file(),
@@ -344,14 +351,14 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(popen.called)
         self.assertTrue(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
 
-    @patch('helpers.accept_oracle_jvm_license', autospec=True)
+    @patch('helpers.accept_oracle_jvm_license')
     def test_get_cassandra_packages(self, accept_oracle_jvm_license):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'cassandra-tools', 'ntp']))
         self.assertFalse(accept_oracle_jvm_license.called)
 
-    @patch('helpers.accept_oracle_jvm_license', autospec=True)
+    @patch('helpers.accept_oracle_jvm_license')
     def test_get_cassandra_packages_oracle_jvm(self,
                                                accept_oracle_jvm_license):
         # Oracle JVM
@@ -365,7 +372,7 @@ class TestHelpers(TestCaseBase):
         # we explicitly set the magic config item just before.
         self.assertTrue(accept_oracle_jvm_license.called)
 
-    @patch('helpers.accept_oracle_jvm_license', autospec=True)
+    @patch('helpers.accept_oracle_jvm_license')
     def test_get_cassandra_packages_oracle_jvm_fail(self,
                                                     accept_oracle_jvm_license):
         # If we specified the Oracle JVM, but the license could not be
@@ -377,7 +384,7 @@ class TestHelpers(TestCaseBase):
                             set(['cassandra', 'cassandra-tools', 'ntp']))
         self.assertTrue(accept_oracle_jvm_license.called)
 
-    @patch('helpers.accept_oracle_jvm_license', autospec=True)
+    @patch('helpers.accept_oracle_jvm_license')
     def test_get_cassandra_packages_dse(self, accept_oracle_jvm_license):
         # DataStax Enterprise, and implicit Oracle JVM.
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
@@ -388,9 +395,9 @@ class TestHelpers(TestCaseBase):
                                  'oracle-java7-set-default']))
         self.assertTrue(accept_oracle_jvm_license.called)
 
-    @patch('helpers.get_cassandra_service', autospec=True)
-    @patch('charmhelpers.core.host.service_stop', autospec=True)
-    @patch('helpers.is_cassandra_running', autospec=True)
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_stop')
+    @patch('helpers.is_cassandra_running')
     def test_stop_cassandra(self, is_cassandra_running,
                             service_stop, get_service):
         get_service.return_value = sentinel.service_name
@@ -402,10 +409,10 @@ class TestHelpers(TestCaseBase):
         helpers.stop_cassandra()
         service_stop.assert_called_once_with(sentinel.service_name)
 
-    @patch('time.sleep', autospec=True)
-    @patch('helpers.get_cassandra_service', autospec=True)
-    @patch('charmhelpers.core.host.service_start', autospec=True)
-    @patch('helpers.is_cassandra_running', autospec=True)
+    @patch('time.sleep')
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_start')
+    @patch('helpers.is_cassandra_running')
     def test_start_cassandra(self, is_cassandra_running,
                              service_start, get_service, sleep):
         get_service.return_value = sentinel.service_name
@@ -417,14 +424,15 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
-    @patch('helpers.ensure_database_directory', autospec=True)
-    @patch('helpers.is_cassandra_running', autospec=True)
-    @patch('helpers.start_cassandra', autospec=True)
-    @patch('helpers.stop_cassandra', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
+    @patch('helpers.ensure_authentication')
+    @patch('helpers.ensure_database_directory')
+    @patch('helpers.is_cassandra_running')
+    @patch('helpers.start_cassandra')
+    @patch('helpers.stop_cassandra')
+    @patch('relations.StorageRelation')
     def test_restart_and_remount_cassandra_simple(self, storage, stop, start,
-                                                  is_running,
-                                                  ensure_directory):
+                                                  is_running, ensure_directory,
+                                                  ensure_authentication):
         storage().needs_remount.return_value = False
         storage().mountpoint = None
         is_running.return_value = False
@@ -436,16 +444,18 @@ class TestHelpers(TestCaseBase):
             call('/var/lib/cassandra/data'),
             call('/var/lib/cassandra/commitlog'),
             call('/var/lib/cassandra/saved_caches')], any_order=True)
+        ensure_authentication.assert_called_once_with()
 
-    @patch('os.chmod', autospec=True)
-    @patch('helpers.ensure_database_directory', autospec=True)
-    @patch('helpers.is_cassandra_running', autospec=True)
-    @patch('helpers.start_cassandra', autospec=True)
-    @patch('helpers.stop_cassandra', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
+    @patch('os.chmod')
+    @patch('helpers.ensure_authentication')
+    @patch('helpers.ensure_database_directory')
+    @patch('helpers.is_cassandra_running')
+    @patch('helpers.start_cassandra')
+    @patch('helpers.stop_cassandra')
+    @patch('relations.StorageRelation')
     def test_restart_and_remount_cassandra_mnt(self, storage, stop, start,
                                                is_running, ensure_directory,
-                                               chmod):
+                                               ensure_authentication, chmod):
         storage().needs_remount.return_value = True
         storage().mountpoint = '/srv/foo'
         is_running.return_value = False
@@ -462,14 +472,17 @@ class TestHelpers(TestCaseBase):
             call('/srv/foo/cassandra/data2'),
             call('/srv/foo/cassandra/commitlog'),
             call('/srv/foo/cassandra/saved_caches')], any_order=True)
+        ensure_authentication.assert_called_once_with()
 
-    @patch('helpers.ensure_database_directory', autospec=True)
-    @patch('helpers.is_cassandra_running', autospec=True)
-    @patch('helpers.start_cassandra', autospec=True)
-    @patch('helpers.stop_cassandra', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
+    @patch('helpers.ensure_authentication')
+    @patch('helpers.ensure_database_directory')
+    @patch('helpers.is_cassandra_running')
+    @patch('helpers.start_cassandra')
+    @patch('helpers.stop_cassandra')
+    @patch('relations.StorageRelation')
     def test_restart_and_remount_cassandra_unmnt(self, storage, stop, start,
-                                                 is_running, ensure_directory):
+                                                 is_running, ensure_directory,
+                                                 ensure_authentication):
         storage().needs_remount.return_value = True
         storage().mountpoint = None  # Reverting to local disk.
         is_running.return_value = False
@@ -493,6 +506,7 @@ class TestHelpers(TestCaseBase):
             call('/var/lib/cassandra/data2'),
             call('/var/lib/cassandra/commitlog'),
             call('/var/lib/cassandra/saved_caches')], any_order=True)
+        ensure_authentication.assert_called_once_with()
 
     def test_get_pid_from_file(self):
         with tempfile.NamedTemporaryFile('w') as pid_file:
@@ -515,8 +529,8 @@ class TestHelpers(TestCaseBase):
             self.assertRaises(OSError, helpers.get_pid_from_file,
                               os.path.join(tmpdir, 'invalid.pid'))
 
-    @patch('os.path.exists', autospec=True)
-    @patch('helpers.get_cassandra_pid_file', autospec=True)
+    @patch('os.path.exists')
+    @patch('helpers.get_cassandra_pid_file')
     def test_is_cassandra_running_not_running(self, get_pid_file, exists):
         # When Cassandra is not running, there is no pidfile.
         get_pid_file.return_value = sentinel.pid_file
@@ -524,8 +538,8 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(helpers.is_cassandra_running())
         exists.assert_called_once_with(sentinel.pid_file)
 
-    @patch('os.path.exists', autospec=True)
-    @patch('helpers.get_pid_from_file', autospec=True)
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
     def test_is_cassandra_running_invalid_pid(self, get_pid_from_file, exists):
         # get_pid_from_file raises a ValueError if the pid is illegal.
         get_pid_from_file.side_effect = ValueError('Whoops')
@@ -535,10 +549,10 @@ class TestHelpers(TestCaseBase):
         # cannot safely continue when the system is insane.
         self.assertRaises(ValueError, helpers.is_cassandra_running)
 
-    @patch('time.sleep', autospec=True)
-    @patch('os.kill', autospec=True)
-    @patch('helpers.get_pid_from_file', autospec=True)
-    @patch('subprocess.call', autospec=True)
+    @patch('time.sleep')
+    @patch('os.kill')
+    @patch('helpers.get_pid_from_file')
+    @patch('subprocess.call')
     def test_is_cassandra_running_starting_up(self, call, get_pid_from_file,
                                               kill, sleep):
         sleep.return_value = None  # Don't actually sleep in unittests.
@@ -547,11 +561,11 @@ class TestHelpers(TestCaseBase):
         subprocess.call.side_effect = iter([3, 2, 1, 0])  # 4th time the charm
         self.assertTrue(helpers.is_cassandra_running())
 
-    @patch('time.sleep', autospec=True)
-    @patch('os.kill', autospec=True)
-    @patch('subprocess.call', autospec=True)
-    @patch('os.path.exists', autospec=True)
-    @patch('helpers.get_pid_from_file', autospec=True)
+    @patch('time.sleep')
+    @patch('os.kill')
+    @patch('subprocess.call')
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
     def test_is_cassandra_running_shutting_down(self, get_pid_from_file,
                                                 exists, call, kill, sleep):
         # If Cassandra is in the process of shutting down, it might take
@@ -607,6 +621,103 @@ class TestHelpers(TestCaseBase):
         isdir.return_value = False
         helpers.reset_all_io_schedulers()
         self.assertFalse(set_io_scheduler.called)
+
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('helpers.get_cassandra_yaml_file')
+    @patch('helpers.get_seeds')
+    @patch('charmhelpers.core.host.write_file')
+    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file,
+                                      relation_get):
+        hookenv.config().update(dict(num_tokens=128,
+                                     cluster_name=None,
+                                     partitioner='my_partitioner'))
+
+        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
+
+        existing_config = '''
+            seed_provider:
+                - class_name: blah.blah.SimpleSeedProvider
+                  parameters:
+                      - seeds: 127.0.0.1  # Comma separated list.
+            '''
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yaml_config = os.path.join(tmpdir, 'c.yaml')
+            yaml_file.return_value = yaml_config
+            with open(yaml_config, 'w', encoding='UTF-8') as f:
+                f.write(existing_config)
+
+            helpers.configure_cassandra_yaml()
+
+            self.assertEqual(write_file.call_count, 2)
+            new_config = write_file.call_args[0][1]
+
+            expected_config = dedent('''\
+                cluster_name: service
+                authenticator: PasswordAuthenticator
+                num_tokens: 128
+                partitioner: my_partitioner
+                listen_address: 10.20.0.1
+                rpc_address: 10.30.0.1
+                rpc_port: 9160
+                native_transport_port: 9042
+                storage_port: 7000
+                ssl_storage_port: 7001
+                seed_provider:
+                    - class_name: blah.blah.SimpleSeedProvider
+                      parameters:
+                        # No whitespace in seeds is important.
+                        - seeds: '10.20.0.1,10.20.0.2,10.20.0.3'
+                data_file_directories:
+                    - /var/lib/cassandra/data
+                commitlog_directory: /var/lib/cassandra/commitlog
+                saved_caches_directory: /var/lib/cassandra/saved_caches
+                ''')
+            self.maxDiff = None
+            self.assertEqual(yaml.safe_load(new_config),
+                             yaml.safe_load(expected_config))
+
+            # Confirm we can use an explicit cluster_name too.
+            write_file.reset_mock()
+            hookenv.config()['cluster_name'] = 'fubar'
+            helpers.configure_cassandra_yaml()
+            new_config = write_file.call_args[0][1]
+            self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
+                             'fubar')
+
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('helpers.get_cassandra_yaml_file')
+    @patch('helpers.get_seeds')
+    @patch('charmhelpers.core.host.write_file')
+    def test_configure_cassandra_yaml_overrides(self, write_file, get_seeds,
+                                                yaml_file, relation_get):
+        hookenv.config().update(dict(num_tokens=128,
+                                     cluster_name=None,
+                                     partitioner='my_partitioner'))
+
+        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
+
+        existing_config = dedent('''\
+            seed_provider:
+                - class_name: blah.blah.SimpleSeedProvider
+                  parameters:
+                      - seeds: 127.0.0.1  # Comma separated list.
+            ''')
+        overrides = dict(partitioner='overridden_partitioner')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yaml_config = os.path.join(tmpdir, 'c.yaml')
+            yaml_file.return_value = yaml_config
+            with open(yaml_config, 'w', encoding='UTF-8') as f:
+                f.write(existing_config)
+
+            helpers.configure_cassandra_yaml(overrides=overrides)
+
+            self.assertEqual(write_file.call_count, 2)
+            new_config = write_file.call_args[0][1]
+
+            self.assertEqual(yaml.safe_load(new_config)['partitioner'],
+                             'overridden_partitioner')
 
 
 class TestIsLxc(unittest.TestCase):

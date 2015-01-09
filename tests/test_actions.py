@@ -184,7 +184,7 @@ class TestsActions(TestCaseBase):
         helpers.is_lxc.return_value = True
         actions.reset_sysctl('')
         self.assertFalse(check_call.called)
-        hookenv.log.assert_called_once_with("In an LXC container. "
+        hookenv.log.assert_called_once_with("In an LXC. "
                                             "Leaving sysctl unchanged.")
 
     @patch('subprocess.Popen', autospec=True)
@@ -277,67 +277,12 @@ class TestsActions(TestCaseBase):
         install_packages.assert_called_once_with(
             sentinel.servicename, sentinel.cassandra_packages)
 
-    @patch('charmhelpers.core.hookenv.relation_get')
-    @patch('helpers.get_cassandra_yaml_file', autospec=True)
-    @patch('helpers.get_seeds', autospec=True)
-    @patch('charmhelpers.core.host.write_file', autospec=True)
-    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file,
-                                      relation_get):
-        hookenv.config().update(dict(num_tokens=128,
-                                     cluster_name=None,
-                                     partitioner='my_partitioner'))
-
-        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
-
-        existing_config = '''
-            seed_provider:
-                - class_name: blah.blah.SimpleSeedProvider
-                  parameters:
-                      - seeds: 127.0.0.1  # Comma separated list.
-            '''
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yaml_config = os.path.join(tmpdir, 'c.yaml')
-            yaml_file.return_value = yaml_config
-            with open(yaml_config, 'w', encoding='UTF-8') as f:
-                f.write(existing_config)
-
-            actions.configure_cassandra_yaml('')
-
-            self.assertEqual(write_file.call_count, 2)
-            new_config = write_file.call_args[0][1]
-
-            expected_config = dedent('''\
-                cluster_name: service
-                num_tokens: 128
-                partitioner: my_partitioner
-                listen_address: 10.20.0.1
-                rpc_address: 10.20.0.1
-                rpc_port: 9160
-                native_transport_port: 9042
-                storage_port: 7000
-                ssl_storage_port: 7001
-                seed_provider:
-                    - class_name: blah.blah.SimpleSeedProvider
-                      parameters:
-                        # No whitespace in seeds is important.
-                        - seeds: '10.20.0.1,10.20.0.2,10.20.0.3'
-                data_file_directories:
-                    - /var/lib/cassandra/data
-                commitlog_directory: /var/lib/cassandra/commitlog
-                saved_caches_directory: /var/lib/cassandra/saved_caches
-                ''')
-            self.maxDiff = None
-            self.assertEqual(yaml.safe_load(new_config),
-                             yaml.safe_load(expected_config))
-
-            # Confirm we can use an explicit cluster_name too.
-            write_file.reset_mock()
-            hookenv.config()['cluster_name'] = 'fubar'
-            actions.configure_cassandra_yaml('')
-            new_config = write_file.call_args[0][1]
-            self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
-                             'fubar')
+    @patch('helpers.configure_cassandra_yaml', autospec=True)
+    def test_configure_cassandra_yaml(self, configure_cassandra_yaml):
+        # actions.configure_cassandra_yaml is just a wrapper around the
+        # helper.
+        actions.configure_cassandra_yaml('')
+        configure_cassandra_yaml.assert_called_once_with()
 
     @patch('helpers.get_cassandra_env_file', autospec=True)
     @patch('charmhelpers.core.host.write_file', autospec=True)

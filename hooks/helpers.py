@@ -367,16 +367,8 @@ def restart_and_remount_cassandra():
     ensure_authentication()
 
 
-# FOR CHARMHELPERS
-def unit_public_ip():
-    """Get this unit's public IP address"""
-    return hookenv.unit_get('public-address')
-
-
 def ensure_authentication():
     config = hookenv.config()
-
-    assert is_cassandra_running()
 
     timeout = time.time() + 60
 
@@ -387,7 +379,7 @@ def ensure_authentication():
     while True:
         auth_provider = cassandra.auth.PlainTextAuthProvider(
             username='cassandra', password='cassandra')
-        cluster = cassandra.cluster.Cluster([unit_public_ip()],
+        cluster = cassandra.cluster.Cluster([hookenv.unit_public_ip()],
                                             port=config['native_client_port'],
                                             auth_provider=auth_provider)
         try:
@@ -401,9 +393,9 @@ def ensure_authentication():
             session.execute(query, (host.pwgen(),))
             break
         except cassandra.cluster.NoHostAvailable as x:
-            assert unit_public_ip() in x.errors, '{} not in {!r}'.format(
-                x.errors.keys())
-            actual_exception = x.errors[unit_public_ip()]
+            assert hookenv.unit_public_ip() in x.errors, (
+                '{} not in {!r}'.format(x.errors.keys()))
+            actual_exception = x.errors[hookenv.unit_public_ip()]
             if isinstance(actual_exception, cassandra.AuthenticationFailed):
                 hookenv.log('Default admin password already changed')
                 break
@@ -420,7 +412,7 @@ def ensure_authentication():
     while True:
         auth_provider = cassandra.auth.PlainTextAuthProvider(username=un,
                                                              password=pw)
-        cluster = cassandra.cluster.Cluster([unit_public_ip()],
+        cluster = cassandra.cluster.Cluster([hookenv.unit_public_ip()],
                                             port=config['native_client_port'],
                                             auth_provider=auth_provider)
         try:
@@ -428,7 +420,7 @@ def ensure_authentication():
             hookenv.log('Service superuser account already setup')
             return
         except cassandra.cluster.NoHostAvailable as x:
-            actual_exception = x.errors[unit_public_ip()]
+            actual_exception = x.errors[hookenv.unit_public_ip()]
             if isinstance(actual_exception, cassandra.AuthenticationFailed):
                 break  # Invalid password or user does not exist. Reset.
             if time.time() > timeout:
@@ -501,7 +493,7 @@ def superuser_credentials():
     password = host.pwgen()
 
     cqlshrc['authentication'] = dict(username=username, password=password)
-    cqlshrc['connection'] = dict(hostname=unit_public_ip(),
+    cqlshrc['connection'] = dict(hostname=hookenv.unit_public_ip(),
                                  port=config['native_client_port'])
 
     ini = io.StringIO()
@@ -516,7 +508,7 @@ def get_node_addresses():
     peer_relid = rollingrestart.get_peer_relation_id()
     addresses = set(hookenv.relation_get('public-address', peer, peer_relid)
                     for peer in rollingrestart.get_peers())
-    addresses.add(unit_public_ip())
+    addresses.add(hookenv.unit_public_ip())
     addresses.discard(None)
     return addresses
 
@@ -561,7 +553,7 @@ def configure_cassandra_yaml(overrides={}):
     cassandra_yaml['num_tokens'] = int(config['num_tokens'])
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
-    cassandra_yaml['rpc_address'] = unit_public_ip()
+    cassandra_yaml['rpc_address'] = hookenv.unit_public_ip()
 
     cassandra_yaml['native_transport_port'] = config['native_client_port']
     cassandra_yaml['rpc_port'] = config['thrift_client_port']

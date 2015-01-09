@@ -296,7 +296,7 @@ def reset_auth_keyspace_replication_factor(servicename):
     # on the system_auth keyspace so that every node contains all of the
     # data. Authentication information will remain available, even in the
     # face of all the other nodes having gone away due to an in progress
-    # 'destroy-service'.
+    # 'juju destroy-service'.
     if not helpers.is_cassandra_running():
         # If Cassandra is not running locally, skip. At least one unit
         # will have a running Cassandra when its cluster-relation-joined
