@@ -34,6 +34,7 @@ def get_service_definitions():
                          actions.configure_cassandra_env,
                          actions.reset_all_io_schedulers,
                          actions.reset_auth_keyspace_replication_factor,
+                         actions.repair_auth_keyspace,
                          actions.maybe_schedule_restart],
              stop=[actions.stop_cassandra],
              start=[actions.start_cassandra])]

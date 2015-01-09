@@ -87,7 +87,7 @@ venv3: packages .stamp-venv3
 	    > ${VENV3}/lib/python3.4/site-packages/tests.pth
 
 	# Pip install packages.
-	pip install -q amulet flake8 bcrypt cassandra-driver
+	pip install -q amulet flake8 bcrypt cassandra-driver blist
 	pip install -qI nose
 	pip install -q --upgrade coverage
 

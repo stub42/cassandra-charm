@@ -1,6 +1,7 @@
 #!.venv3/bin/python3
 
 import errno
+import functools
 import os.path
 import re
 import subprocess
@@ -18,8 +19,11 @@ import actions
 import helpers
 
 
+patch = functools.partial(patch, autospec=True)  # autospec=True as default.
+
+
 class TestsActions(TestCaseBase):
-    @patch('subprocess.check_call', autospec=True)
+    @patch('subprocess.check_call')
     def test_preinstall(self, check_call):
         # Noop if there are no preinstall hooks found running the
         # install hook.
@@ -70,7 +74,7 @@ class TestsActions(TestCaseBase):
         actions.preinstall('')
         self.assertFalse(check_call.called)
 
-    @patch('subprocess.check_call', autospec=True)
+    @patch('subprocess.check_call')
     def test_swapoff(self, check_call):
         fstab = (
             b'UUID=abc / ext4 errors=remount-ro 0 1\n'
@@ -84,14 +88,14 @@ class TestsActions(TestCaseBase):
 
         check_call.assert_called_once_with(['swapoff', '-a'])
 
-    @patch('subprocess.check_call', autospec=True)
+    @patch('subprocess.check_call')
     def test_swapoff_fails(self, check_call):
         check_call.side_effect = RuntimeError()
         actions.swapoff('', '')
         # A warning is generated if swapoff fails.
         hookenv.log.assert_called_once_with(ANY, hookenv.WARNING)
 
-    @patch('subprocess.check_call', autospec=True)
+    @patch('subprocess.check_call')
     def test_swapoff_lxc(self, check_call):
         # Under LXC, the swapoff action does nothing except log.
         helpers.is_lxc.return_value = True
@@ -99,7 +103,7 @@ class TestsActions(TestCaseBase):
         self.assertFalse(check_call.called)
         hookenv.log.assert_called_once_with(ANY)
 
-    @patch('charmhelpers.fetch.configure_sources', autospec=True)
+    @patch('charmhelpers.fetch.configure_sources')
     def test_configure_sources(self, configure_sources):
         config = hookenv.config()
 
@@ -151,8 +155,8 @@ class TestsActions(TestCaseBase):
                 check_call.assert_any_call(['apt-key', 'add', path],
                                            stdin=subprocess.DEVNULL)
 
-    @patch('charmhelpers.core.host.write_file', autospec=True)
-    @patch('subprocess.check_call', autospec=True)
+    @patch('charmhelpers.core.host.write_file')
+    @patch('subprocess.check_call')
     def test_reset_sysctl(self, check_call, write_file):
         actions.reset_sysctl('')
 
@@ -163,23 +167,23 @@ class TestsActions(TestCaseBase):
         check_call.assert_called_once_with(['sysctl', '-p',
                                             '/etc/sysctl.d/99-cassandra.conf'])
 
-    @patch('subprocess.check_call', autospec=True)
-    @patch('charmhelpers.core.host.write_file', autospec=True)
+    @patch('subprocess.check_call')
+    @patch('charmhelpers.core.host.write_file')
     def test_reset_sysctl_expected_fails(self, write_file, check_call):
         check_call.side_effect = OSError(errno.EACCES, 'Permission Denied')
         actions.reset_sysctl('')
         # A warning is generated if permission denied was raised.
         hookenv.log.assert_called_once_with(ANY, hookenv.WARNING)
 
-    @patch('subprocess.check_call', autospec=True)
-    @patch('charmhelpers.core.host.write_file', autospec=True)
+    @patch('subprocess.check_call')
+    @patch('charmhelpers.core.host.write_file')
     def test_reset_sysctl_fails_badly(self, write_file, check_call):
         # Other OSErrors are reraised since we don't know how to handle
         # them.
         check_call.side_effect = OSError(errno.EFAULT, 'Whoops')
         self.assertRaises(OSError, actions.reset_sysctl, '')
 
-    @patch('subprocess.check_call', autospec=True)
+    @patch('subprocess.check_call')
     def test_reset_sysctl_lxc(self, check_call):
         helpers.is_lxc.return_value = True
         actions.reset_sysctl('')
@@ -187,7 +191,7 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_called_once_with("In an LXC. "
                                             "Leaving sysctl unchanged.")
 
-    @patch('subprocess.Popen', autospec=True)
+    @patch('subprocess.Popen')
     def test_ensure_package_status(self, popen):
         for status in ['install', 'hold']:
             with self.subTest(status=status):
@@ -210,8 +214,8 @@ class TestsActions(TestCaseBase):
                           '', ['a_pack', 'b_back'])
         self.assertFalse(popen.called)
 
-    @patch('helpers.get_cassandra_packages', autospec=True)
-    @patch('actions.ensure_package_status', autospec=True)
+    @patch('helpers.get_cassandra_packages')
+    @patch('actions.ensure_package_status')
     def test_ensure_cassandra_package_status(self, ensure_package_status,
                                              get_cassandra_packages):
         get_cassandra_packages.return_value = sentinel.cassandra_packages
@@ -219,8 +223,8 @@ class TestsActions(TestCaseBase):
         ensure_package_status.assert_called_once_with(
             sentinel.servicename, sentinel.cassandra_packages)
 
-    @patch('helpers.autostart_disabled', autospec=True)
-    @patch('charmhelpers.fetch.apt_install', autospec=True)
+    @patch('helpers.autostart_disabled')
+    @patch('charmhelpers.fetch.apt_install')
     def test_install_packages(self, apt_install, autostart_disabled):
         packages = ['a_pack', 'b_pack']
         actions.install_packages('', packages)
@@ -234,8 +238,8 @@ class TestsActions(TestCaseBase):
         autostart_disabled().__enter__.assert_called_once_with()
         autostart_disabled().__exit__.assert_called_once_with(None, None, None)
 
-    @patch('helpers.autostart_disabled', autospec=True)
-    @patch('charmhelpers.fetch.apt_install', autospec=True)
+    @patch('helpers.autostart_disabled')
+    @patch('charmhelpers.fetch.apt_install')
     def test_install_packages_extras(self, apt_install, autostart_disabled):
         packages = ['a_pack', 'b_pack']
         hookenv.config()['extra_packages'] = 'c_pack d_pack'
@@ -251,8 +255,8 @@ class TestsActions(TestCaseBase):
         autostart_disabled().__enter__.assert_called_once_with()
         autostart_disabled().__exit__.assert_called_once_with(None, None, None)
 
-    @patch('helpers.autostart_disabled', autospec=True)
-    @patch('charmhelpers.fetch.apt_install', autospec=True)
+    @patch('helpers.autostart_disabled')
+    @patch('charmhelpers.fetch.apt_install')
     def test_install_packages_noop(self, apt_install, autostart_disabled):
         # Everything is already installed. Nothing to do.
         fetch.filter_installed_packages.side_effect = lambda pkgs: []
@@ -268,8 +272,8 @@ class TestsActions(TestCaseBase):
         # Autostart wasn't messed with.
         self.assertFalse(autostart_disabled.called)
 
-    @patch('helpers.get_cassandra_packages', autospec=True)
-    @patch('actions.install_packages', autospec=True)
+    @patch('helpers.get_cassandra_packages')
+    @patch('actions.install_packages')
     def test_install_cassandra_packages(self, install_packages,
                                         get_cassandra_packages):
         get_cassandra_packages.return_value = sentinel.cassandra_packages
@@ -277,15 +281,15 @@ class TestsActions(TestCaseBase):
         install_packages.assert_called_once_with(
             sentinel.servicename, sentinel.cassandra_packages)
 
-    @patch('helpers.configure_cassandra_yaml', autospec=True)
+    @patch('helpers.configure_cassandra_yaml')
     def test_configure_cassandra_yaml(self, configure_cassandra_yaml):
         # actions.configure_cassandra_yaml is just a wrapper around the
         # helper.
         actions.configure_cassandra_yaml('')
         configure_cassandra_yaml.assert_called_once_with()
 
-    @patch('helpers.get_cassandra_env_file', autospec=True)
-    @patch('charmhelpers.core.host.write_file', autospec=True)
+    @patch('helpers.get_cassandra_env_file')
+    @patch('charmhelpers.core.host.write_file')
     def test_configure_cassandra_env(self, write_file, env_file):
         def _wf(path, contents, perms=None):
             with open(path, 'wb') as f:
@@ -351,9 +355,9 @@ class TestsActions(TestCaseBase):
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
-    @patch('helpers.get_seeds', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
-    @patch('rollingrestart.request_restart', autospec=True)
+    @patch('helpers.get_seeds')
+    @patch('relations.StorageRelation')
+    @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_need_remount(self, request_restart,
                                                  storage_relation, get_seeds):
         config = hookenv.config()
@@ -377,9 +381,9 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_called_once_with('Mountpoint changed. '
                                             'Restart and migration required.')
 
-    @patch('helpers.get_seeds', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
-    @patch('rollingrestart.request_restart', autospec=True)
+    @patch('helpers.get_seeds')
+    @patch('relations.StorageRelation')
+    @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_seeds_changed(self, request_restart,
                                                   storage_relation, get_seeds):
         config = hookenv.config()
@@ -403,9 +407,9 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_called_once_with('Seed list changed. '
                                             'Restart required.')
 
-    @patch('helpers.get_seeds', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
-    @patch('rollingrestart.request_restart', autospec=True)
+    @patch('helpers.get_seeds')
+    @patch('relations.StorageRelation')
+    @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_unchanged(self, request_restart,
                                               storage_relation, get_seeds):
         config = hookenv.config()
@@ -430,9 +434,9 @@ class TestsActions(TestCaseBase):
         actions.maybe_schedule_restart('')
         self.assertFalse(request_restart.called)
 
-    @patch('helpers.get_seeds', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
-    @patch('rollingrestart.request_restart', autospec=True)
+    @patch('helpers.get_seeds')
+    @patch('relations.StorageRelation')
+    @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_config_changed(self, request_restart,
                                                    storage_relation,
                                                    get_seeds):
@@ -461,9 +465,9 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_called_once_with('max_heap_size changed. '
                                             'Restart required.')
 
-    @patch('helpers.get_seeds', autospec=True)
-    @patch('relations.StorageRelation', autospec=True)
-    @patch('rollingrestart.request_restart', autospec=True)
+    @patch('helpers.get_seeds')
+    @patch('relations.StorageRelation')
+    @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_ip_changed(self, request_restart,
                                                storage_relation, get_seeds):
         config = hookenv.config()
@@ -518,6 +522,75 @@ class TestsActions(TestCaseBase):
         for key in config['options']:
             with self.subTest(key=key):
                 self.assertIn(key, combined)
+
+    @patch('helpers.connect')
+    @patch('helpers.is_cassandra_running')
+    def test_reset_auth_keyspace_rf_down(self, is_running, connect):
+        is_running.return_value = False
+        actions.reset_auth_keyspace_replication_factor('')  # Noop
+        self.assertFalse(connect.called)  # No attempt was made.
+
+    @patch('helpers.set_auth_keyspace_replication_factor')
+    @patch('helpers.get_auth_keyspace_replication_factor')
+    @patch('helpers.num_nodes')
+    @patch('helpers.is_cassandra_running')
+    def test_reset_auth_keyspace_rf_changed(self, is_running, num_nodes,
+                                            get_auth_rf, set_auth_rf):
+        is_running.return_value = True
+        num_nodes.return_value = 2
+        get_auth_rf.return_value = 3
+
+        # If the number of nodes does not match the system_auth
+        # keyspace's replication factor, the system_auth keyspace's
+        # replication factor is updated to match.
+        actions.reset_auth_keyspace_replication_factor('')
+        set_auth_rf.assert_called_once_with(2)
+
+    @patch('helpers.set_auth_keyspace_replication_factor')
+    @patch('helpers.get_auth_keyspace_replication_factor')
+    @patch('helpers.num_nodes')
+    @patch('helpers.is_cassandra_running')
+    def test_reset_auth_keyspace_rf_unchanged(self, is_running, num_nodes,
+                                              get_auth_rf, set_auth_rf):
+        is_running.return_value = True
+        num_nodes.return_value = 3
+        get_auth_rf.return_value = 3
+
+        # If the number of nodes matches the system_auth
+        # keyspace's replication factor, nothing happens.
+        actions.reset_auth_keyspace_replication_factor('')
+        self.assertFalse(set_auth_rf.called)
+
+    @patch('subprocess.check_call')
+    @patch('helpers.num_nodes')
+    def test_repair_auth_keyspace(self, num_nodes, check_call):
+        # If the number of nodes has changed, we need to run
+        # 'nodetool repair system_auth' on all the units.
+        num_nodes.return_value = 2
+
+        # First time, there is no preserved state, and we repair.
+        actions.repair_auth_keyspace('')
+        check_call.assert_called_once_with(['nodetool',
+                                            'repair', 'system_auth'])
+
+        hookenv.config().save()
+        hookenv.config().load_previous()
+        check_call.reset_mock()
+
+        # Next time, there is no change so do nothing.
+        actions.repair_auth_keyspace('')
+        self.assertFalse(check_call.called)
+
+        hookenv.config().save()
+        hookenv.config().load_previous()
+        check_call.reset_mock()
+
+        # If the number of nodes changes from preserved state, we
+        # repair.
+        num_nodes.return_value = 3
+        actions.repair_auth_keyspace('')
+        check_call.assert_called_once_with(['nodetool',
+                                            'repair', 'system_auth'])
 
 
 if __name__ == '__main__':

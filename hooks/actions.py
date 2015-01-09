@@ -1,14 +1,10 @@
 from contextlib import closing
 import errno
 import glob
-import json
 import os.path
 import re
 import shlex
 import subprocess
-
-import cassandra
-import cassandra.query
 
 from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
@@ -303,29 +299,19 @@ def reset_auth_keyspace_replication_factor(servicename):
         # hook is invoked, and that is the important place for this to
         # happen.
         return
-    num_nodes = len(rollingrestart.get_peers()) + 1
-    with helpers.connect() as session:
-        r = session.execute(cassandra.query.SimpleStatement('''
-            SELECT strategy_options FROM system.schema_keyspaces
-            WHERE keyspace_name='system_auth'
-            ''', cassandra.ConsistencyLevel.QUORUM))
-        if r:
-            strategy_options = json.loads(r[0][0])
-            rf = int(strategy_options['replication_factor'])
-        else:
-            rf = 1
-        if rf == num_nodes:
-            hookenv.log('system_auth rf={}'.format(num_nodes))
-        else:
-            hookenv.log('Updating system_auth rf={}'.format(num_nodes))
-            session.execute(cassandra.query.SimpleStatement('''
-                ALTER KEYSPACE system_auth WITH REPLICATION =
-                    {'class': 'SimpleStrategy', 'replication_factor': %s}
-                ''', cassandra.ConsistencyLevel.QUORUM), (num_nodes,))
+    num_nodes = helpers.num_nodes()
+    rf = helpers.get_auth_keyspace_replication_factor()
+    if rf == num_nodes:
+        hookenv.log('system_auth rf={}'.format(num_nodes))
+    else:
+        helpers.set_auth_keyspace_replication_factor(num_nodes)
 
-    # If the number of nodes, and thus the system_auth rf, we need to
-    # repair the system_auth keyspace.
+
+def repair_auth_keyspace(servicename):
+    # If the number of nodes has changed, so as system_auth replication
+    # factor. We need to run nodetool repair on the system_auth
+    # keyspace.
     config = hookenv.config()
-    config['num_nodes'] = num_nodes
+    config['num_nodes'] = helpers.num_nodes()
     if config.changed('num_nodes'):
         subprocess.check_call(['nodetool', 'repair', 'system_auth'])

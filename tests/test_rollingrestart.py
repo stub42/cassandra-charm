@@ -1,6 +1,7 @@
 #!.venv3/bin/python3
 
 from datetime import datetime, timedelta
+import functools
 import os.path
 import unittest
 from unittest.mock import ANY, MagicMock, patch, sentinel
@@ -9,6 +10,9 @@ from charmhelpers.core import hookenv
 
 from tests.base import TestCaseBase
 import rollingrestart
+
+
+patch = functools.partial(patch)  # autospec by default.
 
 
 class TestRollingRestart(TestCaseBase):
@@ -22,7 +26,7 @@ class TestRollingRestart(TestCaseBase):
             _last_utc_now += timedelta(seconds=1)
             return _last_utc_now
 
-        utcnow = patch('rollingrestart.utcnow', autospec=True,
+        utcnow = patch('rollingrestart.utcnow',
                        side_effect=_utcnow)
         utcnow.start()
         self.addCleanup(utcnow.stop)
@@ -80,7 +84,7 @@ class TestRollingRestart(TestCaseBase):
         enqueue.assert_called_once_with(False)
         self.assertFalse(remove.called)
 
-    @patch('rollingrestart._enqueue', autospec=True)
+    @patch('rollingrestart._enqueue')
     def test_requests(self, enqueue):
         # The restart request flag is stored as a file on the
         # filesystem, and thus persists across hooks.
@@ -119,12 +123,12 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(os.path.exists(flag))
         enqueue.assert_called_once_with(False)
 
-    @patch('rollingrestart.get_peers', autospec=True)
-    @patch('rollingrestart.get_peer_relation_name', autospec=True)
-    @patch('rollingrestart.get_peer_relation_id', autospec=True)
-    @patch('charmhelpers.core.hookenv.local_unit', autospec=True)
-    @patch('charmhelpers.core.hookenv.relation_set', autospec=True)
-    @patch('charmhelpers.core.hookenv.relation_get', autospec=True)
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.get_peer_relation_name')
+    @patch('rollingrestart.get_peer_relation_id')
+    @patch('charmhelpers.core.hookenv.local_unit')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    @patch('charmhelpers.core.hookenv.relation_get')
     def test_restart_queue(self, relation_get, relation_set, local_unit,
                            get_rid, get_relname, get_peers):
 
@@ -194,8 +198,8 @@ class TestRollingRestart(TestCaseBase):
         self.assertListEqual(rollingrestart.get_restart_queue(),
                              ['unit/8'])
 
-    @patch('rollingrestart.cancel_restart', autospec=True)
-    @patch('rollingrestart.is_waiting_for_restart', autospec=True)
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_no_request(self, is_waiting, cancel_restart):
         is_waiting.return_value = False
         restart_hook = MagicMock()
@@ -208,10 +212,10 @@ class TestRollingRestart(TestCaseBase):
         # cancel_restart.
         cancel_restart.assert_called_once_with()
 
-    @patch('rollingrestart._peer_echo', autospec=True)
-    @patch('rollingrestart.get_peers', autospec=True)
-    @patch('rollingrestart.cancel_restart', autospec=True)
-    @patch('rollingrestart.is_waiting_for_restart', autospec=True)
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_no_peers(self, is_waiting, cancel_restart,
                                       get_peers, peer_echo):
         is_waiting.return_value = True
@@ -228,11 +232,11 @@ class TestRollingRestart(TestCaseBase):
         # peers.
         peer_echo.assert_called_once_with()
 
-    @patch('rollingrestart._peer_echo', autospec=True)
-    @patch('rollingrestart._enqueue', autospec=True)
-    @patch('rollingrestart.get_restart_queue', autospec=True)
-    @patch('rollingrestart.get_peers', autospec=True)
-    @patch('rollingrestart.is_waiting_for_restart', autospec=True)
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart._enqueue')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_empty_queue(self, is_waiting, get_peers,
                                          get_queue, enqueue, peer_echo):
         is_waiting.return_value = True
@@ -252,11 +256,11 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(restart_hook.called)
         peer_echo.assert_called_once_with()  # peer_echo helper called.
 
-    @patch('rollingrestart._peer_echo', autospec=True)
-    @patch('rollingrestart._enqueue', autospec=True)
-    @patch('rollingrestart.get_restart_queue', autospec=True)
-    @patch('rollingrestart.get_peers', autospec=True)
-    @patch('rollingrestart.is_waiting_for_restart', autospec=True)
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart._enqueue')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_with_queue(self, is_waiting, get_peers,
                                         get_queue, enqueue, peer_echo):
         is_waiting.return_value = True
@@ -269,10 +273,10 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(restart_hook.called)
         peer_echo.assert_called_once_with()  # peer_echo helper called.
 
-    @patch('rollingrestart._peer_echo', autospec=True)
-    @patch('rollingrestart.get_restart_queue', autospec=True)
-    @patch('rollingrestart.get_peers', autospec=True)
-    @patch('rollingrestart.is_waiting_for_restart', autospec=True)
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_stuck_in_queue(self, is_waiting, get_peers,
                                             get_queue, peer_echo):
         is_waiting.return_value = True
@@ -284,11 +288,11 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(restart_hook.called)
         peer_echo.assert_called_once_with()  # peer_echo helper called.
 
-    @patch('rollingrestart._peer_echo', autospec=True)
-    @patch('rollingrestart.get_restart_queue', autospec=True)
-    @patch('rollingrestart.get_peers', autospec=True)
-    @patch('rollingrestart.cancel_restart', autospec=True)
-    @patch('rollingrestart.is_waiting_for_restart', autospec=True)
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_first_in_queue(self, is_waiting, cancel_restart,
                                             get_peers, get_queue, peer_echo):
         is_waiting.return_value = True
@@ -301,11 +305,11 @@ class TestRollingRestart(TestCaseBase):
         restart_hook.assert_called_once_with()
         peer_echo.assert_called_once_with()  # peer_echo helper called.
 
-    @patch('rollingrestart._peer_echo', autospec=True)
-    @patch('rollingrestart.get_restart_queue', autospec=True)
-    @patch('rollingrestart.get_peers', autospec=True)
-    @patch('rollingrestart.cancel_restart', autospec=True)
-    @patch('rollingrestart.is_waiting_for_restart', autospec=True)
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_fails(self, is_waiting, cancel_restart,
                                    get_peers, get_queue, peer_echo):
         is_waiting.return_value = True
@@ -326,14 +330,14 @@ class TestRollingRestart(TestCaseBase):
         # attempted again next time rolling_restart() is called.
         self.assertFalse(cancel_restart.called)
 
-    @patch('charmhelpers.core.hookenv.local_unit', autospec=True)
+    @patch('charmhelpers.core.hookenv.local_unit')
     def test_peerstorage_key(self, local_unit):
         local_unit.return_value = 'me/42'
         self.assertEqual(rollingrestart._peerstorage_key(),
                          'rollingrestart_me/42')
 
-    @patch('charmhelpers.core.hookenv.remote_unit', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_echo', autospec=True)
+    @patch('charmhelpers.core.hookenv.remote_unit')
+    @patch('charmhelpers.contrib.peerstorage.peer_echo')
     def test_peer_echo_changed(self, peer_echo, remote_unit):
         remote_unit.return_value = 'service/62'
 
@@ -345,8 +349,8 @@ class TestRollingRestart(TestCaseBase):
         rollingrestart._peer_echo()
         peer_echo.assert_called_once_with(['rollingrestart_service/62'])
 
-    @patch('charmhelpers.core.hookenv.remote_unit', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
+    @patch('charmhelpers.core.hookenv.remote_unit')
+    @patch('charmhelpers.contrib.peerstorage.peer_store')
     def test_peer_echo_departed(self, peer_store, remote_unit):
         # When _peer_echo is called from a peer relation-departed hook,
         # it cleans out any entry for the departing unit from peer
@@ -360,8 +364,8 @@ class TestRollingRestart(TestCaseBase):
         peer_store.assert_called_once_with('rollingrestart_unit/99',
                                            None, relname)
 
-    @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    @patch('charmhelpers.contrib.peerstorage.peer_echo', autospec=True)
+    @patch('charmhelpers.contrib.peerstorage.peer_store')
+    @patch('charmhelpers.contrib.peerstorage.peer_echo')
     def test_peer_echo_misc_hook(self, peer_echo, peer_store):
         # _peer_echo() does nothing unless it is called for a
         # peer relation-changed or relation-departed hook.
@@ -370,7 +374,7 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(peer_store.called)
         self.assertFalse(peer_echo.called)
 
-    @patch('charmhelpers.core.hookenv.metadata', autospec=True)
+    @patch('charmhelpers.core.hookenv.metadata')
     def test_get_peer_relation_name(self, metadata):
         metadata.return_value = dict(peers=dict(peer1=dict(interface='int1'),
                                                 peer2=dict(interface='int2')))
@@ -378,7 +382,7 @@ class TestRollingRestart(TestCaseBase):
         peer_relname = rollingrestart.get_peer_relation_name()
         self.assertEqual(peer_relname, 'peer1')
 
-    @patch('rollingrestart.get_peer_relation_name', autospec=True)
+    @patch('rollingrestart.get_peer_relation_name')
     def test_get_peer_relation_id(self, relname):
         relname.return_value = 'foo'
         self.assertEqual(rollingrestart.get_peer_relation_id(), 'foo:1')
@@ -386,7 +390,7 @@ class TestRollingRestart(TestCaseBase):
         relname.return_value = None
         self.assertEqual(rollingrestart.get_peer_relation_id(), None)
 
-    @patch('rollingrestart.get_peer_relation_name', autospec=True)
+    @patch('rollingrestart.get_peer_relation_name')
     def test_get_peers(self, get_peer_relation_name):
         get_peer_relation_name.return_value = 'cluster'
         self.assertSetEqual(rollingrestart.get_peers(),
@@ -422,8 +426,8 @@ class TestRollingRestart(TestCaseBase):
         self.assertLess(rollingrestart.utcnow_str(),
                         rollingrestart.utcnow_str())
 
-    # @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    # @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
+    # @patch('charmhelpers.contrib.peerstorage.peer_store')
+    # @patch('charmhelpers.contrib.peerstorage.peer_retrieve')
     # def test_rolling_restart_stuck_in_queue(self, peer_retrieve, peer_store):
     #     restart = MagicMock()
 
@@ -444,8 +448,8 @@ class TestRollingRestart(TestCaseBase):
     #     # No change was made to the queue, since we are already in it.
     #     self.assertFalse(peer_store.called)
 
-    # @patch('charmhelpers.contrib.peerstorage.peer_store', autospec=True)
-    # @patch('charmhelpers.contrib.peerstorage.peer_retrieve', autospec=True)
+    # @patch('charmhelpers.contrib.peerstorage.peer_store')
+    # @patch('charmhelpers.contrib.peerstorage.peer_retrieve')
     # def test_rolling_restart_next_in_queue(self, peer_retrieve, peer_store):
     #     restart = MagicMock()
     #     first, second = rollingrestart.utcnow(), rollingrestart.utcnow()
