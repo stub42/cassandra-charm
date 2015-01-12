@@ -57,7 +57,8 @@ def get_seeds():
     '''Return a list of seed nodes.
 
     This is the list of private IPs for all units in the service,
-    unless overridden by the force_seed_nodes configuration item.'''
+    unless overridden by the force_seed_nodes configuration item.
+    '''
 
     config_dict = hookenv.config()
 
@@ -74,11 +75,11 @@ def get_seeds():
 
 
 def get_database_directory(config_path):
-    """Convert a database path from the service config to an absolute path.
+    '''Convert a database path from the service config to an absolute path.
 
     Entries in the config file may be absolute, relative to
     /var/lib/cassandra, or relative to the mountpoint.
-    """
+    '''
     storage = relations.StorageRelation()
     if storage.mountpoint:
         root = os.path.join(storage.mountpoint, 'cassandra')
