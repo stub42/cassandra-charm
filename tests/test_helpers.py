@@ -482,9 +482,6 @@ class TestHelpers(TestCaseBase):
         # disk).
         hookenv.log.assert_any_call(ANY, hookenv.WARNING)
 
-        # The unit is flagged as dead.
-        self.assertTrue(hookenv.config().get('dead_node'))
-
     @patch('helpers.ensure_database_directory')
     @patch('helpers.get_all_database_directories')
     def test_ensure_database_directories(self, get_all_dirs, ensure_dir):
@@ -730,6 +727,47 @@ class TestHelpers(TestCaseBase):
             query.assert_called_once_with(
                 session, 'ALTER USER cassandra WITH PASSWORD %s',
                 ConsistencyLevel.ALL, (sentinel.password,))
+
+    def test_cqlshrc_path(self):
+        self.assertEqual(helpers.get_cqlshrc_path(),
+                         '/root/.cassandra/cqlshrc')
+
+    def test_superuser_username(self):
+        self.assertEqual(hookenv.local_unit(), 'service/1')
+        self.assertEqual(helpers.superuser_username(), 'juju_service_1')
+
+    @patch('host.pwgen')
+    @patch('helpers.superuser_username')
+    @patch('helpers.get_cqlshrc_path')
+    def superuser_credentials(self, get_cqlshrc_path, get_username, pwgen):
+        with tempfile.NamedTemporaryFile() as cqlshrc_file:
+            get_cqlshrc_path.return_value = cqlshrc_file.name
+            get_username.return_value = 'foo'
+            pwgen.return_value = 'secret'
+
+            # First time generates username & password.
+            username, password = helpers.superuser_credentials()
+            self.assertEqual(username, 'foo')
+            self.assertEqual(password, 'secret')
+
+            # Credentials are stored in the cqlshrc file.
+            expected_cqlshrc = dedent('''\
+                                      [authentication]
+                                      username = foo
+                                      password = secret
+                                      ''').strip()
+            self.assertEqual(open(cqlshrc_file, 'r').read(),
+                             expected_cqlshrc)
+
+            # If the credentials have been stored, they are not
+            # regenerated.
+            get_username.return_value = 'bar'
+            pwgen.return_value = 'secret2'
+            username, password = helpers.superuser_credentials()
+            self.assertEqual(username, 'foo')
+            self.assertEqual(password, 'secret')
+            self.assertEqual(open(cqlshrc_file, 'r').read(),
+                             expected_cqlshrc)
 
 
 class TestIsLxc(unittest.TestCase):

@@ -1,5 +1,6 @@
 #!.venv3/bin/python3
 
+import configparser
 import os
 import subprocess
 import time
@@ -9,10 +10,12 @@ import warnings
 warnings.filterwarnings('ignore', 'The blist library is not available')
 
 from cassandra import ConsistencyLevel
+from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 import yaml
 
+import helpers
 from testing.amuletfixture import AmuletFixture
 
 
@@ -90,10 +93,23 @@ class TestDeploymentBase(unittest.TestCase):
 
     def cluster(self):
         status = self.juju_status()
+
+        # Get some valid credentials - unit's superuser account will do.
+        unit = list(status['services']['cassandra']['units'].keys())[0]
+        cqlshrc_path = helpers.get_cqlshrc_path()
+        cqlshrc = configparser.ConfigParser(interpolation=None)
+        cqlshrc.read_string(
+            self.deployment.sentry[unit].file_contents(cqlshrc_path))
+        username = cqlshrc['authentication']['username']
+        password = cqlshrc['authentication']['password']
+        auth_provider = PlainTextAuthProvider(username=username,
+                                              password=password)
+
+        # Get the IP addresses
         ips = []
         for unit, detail in status['services']['cassandra']['units'].items():
             ips.append(detail['public-address'])
-        cluster = Cluster(ips)
+        cluster = Cluster(ips, auth_provider=auth_provider)
         self.addCleanup(cluster.shutdown)
         return cluster
 
@@ -162,7 +178,7 @@ class Test3UnitDeployment(TestDeploymentBase):
                             '/srv/cassandra_0/cassandra/data')
                         self.assertSetEqual(set(contents['directories']),
                                             set(['system_traces', 'test',
-                                                 'system']))
+                                                 'system', 'system_auth']))
                         break
                     except Exception:
                         if time.time() > timeout:

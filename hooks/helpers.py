@@ -331,10 +331,6 @@ def stop_cassandra():
 
 
 def start_cassandra():
-    if hookenv.config().get('dead_node'):
-        hookenv.log('Cassandra node is decommissioned. Not starting.',
-                    WARNING)
-        return
     if is_cassandra_running():
         return
 
@@ -356,9 +352,10 @@ def remount_cassandra():
     storage = relations.StorageRelation()
     if storage.needs_remount():
         if storage.mountpoint is None:
-            hookenv.log('External storage AND DATA gone. Node is dead.',
+            hookenv.log('External storage AND DATA gone. '
+                        'Reverting to local storage. '
+                        'In danger of resurrecting old data. ',
                         WARNING)
-            hookenv.config()['dead_node'] = True
         else:
             storage.migrate('/var/lib/cassandra', 'cassandra')
             root = os.path.join(storage.mountpoint, 'cassandra')
@@ -475,13 +472,21 @@ def ensure_superuser_credentials():
         hookenv.log('Unit superuser password reset successful')
 
 
+def get_cqlshrc_path():
+    return os.path.expanduser('~root/.cassandra/cqlshrc')
+
+
+def superuser_username():
+    return 'juju_{}'.format(re.subn(r'\W', '_', hookenv.local_unit())[0])
+
+
 def superuser_credentials():
     '''Return (username, password) to connect to the Cassandra superuser.
 
     The credentials are persisted in the root user's cqlshrc file,
     making them easily accessible to the command line tools.
     '''
-    cqlshrc_path = os.path.expanduser('~root/.cassandra/cqlshrc')
+    cqlshrc_path = get_cqlshrc_path()
     cqlshrc = configparser.ConfigParser(interpolation=None)
     cqlshrc.read([cqlshrc_path])
 
@@ -494,11 +499,10 @@ def superuser_credentials():
 
     config = hookenv.config()
 
-    username = 'juju_{}'.format(re.subn(r'\W', '', hookenv.local_unit())[0])
-    hookenv.log('Generated username {}'.format(username))
-    hookenv.log('juju_{}'.format(re.subn(r'[^\w_]', '',
-                                         hookenv.local_unit())[0]))
+    username = superuser_username()
     password = host.pwgen()
+
+    hookenv.log('Generated username {}'.format(username))
 
     cqlshrc['authentication'] = dict(username=username, password=password)
     cqlshrc['connection'] = dict(hostname=hookenv.unit_public_ip(),
@@ -675,6 +679,10 @@ def get_auth_keyspace_replication_factor():
 
 
 def set_auth_keyspace_replication_factor(rf):
+    # TODO: This will fail if we are linking multiple Cassandra
+    # services, as we are only counting nodes in this service. Instead,
+    # we could set the rf for this services rack to match the number of
+    # nodes in the service.
     hookenv.log('Updating system_auth rf={}'.format(rf))
     with connect() as session:
         statement = dedent('''\
