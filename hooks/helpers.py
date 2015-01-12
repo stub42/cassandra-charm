@@ -200,15 +200,18 @@ def get_package_version(package):
     return None
 
 
-ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # hookenv.config() key.
-
-
 def accept_oracle_jvm_license():
+    '''Accept the Oracle JVM license on behalf of the user.
+
+    This method should only be called if the user has explicitly
+    chosen options documented as implicitly accepting the Oracle JVM
+    license.
+    '''
+    ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # config() key.
     config = hookenv.config()
-    if config.get(ORACLE_JVM_ACCEPT_KEY) is None:
-        config[ORACLE_JVM_ACCEPT_KEY] = False
+    config.setdefault(ORACLE_JVM_ACCEPT_KEY, False)
     if config[ORACLE_JVM_ACCEPT_KEY] is True:
-        return
+        return True
     # Per documentation in config.yaml, selecting the Oracle JVM or
     # the dse edition implicitly accepts the Oracle license. Because
     # if it was easy, it wouldn't be Enterprise.
@@ -226,6 +229,7 @@ def accept_oracle_jvm_license():
         hookenv.log('Unable to accept Oracle licence. Using OpenJDK',
                     ERROR)
         hookenv.log(out, DEBUG)
+    return config[ORACLE_JVM_ACCEPT_KEY]
 
 
 def get_jvm():
@@ -299,8 +303,6 @@ def get_cassandra_pid_file():
 
 
 def get_cassandra_packages():
-    config = hookenv.config()
-
     edition = get_cassandra_edition()
     if edition == 'dse':
         packages = set(['dse-full'])
@@ -311,8 +313,7 @@ def get_cassandra_packages():
 
     jvm = get_jvm()
     if jvm == 'oracle':
-        accept_oracle_jvm_license()
-        if config[ORACLE_JVM_ACCEPT_KEY]:
+        if accept_oracle_jvm_license():
             packages.add('oracle-java7-installer')
             packages.add('oracle-java7-set-default')
     else:

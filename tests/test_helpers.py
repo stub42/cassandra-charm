@@ -317,7 +317,6 @@ class TestHelpers(TestCaseBase):
         # has been selected.
         self.assertRaises(AssertionError, helpers.accept_oracle_jvm_license)
         self.assertFalse(popen.called)
-        self.assertFalse(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
 
         # When the user selects the Oracle JVM in the charm service
         # configuration, they are implicitly accepting the Oracle Java
@@ -328,14 +327,13 @@ class TestHelpers(TestCaseBase):
         # OpenJDK.
         hookenv.log.reset_mock()
         popen().returncode = 1
-        helpers.accept_oracle_jvm_license()
+        self.assertFalse(helpers.accept_oracle_jvm_license())
         hookenv.log.assert_any_call(ANY, hookenv.ERROR)
-        self.assertFalse(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
 
         # If selection works, the flag is set in the persistent config.
         popen().returncode = 0
         popen.reset_mock()
-        helpers.accept_oracle_jvm_license()
+        self.assertTrue(helpers.accept_oracle_jvm_license())
         popen.assert_called_once_with(['debconf-set-selections'],
                                       stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE,
@@ -344,13 +342,11 @@ class TestHelpers(TestCaseBase):
                         b'shared/accepted-oracle-license-v1-1 '
                         b'select true\n')  # trailing newline is required.
         popen().communicate.assert_called_once_with(instructions)
-        self.assertTrue(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
 
         # Further calls do nothing.
         popen.reset_mock()
-        helpers.accept_oracle_jvm_license()
-        self.assertFalse(popen.called)
-        self.assertTrue(hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY])
+        self.assertTrue(helpers.accept_oracle_jvm_license())
+        self.assertFalse(popen.called)  # No need to repeat commands.
 
     @patch('helpers.accept_oracle_jvm_license')
     def test_get_cassandra_packages(self, accept_oracle_jvm_license):
@@ -364,7 +360,7 @@ class TestHelpers(TestCaseBase):
                                                accept_oracle_jvm_license):
         # Oracle JVM
         hookenv.config()['jvm'] = 'oracle'
-        hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
+        accept_oracle_jvm_license.return_value = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'cassandra-tools', 'ntp',
                                  'oracle-java7-installer',
@@ -379,8 +375,8 @@ class TestHelpers(TestCaseBase):
         # If we specified the Oracle JVM, but the license could not be
         # accepted, we fall back to the default jdk.
         hookenv.config()['jvm'] = 'oracle'
+        accept_oracle_jvm_license.return_value = False
 
-        hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = False
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'cassandra-tools', 'ntp']))
         self.assertTrue(accept_oracle_jvm_license.called)
@@ -389,7 +385,7 @@ class TestHelpers(TestCaseBase):
     def test_get_cassandra_packages_dse(self, accept_oracle_jvm_license):
         # DataStax Enterprise, and implicit Oracle JVM.
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
-        hookenv.config()[helpers.ORACLE_JVM_ACCEPT_KEY] = True
+        accept_oracle_jvm_license.return_value = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['dse-full', 'ntp',
                                  'oracle-java7-installer',
@@ -469,7 +465,7 @@ class TestHelpers(TestCaseBase):
 
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
-    def test_remount_cassandra_unmnt(self, storage, is_running):
+    def test_remount_cassandra_unmount(self, storage, is_running):
         storage().needs_remount.return_value = True
         storage().mountpoint = None  # Reverting to local disk.
         is_running.return_value = False
