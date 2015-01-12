@@ -280,8 +280,12 @@ def start_cassandra(servicename):
     helpers.start_cassandra()
 
 
-def ensure_authentication(servicename):
-    helpers.ensure_authentication()
+def reset_default_password(servicename):
+    helpers.reset_default_password()
+
+
+def ensure_superuser(servicename):
+    helpers.ensure_superuser()
 
 
 def reset_all_io_schedulers(servicename):
@@ -319,3 +323,60 @@ def repair_auth_keyspace(servicename):
     config['num_nodes'] = helpers.num_nodes()
     if config.changed('num_nodes'):
         subprocess.check_call(['nodetool', 'repair', 'system_auth'])
+
+
+def publish_cluster_relation(servicename):
+    # Per Bug #1409763, this functionality is an action rather than a
+    # provided_data item.
+    relid = rollingrestart.get_peer_relation_id()
+    hookenv.relation_set(relid, {'public-address': hookenv.unit_public_ip()})
+
+
+def publish_database_relations(servicename):
+    # Due to Bug #1409763, this functionality is as action rather than a
+    # provided_data item.
+    #
+    # The Casandra service needs to provide a common set of credentials
+    # to a client unit. Juju does not yet provide a leader so we
+    # need another mechanism for determine which unit will create the
+    # client's account, with the remaining units copying the lead unit's
+    # credentials. For the purposes of this charm, the first unit in
+    # order is considered the leader and creates the user with a random
+    # password. It then tickles the peer relation to ensure the other
+    # units get a hook fired and the opportunity to copy and publish
+    # these credentials. If the lowest numbered unit is removed before
+    # all of the other peers have copied its credentials, then the next
+    # lowest will have either already copied the credentials (and the
+    # remaining peers will use them), or the process starts again and
+    # it will generate new credentials.
+    node_list = list(rollingrestart.get_peers()) + [hookenv.local_unit()]
+    sorted_nodes = sorted(node_list, lambda unit: int(unit.split('/')[-1]))
+    first_node = sorted_nodes[0]
+
+    config = hookenv.config()
+
+    for relid in hookenv.relation_ids('database'):
+        relinfo = hookenv.relation_get(unit=first_node, rid=relid)
+        username = relinfo.get('username')
+        password = relinfo.get('password')
+        if hookenv.local_unit() == first_node:
+            # Lowest numbered unit, at least for now.
+            if 'username' not in relinfo:
+                # Credentials unset. Generate them.
+                username = 'juju_{}'.format(
+                    hookenv.relation_id().replace(':', '_'))
+                password = host.pwgen()
+                # Wake the other peers, if any.
+                hookenv.relation_set(rollingrestart.get_peer_relation_id(),
+                                     ping=rollingrestart.utcnow_str())
+            # Create the account if necessary, and reset the password.
+            # We need to reset the password as another unit may have
+            # rudely changed it thinking they were the lowest numbered
+            # unit. Fix this behavior once juju provides real
+            # leadership.
+            helpers.ensure_user(username, password)
+        # Publish the credentials on the relation where clients
+        # and peers can find them.
+        hookenv.relation_set(relid, username=username, password=password,
+                             port=config['native_client_port'],
+                             thrift_port=config['thrift_client_port'])

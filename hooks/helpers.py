@@ -372,11 +372,6 @@ def ensure_database_directories():
         ensure_database_directory(db_dir)
 
 
-def ensure_authentication():
-    reset_default_password()
-    ensure_superuser_credentials()
-
-
 def reset_default_password():
     # If we can connect using the default superuser password
     # 'cassandra', change it to something random. We do the connection
@@ -431,8 +426,18 @@ def query(session, statement, consistency_level, args=None):
     return session.execute(q, args)
 
 
-def ensure_superuser_credentials():
-    '''Reset the unit's superuser account if necessary.
+def ensure_user(username, password):
+    '''Create the DB user if it doesn't already exist & reset the password.'''
+    hookenv.log('Creating user {}'.format(username))
+    with connect() as session:
+        query(session, 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
+              ConsistencyLevel.QUORUM, (username, password,))
+        query(session, 'ALTER USER %s WITH PASSWORD %s',
+              ConsistencyLevel.QUORUM, (username, password,))
+
+
+def ensure_superuser():
+    '''Create the unit's superuser account if necessary and the password.
 
     As there may be no known superuser credentials to use, we restart
     the node using the AllowAllAuthenticator and insert our user

@@ -7,26 +7,6 @@ from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
 
-class DatabaseRelation(RelationContext):
-    name = 'database'
-    interface = 'cassandra'
-
-    def provide_data(self):
-        # TODO: Authentication, or at least firewall
-        config = hookenv.config()
-        return dict(port=config['thrift_client_port'],
-                    thrift_port=config['thrift_client_port'],
-                    native_port=config['native_client_port'])
-
-
-class ClusterRelation(RelationContext):
-    name = 'cluster'
-    interface = 'cassandra-cluster'
-
-    def provide_data(self):
-        return {'public-address': hookenv.unit_public_ip()}
-
-
 # FOR CHARMHELPERS
 class StorageRelation(RelationContext):
     '''Wait for the block storage mount to become available.

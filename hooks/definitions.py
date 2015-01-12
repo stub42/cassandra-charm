@@ -22,12 +22,11 @@ def get_service_definitions():
              ports=[config['thrift_client_port'],   # Thrift clients.
                     config['native_client_port']],  # Native protocol clients.
              required_data=[relations.StorageRelation()],
-             provided_data=[relations.StorageRelation(),
-                            relations.DatabaseRelation(),
-                            relations.ClusterRelation()],
+             provided_data=[relations.StorageRelation()],
              data_ready=[actions.preinstall,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
+                         actions.publish_cluster_relation,
                          actions.swapoff,
                          actions.reset_sysctl,
                          actions.install_cassandra_packages,
@@ -38,7 +37,8 @@ def get_service_definitions():
                          actions.maybe_schedule_restart],
              stop=[actions.stop_cassandra],
              start=[actions.start_cassandra,
-                    actions.ensure_authentication]),
+                    actions.reset_default_password,
+                    actions.ensure_superuser]),
 
         # Rolling restart. This service will call the restart hook when
         # it is this units turn to restart. This is also where we do
@@ -47,13 +47,15 @@ def get_service_definitions():
                                      helpers.remount_cassandra,
                                      helpers.ensure_database_directories,
                                      helpers.start_cassandra,
-                                     helpers.ensure_authentication]),
+                                     helpers.reset_default_password,
+                                     helpers.ensure_superuser]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresCassandra()],  # Yucky hack.
              data_ready=[actions.reset_auth_keyspace_replication_factor,
-                         actions.repair_auth_keyspace],
+                         actions.repair_auth_keyspace,
+                         actions.publish_database_relations],
              start=[], stop=[])]
 
 

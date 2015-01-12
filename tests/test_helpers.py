@@ -8,9 +8,9 @@ import subprocess
 import tempfile
 from textwrap import dedent
 import unittest
-from unittest.mock import ANY, call, patch, sentinel
+from unittest.mock import ANY, call, MagicMock, patch, sentinel
 
-from cassandra import ConsistencyLevel
+from cassandra import AuthenticationFailed, ConsistencyLevel
 import yaml
 
 from charmhelpers.core import hookenv, host
@@ -19,7 +19,7 @@ from tests.base import TestCaseBase
 import helpers
 
 
-patch = functools.partial(patch)
+patch = functools.partial(patch, autospec=True)
 
 
 class TestHelpers(TestCaseBase):
@@ -398,7 +398,7 @@ class TestHelpers(TestCaseBase):
     def test_stop_cassandra(self, is_cassandra_running,
                             service_stop, get_service):
         get_service.return_value = sentinel.service_name
-        is_cassandra_running.side_effect = [True, False]
+        is_cassandra_running.side_effect = iter([True, False])
         helpers.stop_cassandra()
         service_stop.assert_called_once_with(sentinel.service_name)
 
@@ -418,7 +418,7 @@ class TestHelpers(TestCaseBase):
     def test_stop_cassandra_failure(self, is_cassandra_running,
                                     service_stop, get_service):
         get_service.return_value = sentinel.service_name
-        is_cassandra_running.side_effect = [True, True]
+        is_cassandra_running.side_effect = iter([True, True])
         self.assertRaises(AssertionError, helpers.stop_cassandra)
         service_stop.assert_called_once_with(sentinel.service_name)
 
@@ -708,14 +708,6 @@ class TestHelpers(TestCaseBase):
             self.assertEqual(yaml.safe_load(new_config)['partitioner'],
                              'overridden_partitioner')
 
-    @patch('helpers.ensure_superuser_credentials')
-    @patch('helpers.reset_default_password')
-    def test_ensure_authentication(self, reset_default_password,
-                                   ensure_superuser_credentials):
-        helpers.ensure_authentication()
-        reset_default_password.assert_called_once_with()
-        ensure_superuser_credentials.assert_called_once_with()
-
     @patch('charmhelpers.core.host.pwgen')
     @patch('helpers.query')
     @patch('helpers.connect')
@@ -768,6 +760,49 @@ class TestHelpers(TestCaseBase):
             self.assertEqual(password, 'secret')
             self.assertEqual(open(cqlshrc_file, 'r').read(),
                              expected_cqlshrc)
+
+    @patch('helpers.query')
+    @patch('helpers.connect')
+    def test_ensure_user(self, connect, query):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        helpers.ensure_user(sentinel.username, sentinel.password)
+        query.assert_has_calls([
+            call(sentinel.session,
+                 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
+                 ConsistencyLevel.QUORUM,
+                 (sentinel.username, sentinel.password)),
+            call(sentinel.session,
+                 'ALTER USER %s WITH PASSWORD %s',
+                 ConsistencyLevel.QUORUM,
+                 (sentinel.username, sentinel.password))])
+
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.connect')
+    def test_ensure_superuser(self, connect, super_creds):
+        session = MagicMock()
+        session.__enter__.return_value = sentinel.session
+        session.__exit__.return_value = False
+        connect.side_effect = iter([AuthenticationFailed(), session])
+        super_creds.return_value = ('super', 'secret')
+        connect.reset_mock()
+
+        helpers.ensure_superuser()
+        connect.assert_called_once_with('super', 'secret')
+
+
+
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.connect')
+    def test_ensure_superuser_exists(self, connect, super_creds):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        super_creds.return_value = ('super', 'secret')
+        connect.reset_mock()
+
+        # If connect works, nothing happens
+        helpers.ensure_superuser()
+        connect.assert_called_once_with('super', 'secret')
 
 
 class TestIsLxc(unittest.TestCase):
