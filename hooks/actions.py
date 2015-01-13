@@ -220,9 +220,8 @@ RESTART_REQUIRED_KEYS = set([
     'jvm'])
 
 
-# All other config items. By maintaining both lists, we can
-# detect any new config items added or changed and ensure
-# these lists are updated.
+# All other config items. By maintaining both lists, we can detect if
+# someone forgot to update these lists when they added a new config item.
 RESTART_NOT_REQUIRED_KEYS = set([
     'extra_packages',
     'package_status',
@@ -329,14 +328,9 @@ def publish_cluster_relation(servicename):
     # Per Bug #1409763, this functionality is an action rather than a
     # provided_data item.
     relid = rollingrestart.get_peer_relation_id()
-    try:
+    if relid:
         hookenv.relation_set(relid,
                              {'public-address': hookenv.unit_public_ip()})
-    except CalledProcessError as x:
-        if x.returncode == 2:
-            pass  # Undocumented return code - relation not yet joined.
-        else:
-            raise
 
 
 def publish_database_relations(servicename):

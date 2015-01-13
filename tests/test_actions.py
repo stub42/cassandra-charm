@@ -598,6 +598,13 @@ class TestsActions(TestCaseBase):
         relation_set.assert_called_once_with('cluster:1',
                                              {'public-address': '10.30.0.1'})
 
+    @patch('rollingrestart.get_peer_relation_id')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    def test_publish_cluster_relation_not_yet(self, relation_set, get_relid):
+        get_relid.return_value = None  # Peer relation not yet joined.
+        actions.publish_cluster_relation('')  # Noop
+        self.assertFalse(relation_set.called)
+
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.hookenv.relation_set')
