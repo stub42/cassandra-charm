@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import ANY, call, patch, sentinel
 
 from cassandra import AuthenticationFailed, ConsistencyLevel
+from cassandra.cluster import NoHostAvailable
 import yaml
 
 from charmhelpers.core import hookenv, host
@@ -842,6 +843,122 @@ class TestHelpers(TestCaseBase):
                     VALUES (%s, %s)
                         '''),
                  ConsistencyLevel.ALL, ('super', 'pwhash'))])
+
+    @patch('cassandra.cluster.Cluster')
+    @patch('cassandra.auth.PlainTextAuthProvider')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.read_cassandra_yaml')
+    def test_connect(self, yaml, creds, auth_provider, cluster):
+        # host and port are pulled from the current active
+        # cassandra.yaml file, rather than configuration, as
+        # configuration may not match reality (if for no other reason
+        # that we are running this code in order to make reality match
+        # the desired configuration).
+        yaml.return_value = dict(rpc_address='1.2.3.4',
+                                 native_transport_port=666)
+
+        creds.return_value = ('un', 'pw')
+        auth_provider.return_value = sentinel.ap
+
+        cluster().connect.return_value = sentinel.session
+        cluster.reset_mock()
+
+        with helpers.connect() as session:
+            auth_provider.assert_called_once_with(username='un',
+                                                  password='pw')
+            cluster.assert_called_once_with(['1.2.3.4'], port=666,
+                                            auth_provider=sentinel.ap)
+            self.assertIs(session, sentinel.session)
+            self.assertFalse(cluster().shutdown.called)
+
+        cluster().shutdown.assert_called_once_with()
+
+    @patch('cassandra.cluster.Cluster')
+    @patch('cassandra.auth.PlainTextAuthProvider')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.read_cassandra_yaml')
+    def test_connect_badauth(self, yaml, creds, auth_provider, cluster):
+        # host and port are pulled from the current active
+        # cassandra.yaml file, rather than configuration, as
+        # configuration may not match reality (if for no other reason
+        # that we are running this code in order to make reality match
+        # the desired configuration).
+        yaml.return_value = dict(rpc_address='1.2.3.4',
+                                 native_transport_port=666)
+
+        creds.return_value = ('un', 'pw')
+        auth_provider.return_value = sentinel.ap
+
+        x = NoHostAvailable('whoops', {'1.2.3.4': AuthenticationFailed()})
+        cluster().connect.side_effect = x
+        cluster.reset_mock()
+
+        self.assertRaises(AuthenticationFailed, helpers.connect().__enter__)
+
+        cluster().shutdown.assert_called_once_with()
+
+    @patch('cassandra.cluster.Cluster')
+    @patch('cassandra.auth.PlainTextAuthProvider')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.read_cassandra_yaml')
+    def test_connect_retry(self, yaml, creds, auth_provider, cluster):
+        # host and port are pulled from the current active
+        # cassandra.yaml file, rather than configuration, as
+        # configuration may not match reality (if for no other reason
+        # that we are running this code in order to make reality match
+        # the desired configuration).
+        yaml.return_value = dict(rpc_address='1.2.3.4',
+                                 native_transport_port=666)
+
+        creds.return_value = ('un', 'pw')
+        auth_provider.return_value = sentinel.ap
+
+        cluster().connect.side_effect = [NoHostAvailable('1', {}),
+                                         NoHostAvailable('2', {}),
+                                         NoHostAvailable('3', {}),
+                                         sentinel.session]
+        cluster.reset_mock()
+
+        with helpers.connect() as session:
+            auth_provider.assert_called_once_with(username='un',
+                                                  password='pw')
+            cluster.assert_called_with(['1.2.3.4'],
+                                       port=666, auth_provider=sentinel.ap)
+            self.assertEqual(cluster().connect.call_count, 4)
+            self.assertIs(session, sentinel.session)
+
+        self.assertEqual(cluster().shutdown.call_count, 4)
+
+    @patch('time.time')
+    @patch('cassandra.cluster.Cluster')
+    @patch('cassandra.auth.PlainTextAuthProvider')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.read_cassandra_yaml')
+    def test_connect_timeout(self, yaml, creds, auth_provider, cluster, time):
+        # host and port are pulled from the current active
+        # cassandra.yaml file, rather than configuration, as
+        # configuration may not match reality (if for no other reason
+        # that we are running this code in order to make reality match
+        # the desired configuration).
+        yaml.return_value = dict(rpc_address='1.2.3.4',
+                                 native_transport_port=666)
+
+        creds.return_value = ('un', 'pw')
+        auth_provider.return_value = sentinel.ap
+
+        cluster().connect.side_effect = [NoHostAvailable('1', {}),
+                                         NoHostAvailable('2', {}),
+                                         NoHostAvailable('3', {}),
+                                         sentinel.session]
+        cluster.reset_mock()
+
+        # Force a timeout
+        time.side_effect = [10, 20, 60, 70]
+
+        self.assertRaises(NoHostAvailable, helpers.connect().__enter__)
+
+        self.assertEqual(cluster().connect.call_count, 2)
+        self.assertEqual(cluster().shutdown.call_count, 2)
 
 
 class TestIsLxc(unittest.TestCase):

@@ -329,7 +329,14 @@ def publish_cluster_relation(servicename):
     # Per Bug #1409763, this functionality is an action rather than a
     # provided_data item.
     relid = rollingrestart.get_peer_relation_id()
-    hookenv.relation_set(relid, {'public-address': hookenv.unit_public_ip()})
+    try:
+        hookenv.relation_set(relid,
+                             {'public-address': hookenv.unit_public_ip()})
+    except CalledProcessError as x:
+        if x.returncode == 2:
+            pass  # Undocumented return code - relation not yet joined.
+        else:
+            raise
 
 
 def publish_database_relations(servicename):
