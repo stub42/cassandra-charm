@@ -592,6 +592,216 @@ class TestsActions(TestCaseBase):
         check_call.assert_called_once_with(['nodetool',
                                             'repair', 'system_auth'])
 
+    @patch('charmhelpers.core.hookenv.relation_set')
+    def test_publish_cluster_relation(self, relation_set):
+        actions.publish_cluster_relation('')
+        relation_set.assert_called_once_with('cluster:1',
+                                             {'public-address': '10.30.0.1'})
+
+    @patch('rollingrestart.utcnow_str')
+    @patch('helpers.ensure_user')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('charmhelpers.core.host.pwgen')
+    @patch('rollingrestart.get_peers')
+    def test_publish_database_relations_alone(self, get_peers, pwgen,
+                                              relation_get, relation_set,
+                                              ensure_user, utcnow_str):
+        get_peers.return_value = set()
+        pwgen.side_effect = iter(['secret1', 'secret2'])
+        relation_get.return_value = {}
+        hookenv.config()['native_client_port'] = 666
+        hookenv.config()['thrift_client_port'] = 777
+        utcnow_str.return_value = 'whenever'
+
+        actions.publish_database_relations('')
+
+        # Checked this unit for existing data.
+        relation_get.assert_called_once_with(rid='database:1',
+                                             unit='service/1')
+
+        ensure_user.assert_called_once_with('juju_database_1', 'secret1')
+
+        relation_set.assert_has_calls([
+            call('cluster:1', ping='whenever'),
+            call('database:1',
+                 username='juju_database_1', password='secret1',
+                 port=666, thrift_port=777)])
+
+    @patch('rollingrestart.utcnow_str')
+    @patch('helpers.ensure_user')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('rollingrestart.get_peers')
+    def test_publish_database_relations_alone2(self, get_peers,
+                                               relation_get, relation_set,
+                                               ensure_user, utcnow_str):
+        get_peers.return_value = set()
+        # There are existing credentials on the relation.
+        relation_get.return_value = dict(username='un', password='pw')
+        hookenv.config()['native_client_port'] = 666
+        hookenv.config()['thrift_client_port'] = 777
+        utcnow_str.return_value = 'whenever'
+
+        actions.publish_database_relations('')
+
+        # Checked this unit for existing data.
+        relation_get.assert_called_once_with(rid='database:1',
+                                             unit='service/1')
+
+        # Even if the stored creds are unchanged, we ensure the password
+        # is valid and reset it if necessary.
+        ensure_user.assert_called_once_with('un', 'pw')
+
+        relation_set.assert_has_calls([
+            # Credentials unchanged, so no peer wakeup.
+            # call('cluster:1', ping='whenever'),
+
+            # relation_set still called, despite no credentials being
+            # changed, in case the ports have changed.
+            call('database:1', username='un', password='pw',
+                 port=666, thrift_port=777)])
+
+    @patch('rollingrestart.utcnow_str')
+    @patch('helpers.ensure_user')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('charmhelpers.core.host.pwgen')
+    @patch('rollingrestart.get_peers')
+    def test_publish_database_relations_leader(self, get_peers, pwgen,
+                                               relation_get, relation_set,
+                                               ensure_user, utcnow_str):
+        get_peers.return_value = set(['service/2', 'service/3'])
+        pwgen.side_effect = iter(['secret1', 'secret2'])
+        relation_get.return_value = {}
+        hookenv.config()['native_client_port'] = 666
+        hookenv.config()['thrift_client_port'] = 777
+        utcnow_str.return_value = 'whenever'
+
+        actions.publish_database_relations('')
+
+        # Checked this unit for existing data.
+        relation_get.assert_called_once_with(rid='database:1',
+                                             unit='service/1')
+
+        ensure_user.assert_called_once_with('juju_database_1', 'secret1')
+
+        relation_set.assert_has_calls([
+            call('cluster:1', ping='whenever'),
+            call('database:1',
+                 username='juju_database_1', password='secret1',
+                 port=666, thrift_port=777)])
+
+    @patch('rollingrestart.utcnow_str')
+    @patch('helpers.ensure_user')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('rollingrestart.get_peers')
+    def test_publish_database_relations_leader2(self, get_peers,
+                                                relation_get, relation_set,
+                                                ensure_user, utcnow_str):
+        get_peers.return_value = set()
+        # There are existing credentials on the relation.
+        relation_get.return_value = dict(username='un', password='pw')
+        hookenv.config()['native_client_port'] = 666
+        hookenv.config()['thrift_client_port'] = 777
+        utcnow_str.return_value = 'whenever'
+
+        actions.publish_database_relations('')
+
+        # Checked this unit for existing data.
+        relation_get.assert_called_once_with(rid='database:1',
+                                             unit='service/1')
+
+        # Even if the stored creds are unchanged, we ensure the password
+        # is valid and reset it if necessary.
+        ensure_user.assert_called_once_with('un', 'pw')
+
+        relation_set.assert_has_calls([
+            # Credentials unchanged, so no peer wakeup.
+            # call('cluster:1', ping='whenever'),
+
+            # relation_set still called, despite no credentials being
+            # changed, in case the ports have changed.
+            call('database:1', username='un', password='pw',
+                 port=666, thrift_port=777)])
+
+    @patch('charmhelpers.core.hookenv.local_unit')
+    @patch('rollingrestart.utcnow_str')
+    @patch('helpers.ensure_user')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('charmhelpers.core.host.pwgen')
+    @patch('rollingrestart.get_peers')
+    def test_publish_database_relations_follow(self, get_peers, pwgen,
+                                               relation_get, relation_set,
+                                               ensure_user, utcnow_str,
+                                               local_unit):
+        local_unit.return_value = 'service/4'
+        get_peers.return_value = set(['service/2', 'service/3'])
+        pwgen.side_effect = iter(['secret1', 'secret2'])
+        # There are no existing credentials on the relation.
+        relation_get.return_value = dict()
+        hookenv.config()['native_client_port'] = 666
+        hookenv.config()['thrift_client_port'] = 777
+        utcnow_str.return_value = 'whenever'
+
+        actions.publish_database_relations('')
+
+        # Checked first unit for existing data.
+        relation_get.assert_called_once_with(rid='database:1',
+                                             unit='service/2')
+
+        self.assertFalse(ensure_user.called)
+
+        relation_set.assert_has_calls([
+            # No wakeup, because we are following. Only the leader
+            # sets creds.
+            # call('cluster:1', ping='whenever'),
+            call('database:1',
+                 # Still publish details, despite no creds, in case we
+                 # are not using password authentication.
+                 username=None, password=None,
+                 port=666, thrift_port=777)])
+
+    @patch('charmhelpers.core.hookenv.local_unit')
+    @patch('rollingrestart.utcnow_str')
+    @patch('helpers.ensure_user')
+    @patch('charmhelpers.core.hookenv.relation_set')
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('charmhelpers.core.host.pwgen')
+    @patch('rollingrestart.get_peers')
+    def test_publish_database_relations_follow2(self, get_peers, pwgen,
+                                                relation_get, relation_set,
+                                                ensure_user, utcnow_str,
+                                                local_unit):
+        local_unit.return_value = 'service/4'
+        get_peers.return_value = set(['service/2', 'service/3'])
+        pwgen.side_effect = iter(['secret1', 'secret2'])
+        # Existing credentials on the relation.
+        relation_get.return_value = dict(username='un', password='pw')
+        hookenv.config()['native_client_port'] = 666
+        hookenv.config()['thrift_client_port'] = 777
+        utcnow_str.return_value = 'whenever'
+
+        actions.publish_database_relations('')
+
+        # Checked first unit for existing data.
+        relation_get.assert_called_once_with(rid='database:1',
+                                             unit='service/2')
+
+        self.assertFalse(ensure_user.called)
+
+        relation_set.assert_has_calls([
+            # No wakeup, because we are following. Only the leader
+            # sets creds.
+            # call('cluster:1', ping='whenever'),
+            call('database:1',
+                 # Still publish details, despite no creds, in case we
+                 # are not using password authentication.
+                 username='un', password='pw',
+                 port=666, thrift_port=777)])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

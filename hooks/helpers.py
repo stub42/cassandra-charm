@@ -346,6 +346,12 @@ def start_cassandra():
     raise SystemExit(1)
 
 
+def reconfigure_and_restart_cassandra(overrides={}):
+    stop_cassandra()
+    configure_cassandra_yaml(overrides)
+    start_cassandra()
+
+
 def remount_cassandra():
     '''If a new mountpoint is ready, migrate data across to it.'''
     assert not is_cassandra_running()  # Guard against data loss.
@@ -437,26 +443,34 @@ def ensure_user(username, password):
 
 
 def ensure_superuser():
-    '''Create the unit's superuser account if necessary and the password.
+    '''If the unit's superuser account is not working, recreate it.'''
+    try:
+        with connect():
+            hookenv.log('Unit superuser account already setup', DEBUG)
+            return
+    except cassandra.AuthenticationFailed:
+        pass
+
+    create_superuser()  # Doesn't exist or can't access, so create it.
+
+    with connect():
+        hookenv.log('Unit superuser password reset successful')
+
+
+def create_superuser():
+    '''Create or recreate the unit's superuser account.
 
     As there may be no known superuser credentials to use, we restart
     the node using the AllowAllAuthenticator and insert our user
     directly into the system_auth keyspace.
     '''
     username, password = superuser_credentials()
-    try:
-        with connect(username, password):
-            hookenv.log('Unit superuser account {} already setup'.format(
-                username))
-            return
-    except cassandra.AuthenticationFailed:
-        pass
-
     hookenv.log('Creating unit superuser {}'.format(username))
-    stop_cassandra()
-    configure_cassandra_yaml(dict(authenticator='AllowAllAuthenticator',
-                                  rpc_address='127.0.0.1'))
-    start_cassandra()
+
+    # Restart cassandra without authentication & listening on localhost.
+    reconfigure_and_restart_cassandra(
+        dict(authenticator='AllowAllAuthenticator', rpc_address='127.0.0.1'))
+
     with connect() as session:
         pwhash = bcrypt.hashpw(password, bcrypt.gensalt())  # Cassandra 2.1
         statement = dedent('''\
@@ -469,12 +483,9 @@ def ensure_superuser():
             VALUES (%s, %s)
             ''')
         query(session, statement, ConsistencyLevel.ALL, (username, pwhash))
-    stop_cassandra()
-    configure_cassandra_yaml()
-    start_cassandra()
 
-    with connect():
-        hookenv.log('Unit superuser password reset successful')
+    # Restart Cassandra with regular config.
+    reconfigure_and_restart_cassandra()
 
 
 def get_cqlshrc_path():

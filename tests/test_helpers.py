@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from textwrap import dedent
 import unittest
-from unittest.mock import ANY, call, MagicMock, patch, sentinel
+from unittest.mock import ANY, call, patch, sentinel
 
 from cassandra import AuthenticationFailed, ConsistencyLevel
 import yaml
@@ -777,32 +777,71 @@ class TestHelpers(TestCaseBase):
                  ConsistencyLevel.QUORUM,
                  (sentinel.username, sentinel.password))])
 
-    @patch('helpers.superuser_credentials')
+    @patch('helpers.create_superuser')
     @patch('helpers.connect')
-    def test_ensure_superuser(self, connect, super_creds):
-        session = MagicMock()
-        session.__enter__.return_value = sentinel.session
-        session.__exit__.return_value = False
-        connect.side_effect = iter([AuthenticationFailed(), session])
-        super_creds.return_value = ('super', 'secret')
+    def test_ensure_superuser(self, connect, create_superuser):
+        connect().__enter__.side_effect = iter([AuthenticationFailed(),
+                                                sentinel.session])
+        connect().__exit__.return_value = False
         connect.reset_mock()
 
         helpers.ensure_superuser()
-        connect.assert_called_once_with('super', 'secret')
+        create_superuser.assert_called_once_with()  # Account created.
 
-
-
-    @patch('helpers.superuser_credentials')
+    @patch('helpers.create_superuser')
     @patch('helpers.connect')
-    def test_ensure_superuser_exists(self, connect, super_creds):
+    def test_ensure_superuser_exists(self, connect, create_superuser):
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
-        super_creds.return_value = ('super', 'secret')
         connect.reset_mock()
 
         # If connect works, nothing happens
         helpers.ensure_superuser()
-        connect.assert_called_once_with('super', 'secret')
+        connect.assert_called_once_with()  # Superuser connection attempted.
+        self.assertFalse(create_superuser.called)  # No need to create.
+
+    @patch('helpers.query')
+    @patch('bcrypt.gensalt')
+    @patch('bcrypt.hashpw')
+    @patch('helpers.reconfigure_and_restart_cassandra')
+    @patch('helpers.connect')
+    @patch('helpers.superuser_credentials')
+    def test_create_superuser(self, creds, connect, restart,
+                              bhash, bsalt, query):
+        creds.return_value = ('super', 'secret')
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        connect.reset_mock()
+
+        bsalt.return_value = sentinel.salt
+        bhash.return_value = 'pwhash'
+
+        helpers.create_superuser()
+
+        # Cassandra was restarted twice, first with authentication
+        # disabled and again with the normal configuration.
+        restart.assert_has_calls([
+            call(dict(authenticator='AllowAllAuthenticator',
+                      rpc_address='127.0.0.1')),
+            call()])
+
+        # A connection was made as the superuser.
+        connect.assert_called_once_with()
+
+        # Statements run to create or update the user.
+        query.assert_has_calls([
+            call(sentinel.session,
+                 dedent('''\
+                        INSERT INTO system_auth.users (name, super)
+                        VALUES (%s, TRUE)
+                        '''),
+                 ConsistencyLevel.ALL, ('super',)),
+            call(sentinel.session,
+                 dedent('''\
+                    INSERT INTO system_auth.credentials (username, salted_hash)
+                    VALUES (%s, %s)
+                        '''),
+                 ConsistencyLevel.ALL, ('super', 'pwhash'))])
 
 
 class TestIsLxc(unittest.TestCase):

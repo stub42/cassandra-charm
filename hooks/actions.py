@@ -350,7 +350,8 @@ def publish_database_relations(servicename):
     # remaining peers will use them), or the process starts again and
     # it will generate new credentials.
     node_list = list(rollingrestart.get_peers()) + [hookenv.local_unit()]
-    sorted_nodes = sorted(node_list, lambda unit: int(unit.split('/')[-1]))
+    sorted_nodes = sorted(node_list,
+                          key=lambda unit: int(unit.split('/')[-1]))
     first_node = sorted_nodes[0]
 
     config = hookenv.config()
@@ -363,8 +364,7 @@ def publish_database_relations(servicename):
             # Lowest numbered unit, at least for now.
             if 'username' not in relinfo:
                 # Credentials unset. Generate them.
-                username = 'juju_{}'.format(
-                    hookenv.relation_id().replace(':', '_'))
+                username = 'juju_{}'.format(relid.replace(':', '_'))
                 password = host.pwgen()
                 # Wake the other peers, if any.
                 hookenv.relation_set(rollingrestart.get_peer_relation_id(),
