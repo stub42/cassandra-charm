@@ -600,6 +600,7 @@ def configure_cassandra_yaml(overrides={}):
                                      or 'Murmur3Partitioner')
 
     cassandra_yaml['authenticator'] = 'PasswordAuthenticator'
+    cassandra_yaml['authorizer'] = config['authorizer']
 
     cassandra_yaml.update(overrides)
 

@@ -44,8 +44,6 @@ options:
             Edition license per
             http://www.oracle.com/technetwork/java/javase/terms/license/.
             The Community edition is recommended for use with this charm.
-            The DataStax Enterprise edition cannot be tested with the
-            juju automated test systems for software registration reasons.
     jvm:
         type: string
         default: openjdk
@@ -287,19 +285,19 @@ options:
 ##             - com.datastax.bdp.cassandra.auth.KerberosAuthenticator For
 ##               external authentication through Kerberos. Additional
 ##               configuration is required in dse.yaml
-##     authorizer:
-##         type: string
-##         default: AllowAllAuthorizer
-##         description: >
-##             Authorization backend, implementing IAuthorizer; used to limit
-##             access/provide permissions Out of the box, Cassandra provides
-##             org.apache.cassandra.auth.{AllowAllAuthorizer,
-##             CassandraAuthorizer}.
-##             - AllowAllAuthorizer allows any action to any user - set it to
-##               disable authorization.
-##             - CassandraAuthorizer stores permissions in
-##               system_auth.permissions table. Please increase system_auth
-##               keyspace replication factor if you use this authorizer.
+
+    authorizer:
+        type: string
+        default: AllowAllAuthorizer
+        description: >
+            Authorization backend, implementing IAuthorizer; used to limit
+            access/provide permissions Out of the box, Cassandra provides
+            AllowAllAuthorizer & CassandraAuthorizer
+            - AllowAllAuthorizer allows any action to any user - set it to
+              disable authorization.
+            - CassandraAuthorizer stores permissions in
+              system_auth.permissions table.
+
     ##     compaction-throughput:
     ##         type: int
     ##         default: 16
