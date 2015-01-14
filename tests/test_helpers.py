@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from textwrap import dedent
 import unittest
-from unittest.mock import ANY, call, patch, sentinel
+from unittest.mock import ANY, call, MagicMock, patch, sentinel
 
 from cassandra import AuthenticationFailed, ConsistencyLevel
 from cassandra.cluster import NoHostAvailable
@@ -247,8 +247,52 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['edition'] = 'dse'
         self.assertEqual(helpers.get_jvm(), 'oracle')
 
-    def test_get_cassandra_service(self):
+    @patch('subprocess.Popen', autospec=False)
+    def test_accept_oracle_jvm_license(self, popen):
+        popen().communicate.return_value = ('', None)
+        popen.reset_mock()
+
+        # Fails hard unless a config option specifying the Oracle JVM
+        # has been selected.
+        self.assertRaises(AssertionError, helpers.accept_oracle_jvm_license)
+        self.assertFalse(popen.called)
+
+        # When the user selects the Oracle JVM in the charm service
+        # configuration, they are implicitly accepting the Oracle Java
+        # license per the documentation of the option in config.yaml.
+        hookenv.config()['jvm'] = 'oracle'
+
+        # If the selection fails, the charm warns and continues to use
+        # OpenJDK.
+        hookenv.log.reset_mock()
+        popen().returncode = 1
+        self.assertFalse(helpers.accept_oracle_jvm_license())
+        hookenv.log.assert_any_call(ANY, hookenv.ERROR)
+
+        # If selection works, the flag is set in the persistent config.
+        popen().returncode = 0
+        popen.reset_mock()
+        self.assertTrue(helpers.accept_oracle_jvm_license())
+        popen.assert_called_once_with(['debconf-set-selections'],
+                                      stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT)
+        instructions = (b'oracle-java7-installer '
+                        b'shared/accepted-oracle-license-v1-1 '
+                        b'select true\n')  # trailing newline is required.
+        popen().communicate.assert_called_once_with(instructions)
+
+        # Further calls do nothing.
+        popen.reset_mock()
+        self.assertTrue(helpers.accept_oracle_jvm_license())
+        self.assertFalse(popen.called)  # No need to repeat commands.
+
+    @patch('helpers.get_cassandra_edition')
+    def test_get_cassandra_service(self, get_edition):
+        get_edition.return_value = 'whatever'
         self.assertEqual(helpers.get_cassandra_service(), 'cassandra')
+        get_edition.return_value = 'dse'
+        self.assertEqual(helpers.get_cassandra_service(), 'dse')
 
     def test_get_cassandra_service_dse_override(self):
         hookenv.config()['edition'] = 'dse'
@@ -309,45 +353,14 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.get_cassandra_rackdc_file(),
                          '/foo/cassandra-rackdc.properties')
 
-    @patch('subprocess.Popen', autospec=False)
-    def test_accept_oracle_jvm_license(self, popen):
-        popen().communicate.return_value = ('', None)
-        popen.reset_mock()
-
-        # Fails hard unless a config option specifying the Oracle JVM
-        # has been selected.
-        self.assertRaises(AssertionError, helpers.accept_oracle_jvm_license)
-        self.assertFalse(popen.called)
-
-        # When the user selects the Oracle JVM in the charm service
-        # configuration, they are implicitly accepting the Oracle Java
-        # license per the documentation of the option in config.yaml.
-        hookenv.config()['jvm'] = 'oracle'
-
-        # If the selection fails, the charm warns and continues to use
-        # OpenJDK.
-        hookenv.log.reset_mock()
-        popen().returncode = 1
-        self.assertFalse(helpers.accept_oracle_jvm_license())
-        hookenv.log.assert_any_call(ANY, hookenv.ERROR)
-
-        # If selection works, the flag is set in the persistent config.
-        popen().returncode = 0
-        popen.reset_mock()
-        self.assertTrue(helpers.accept_oracle_jvm_license())
-        popen.assert_called_once_with(['debconf-set-selections'],
-                                      stdin=subprocess.PIPE,
-                                      stdout=subprocess.PIPE,
-                                      stderr=subprocess.STDOUT)
-        instructions = (b'oracle-java7-installer '
-                        b'shared/accepted-oracle-license-v1-1 '
-                        b'select true\n')  # trailing newline is required.
-        popen().communicate.assert_called_once_with(instructions)
-
-        # Further calls do nothing.
-        popen.reset_mock()
-        self.assertTrue(helpers.accept_oracle_jvm_license())
-        self.assertFalse(popen.called)  # No need to repeat commands.
+    @patch('helpers.get_cassandra_edition')
+    def test_get_cassandra_pid_file(self, get_edition):
+        get_edition.return_value = 'whatever'
+        self.assertEqual(helpers.get_cassandra_pid_file(),
+                         '/var/run/cassandra/cassandra.pid')
+        get_edition.return_value = 'dse'
+        self.assertEqual(helpers.get_cassandra_pid_file(),
+                         '/var/run/dse/dse.pid')
 
     @patch('helpers.accept_oracle_jvm_license')
     def test_get_cassandra_packages(self, accept_oracle_jvm_license):
@@ -453,6 +466,15 @@ class TestHelpers(TestCaseBase):
         # An error was logged.
         hookenv.log.assert_has_calls([call(ANY, hookenv.ERROR)])
 
+    @patch('helpers.configure_cassandra_yaml')
+    @patch('helpers.stop_cassandra')
+    @patch('helpers.start_cassandra')
+    def test_reconfigure_and_restart_cassandra(self, start, stop, reconf):
+        helpers.reconfigure_and_restart_cassandra(sentinel.overrides)
+        stop.assert_called_once_with()
+        reconf.assert_called_once_with(sentinel.overrides)
+        start.assert_called_once_with()
+
     @patch('os.chmod')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
@@ -513,218 +535,6 @@ class TestHelpers(TestCaseBase):
             call(sentinel.commitlog_dir),
             call(sentinel.saved_caches_dir)], any_order=True)
 
-    def test_get_pid_from_file(self):
-        with tempfile.NamedTemporaryFile('w') as pid_file:
-            pid_file.write(' 42\t')
-            pid_file.flush()
-            self.assertEqual(helpers.get_pid_from_file(pid_file.name), 42)
-            pid_file.write('\nSome Noise')
-            pid_file.flush()
-            self.assertEqual(helpers.get_pid_from_file(pid_file.name), 42)
-
-        for invalid_pid in ['-1', '0', 'fred']:
-            with self.subTest(invalid_pid=invalid_pid):
-                with tempfile.NamedTemporaryFile('w') as pid_file:
-                    pid_file.write(invalid_pid)
-                    pid_file.flush()
-                    self.assertRaises(ValueError,
-                                      helpers.get_pid_from_file, pid_file.name)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self.assertRaises(OSError, helpers.get_pid_from_file,
-                              os.path.join(tmpdir, 'invalid.pid'))
-
-    @patch('os.path.exists')
-    @patch('helpers.get_cassandra_pid_file')
-    def test_is_cassandra_running_not_running(self, get_pid_file, exists):
-        # When Cassandra is not running, there is no pidfile.
-        get_pid_file.return_value = sentinel.pid_file
-        exists.return_value = False
-        self.assertFalse(helpers.is_cassandra_running())
-        exists.assert_called_once_with(sentinel.pid_file)
-
-    @patch('os.path.exists')
-    @patch('helpers.get_pid_from_file')
-    def test_is_cassandra_running_invalid_pid(self, get_pid_from_file, exists):
-        # get_pid_from_file raises a ValueError if the pid is illegal.
-        get_pid_from_file.side_effect = ValueError('Whoops')
-        exists.return_value = True  # The pid file is there, just insane.
-
-        # is_cassandra_running() fails hard in this case, since we
-        # cannot safely continue when the system is insane.
-        self.assertRaises(ValueError, helpers.is_cassandra_running)
-
-    @patch('time.sleep')
-    @patch('os.kill')
-    @patch('helpers.get_pid_from_file')
-    @patch('subprocess.call')
-    def test_is_cassandra_running_starting_up(self, call, get_pid_from_file,
-                                              kill, sleep):
-        sleep.return_value = None  # Don't actually sleep in unittests.
-        os.kill.return_value = True  # There is a running pid.
-        get_pid_from_file.return_value = 42
-        subprocess.call.side_effect = iter([3, 2, 1, 0])  # 4th time the charm
-        self.assertTrue(helpers.is_cassandra_running())
-
-    @patch('time.sleep')
-    @patch('os.kill')
-    @patch('subprocess.call')
-    @patch('os.path.exists')
-    @patch('helpers.get_pid_from_file')
-    def test_is_cassandra_running_shutting_down(self, get_pid_from_file,
-                                                exists, call, kill, sleep):
-        # If Cassandra is in the process of shutting down, it might take
-        # several failed checks before the pid file disappears.
-        os.kill.return_value = None  # The process is running
-        call.return_value = 1  # But nodetool is not succeeding.
-        sleep.return_value = None  # Don't actually sleep in unittests.
-
-        # Fourth time, the pid file is gone.
-        get_pid_from_file.side_effect = iter([42, 42, 42, OSError('Whoops')])
-        exists.return_value = False
-        self.assertFalse(helpers.is_cassandra_running())
-        exists.assert_called_once_with(helpers.get_cassandra_pid_file())
-
-    @patch('time.sleep')
-    @patch('os.kill')
-    @patch('subprocess.call')
-    @patch('os.path.exists')
-    @patch('helpers.get_pid_from_file')
-    def test_is_cassandra_running_hung(self, get_pid, exists, subprocess_call,
-                                       kill, sleep):
-        get_pid.return_value = 42  # The pid is known.
-        os.kill.return_value = None  # The process is running.
-        subprocess_call.return_value = 1  # nodetool is failing.
-        sleep.return_value = None  # Don't actually sleep between retries.
-
-        self.assertRaises(SystemExit, helpers.is_cassandra_running)
-
-        # Binary backoff up to 256 seconds, or up to 8.5 minutes total.
-        sleep.assert_has_calls([call(i) for i in
-                                [1, 2, 4, 8, 16, 32, 64, 128, 256]])
-
-    @patch('os.path.isdir')
-    @patch('helpers.get_all_database_directories')
-    @patch('helpers.set_io_scheduler')
-    def test_reset_all_io_schedulers(self, set_io_scheduler, dbdirs, isdir):
-        hookenv.config()['io_scheduler'] = sentinel.io_scheduler
-        dbdirs.return_value = dict(
-            data_file_directories=[sentinel.d1, sentinel.d2],
-            commitlog_directory=sentinel.cl,
-            saved_caches_directory=sentinel.sc)
-        isdir.return_value = True
-        helpers.reset_all_io_schedulers()
-        set_io_scheduler.assert_has_calls([
-            call(sentinel.io_scheduler, sentinel.d1),
-            call(sentinel.io_scheduler, sentinel.d2),
-            call(sentinel.io_scheduler, sentinel.cl),
-            call(sentinel.io_scheduler, sentinel.sc)],
-            any_order=True)
-
-        # If directories don't exist yet, nothing happens.
-        set_io_scheduler.reset_mock()
-        isdir.return_value = False
-        helpers.reset_all_io_schedulers()
-        self.assertFalse(set_io_scheduler.called)
-
-    @patch('charmhelpers.core.hookenv.relation_get')
-    @patch('helpers.get_cassandra_yaml_file')
-    @patch('helpers.get_seeds')
-    @patch('charmhelpers.core.host.write_file')
-    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file,
-                                      relation_get):
-        hookenv.config().update(dict(num_tokens=128,
-                                     cluster_name=None,
-                                     partitioner='my_partitioner'))
-
-        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
-
-        existing_config = '''
-            seed_provider:
-                - class_name: blah.blah.SimpleSeedProvider
-                  parameters:
-                      - seeds: 127.0.0.1  # Comma separated list.
-            '''
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yaml_config = os.path.join(tmpdir, 'c.yaml')
-            yaml_file.return_value = yaml_config
-            with open(yaml_config, 'w', encoding='UTF-8') as f:
-                f.write(existing_config)
-
-            helpers.configure_cassandra_yaml()
-
-            self.assertEqual(write_file.call_count, 2)
-            new_config = write_file.call_args[0][1]
-
-            expected_config = dedent('''\
-                cluster_name: service
-                authenticator: PasswordAuthenticator
-                num_tokens: 128
-                partitioner: my_partitioner
-                listen_address: 10.20.0.1
-                rpc_address: 10.30.0.1
-                rpc_port: 9160
-                native_transport_port: 9042
-                storage_port: 7000
-                ssl_storage_port: 7001
-                authorizer: AllowAllAuthorizer
-                seed_provider:
-                    - class_name: blah.blah.SimpleSeedProvider
-                      parameters:
-                        # No whitespace in seeds is important.
-                        - seeds: '10.20.0.1,10.20.0.2,10.20.0.3'
-                data_file_directories:
-                    - /var/lib/cassandra/data
-                commitlog_directory: /var/lib/cassandra/commitlog
-                saved_caches_directory: /var/lib/cassandra/saved_caches
-                ''')
-            self.maxDiff = None
-            self.assertEqual(yaml.safe_load(new_config),
-                             yaml.safe_load(expected_config))
-
-            # Confirm we can use an explicit cluster_name too.
-            write_file.reset_mock()
-            hookenv.config()['cluster_name'] = 'fubar'
-            helpers.configure_cassandra_yaml()
-            new_config = write_file.call_args[0][1]
-            self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
-                             'fubar')
-
-    @patch('charmhelpers.core.hookenv.relation_get')
-    @patch('helpers.get_cassandra_yaml_file')
-    @patch('helpers.get_seeds')
-    @patch('charmhelpers.core.host.write_file')
-    def test_configure_cassandra_yaml_overrides(self, write_file, get_seeds,
-                                                yaml_file, relation_get):
-        hookenv.config().update(dict(num_tokens=128,
-                                     cluster_name=None,
-                                     partitioner='my_partitioner'))
-
-        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
-
-        existing_config = dedent('''\
-            seed_provider:
-                - class_name: blah.blah.SimpleSeedProvider
-                  parameters:
-                      - seeds: 127.0.0.1  # Comma separated list.
-            ''')
-        overrides = dict(partitioner='overridden_partitioner')
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yaml_config = os.path.join(tmpdir, 'c.yaml')
-            yaml_file.return_value = yaml_config
-            with open(yaml_config, 'w', encoding='UTF-8') as f:
-                f.write(existing_config)
-
-            helpers.configure_cassandra_yaml(overrides=overrides)
-
-            self.assertEqual(write_file.call_count, 2)
-            new_config = write_file.call_args[0][1]
-
-            self.assertEqual(yaml.safe_load(new_config)['partitioner'],
-                             'overridden_partitioner')
-
     @patch('charmhelpers.core.host.pwgen')
     @patch('helpers.query')
     @patch('helpers.connect')
@@ -736,136 +546,6 @@ class TestHelpers(TestCaseBase):
             query.assert_called_once_with(
                 session, 'ALTER USER cassandra WITH PASSWORD %s',
                 ConsistencyLevel.ALL, (sentinel.password,))
-
-    def test_cqlshrc_path(self):
-        self.assertEqual(helpers.get_cqlshrc_path(),
-                         '/root/.cassandra/cqlshrc')
-
-    def test_superuser_username(self):
-        self.assertEqual(hookenv.local_unit(), 'service/1')
-        self.assertEqual(helpers.superuser_username(), 'juju_service_1')
-
-    @patch('helpers.superuser_username')
-    @patch('helpers.get_cqlshrc_path')
-    @patch('charmhelpers.core.host.pwgen')
-    def test_superuser_credentials(self, pwgen,
-                                   get_cqlshrc_path, get_username):
-        with tempfile.NamedTemporaryFile() as cqlshrc_file:
-            get_cqlshrc_path.return_value = cqlshrc_file.name
-            get_username.return_value = 'foo'
-            pwgen.return_value = 'secret'
-            hookenv.unit_public_ip.return_value = '1.2.3.4'
-            hookenv.config()['native_client_port'] = 666
-
-            # First time generates username & password.
-            username, password = helpers.superuser_credentials()
-            self.assertEqual(username, 'foo')
-            self.assertEqual(password, 'secret')
-
-            # Credentials are stored in the cqlshrc file.
-            expected_cqlshrc = dedent('''\
-                                      [authentication]
-                                      username = foo
-                                      password = secret
-
-                                      [connection]
-                                      hostname = 1.2.3.4
-                                      port = 666
-                                      ''').strip()
-            with open(cqlshrc_file.name, 'r') as f:
-                self.assertEqual(f.read().strip(), expected_cqlshrc)
-
-            # If the credentials have been stored, they are not
-            # regenerated.
-            get_username.return_value = 'bar'
-            pwgen.return_value = 'secret2'
-            username, password = helpers.superuser_credentials()
-            self.assertEqual(username, 'foo')
-            self.assertEqual(password, 'secret')
-            with open(cqlshrc_file.name, 'r') as f:
-                self.assertEqual(f.read().strip(), expected_cqlshrc)
-
-    @patch('helpers.query')
-    @patch('helpers.connect')
-    def test_ensure_user(self, connect, query):
-        connect().__enter__.return_value = sentinel.session
-        connect().__exit__.return_value = False
-        helpers.ensure_user(sentinel.username, sentinel.password)
-        query.assert_has_calls([
-            call(sentinel.session,
-                 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
-                 ConsistencyLevel.QUORUM,
-                 (sentinel.username, sentinel.password)),
-            call(sentinel.session,
-                 'ALTER USER %s WITH PASSWORD %s',
-                 ConsistencyLevel.QUORUM,
-                 (sentinel.username, sentinel.password))])
-
-    @patch('helpers.create_superuser')
-    @patch('helpers.connect')
-    def test_ensure_superuser(self, connect, create_superuser):
-        connect().__enter__.side_effect = iter([AuthenticationFailed(),
-                                                sentinel.session])
-        connect().__exit__.return_value = False
-        connect.reset_mock()
-
-        helpers.ensure_superuser()
-        create_superuser.assert_called_once_with()  # Account created.
-
-    @patch('helpers.create_superuser')
-    @patch('helpers.connect')
-    def test_ensure_superuser_exists(self, connect, create_superuser):
-        connect().__enter__.return_value = sentinel.session
-        connect().__exit__.return_value = False
-        connect.reset_mock()
-
-        # If connect works, nothing happens
-        helpers.ensure_superuser()
-        connect.assert_called_once_with()  # Superuser connection attempted.
-        self.assertFalse(create_superuser.called)  # No need to create.
-
-    @patch('helpers.query')
-    @patch('bcrypt.gensalt')
-    @patch('bcrypt.hashpw')
-    @patch('helpers.reconfigure_and_restart_cassandra')
-    @patch('helpers.connect')
-    @patch('helpers.superuser_credentials')
-    def test_create_superuser(self, creds, connect, restart,
-                              bhash, bsalt, query):
-        creds.return_value = ('super', 'secret')
-        connect().__enter__.return_value = sentinel.session
-        connect().__exit__.return_value = False
-        connect.reset_mock()
-
-        bsalt.return_value = sentinel.salt
-        bhash.return_value = 'pwhash'
-
-        helpers.create_superuser()
-
-        # Cassandra was restarted twice, first with authentication
-        # disabled and again with the normal configuration.
-        restart.assert_has_calls([
-            call(dict(authenticator='AllowAllAuthenticator',
-                      rpc_address='127.0.0.1')),
-            call()])
-
-        # A connection was made as the superuser.
-        connect.assert_called_once_with()
-
-        # Statements run to create or update the user.
-        query.assert_has_calls([
-            call(sentinel.session,
-                 dedent('''\
-                        INSERT INTO system_auth.users (name, super)
-                        VALUES (%s, TRUE)
-                        '''),
-                 ConsistencyLevel.ALL, ('super',)),
-            call(sentinel.session,
-                 dedent('''\
-                    INSERT INTO system_auth.credentials (username, salted_hash)
-                    VALUES (%s, %s)
-                        '''),
-                 ConsistencyLevel.ALL, ('super', 'pwhash'))])
 
     @patch('cassandra.cluster.Cluster')
     @patch('cassandra.auth.PlainTextAuthProvider')
@@ -1008,6 +688,403 @@ class TestHelpers(TestCaseBase):
 
         self.assertEqual(cluster().connect.call_count, 2)
         self.assertEqual(cluster().shutdown.call_count, 2)
+
+    @patch('cassandra.query.SimpleStatement')
+    def test_query(self, simple_statement):
+        simple_statement.return_value = sentinel.s_statement
+        session = MagicMock()
+        session.execute.return_value = sentinel.results
+        self.assertEqual(helpers.query(session, sentinel.statement,
+                                       sentinel.consistency, sentinel.args),
+                         sentinel.results)
+        simple_statement.assert_called_once_with(
+            sentinel.statement, consistency_level=sentinel.consistency)
+        session.execute.assert_called_once_with(simple_statement(''),
+                                                sentinel.args)
+
+    @patch('helpers.query')
+    @patch('helpers.connect')
+    def test_ensure_user(self, connect, query):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        helpers.ensure_user(sentinel.username, sentinel.password)
+        query.assert_has_calls([
+            call(sentinel.session,
+                 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
+                 ConsistencyLevel.QUORUM,
+                 (sentinel.username, sentinel.password)),
+            call(sentinel.session,
+                 'ALTER USER %s WITH PASSWORD %s',
+                 ConsistencyLevel.QUORUM,
+                 (sentinel.username, sentinel.password))])
+
+    @patch('helpers.create_superuser')
+    @patch('helpers.connect')
+    def test_ensure_superuser(self, connect, create_superuser):
+        connect().__enter__.side_effect = iter([AuthenticationFailed(),
+                                                sentinel.session])
+        connect().__exit__.return_value = False
+        connect.reset_mock()
+
+        helpers.ensure_superuser()
+        create_superuser.assert_called_once_with()  # Account created.
+
+    @patch('helpers.create_superuser')
+    @patch('helpers.connect')
+    def test_ensure_superuser_exists(self, connect, create_superuser):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        connect.reset_mock()
+
+        # If connect works, nothing happens
+        helpers.ensure_superuser()
+        connect.assert_called_once_with()  # Superuser connection attempted.
+        self.assertFalse(create_superuser.called)  # No need to create.
+
+    @patch('helpers.query')
+    @patch('bcrypt.gensalt')
+    @patch('bcrypt.hashpw')
+    @patch('helpers.reconfigure_and_restart_cassandra')
+    @patch('helpers.connect')
+    @patch('helpers.superuser_credentials')
+    def test_create_superuser(self, creds, connect, restart,
+                              bhash, bsalt, query):
+        creds.return_value = ('super', 'secret')
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        connect.reset_mock()
+
+        bsalt.return_value = sentinel.salt
+        bhash.return_value = 'pwhash'
+
+        helpers.create_superuser()
+
+        # Cassandra was restarted twice, first with authentication
+        # disabled and again with the normal configuration.
+        restart.assert_has_calls([
+            call(dict(authenticator='AllowAllAuthenticator',
+                      rpc_address='127.0.0.1')),
+            call()])
+
+        # A connection was made as the superuser.
+        connect.assert_called_once_with()
+
+        # Statements run to create or update the user.
+        query.assert_has_calls([
+            call(sentinel.session,
+                 dedent('''\
+                        INSERT INTO system_auth.users (name, super)
+                        VALUES (%s, TRUE)
+                        '''),
+                 ConsistencyLevel.ALL, ('super',)),
+            call(sentinel.session,
+                 dedent('''\
+                    INSERT INTO system_auth.credentials (username, salted_hash)
+                    VALUES (%s, %s)
+                        '''),
+                 ConsistencyLevel.ALL, ('super', 'pwhash'))])
+
+    def test_cqlshrc_path(self):
+        self.assertEqual(helpers.get_cqlshrc_path(),
+                         '/root/.cassandra/cqlshrc')
+
+    def test_superuser_username(self):
+        self.assertEqual(hookenv.local_unit(), 'service/1')
+        self.assertEqual(helpers.superuser_username(), 'juju_service_1')
+
+    @patch('helpers.superuser_username')
+    @patch('helpers.get_cqlshrc_path')
+    @patch('charmhelpers.core.host.pwgen')
+    def test_superuser_credentials(self, pwgen,
+                                   get_cqlshrc_path, get_username):
+        with tempfile.NamedTemporaryFile() as cqlshrc_file:
+            get_cqlshrc_path.return_value = cqlshrc_file.name
+            get_username.return_value = 'foo'
+            pwgen.return_value = 'secret'
+            hookenv.unit_public_ip.return_value = '1.2.3.4'
+            hookenv.config()['native_client_port'] = 666
+
+            # First time generates username & password.
+            username, password = helpers.superuser_credentials()
+            self.assertEqual(username, 'foo')
+            self.assertEqual(password, 'secret')
+
+            # Credentials are stored in the cqlshrc file.
+            expected_cqlshrc = dedent('''\
+                                      [authentication]
+                                      username = foo
+                                      password = secret
+
+                                      [connection]
+                                      hostname = 1.2.3.4
+                                      port = 666
+                                      ''').strip()
+            with open(cqlshrc_file.name, 'r') as f:
+                self.assertEqual(f.read().strip(), expected_cqlshrc)
+
+            # If the credentials have been stored, they are not
+            # regenerated.
+            get_username.return_value = 'bar'
+            pwgen.return_value = 'secret2'
+            username, password = helpers.superuser_credentials()
+            self.assertEqual(username, 'foo')
+            self.assertEqual(password, 'secret')
+            with open(cqlshrc_file.name, 'r') as f:
+                self.assertEqual(f.read().strip(), expected_cqlshrc)
+
+    @patch('charmhelpers.core.hookenv.relation_get')
+    def test_get_node_public_addresses(self, relation_get):
+        hookenv.unit_public_ip.return_value = '9.8.7.6'
+        relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
+        self.assertSetEqual(helpers.get_node_public_addresses(),
+                            set(['1.2.3.4', '5.6.7.8', '9.8.7.6']))
+        relation_get.assert_has_calls([
+            call('public-address', 'service/2', 'cluster:1'),
+            call('public-address', 'service/3', 'cluster:1')], any_order=True)
+
+    @patch('charmhelpers.core.hookenv.relation_get')
+    def test_get_node_private_addresses(self, relation_get):
+        hookenv.unit_private_ip.return_value = '9.8.7.6'
+        relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
+        self.assertSetEqual(helpers.get_node_private_addresses(),
+                            set(['1.2.3.4', '5.6.7.8', '9.8.7.6']))
+        relation_get.assert_has_calls([
+            call('private-address', 'service/2', 'cluster:1'),
+            call('private-address', 'service/3', 'cluster:1')], any_order=True)
+
+    @patch('rollingrestart.get_peers')
+    def test_num_nodes(self, get_peers):
+        get_peers.return_value = ['a', 'b']
+        self.assertEqual(helpers.num_nodes(), 3)
+
+    @patch('helpers.get_cassandra_yaml_file')
+    def test_read_cassandra_yaml(self, get_cassandra_yaml_file):
+        with tempfile.NamedTemporaryFile('w') as f:
+            f.write('a: one')
+            f.flush()
+            get_cassandra_yaml_file.return_value = f.name
+            self.assertDictEqual(helpers.read_cassandra_yaml(),
+                                 dict(a='one'))
+
+    @patch('helpers.get_cassandra_yaml_file')
+    def test_write_cassandra_yaml(self, get_cassandra_yaml_file):
+        with tempfile.NamedTemporaryFile() as f:
+            get_cassandra_yaml_file.return_value = f.name
+            helpers.write_cassandra_yaml([1, 2, 3])
+            with open(f.name, 'r') as f2:
+                self.assertEqual(f2.read(), '[1, 2, 3]\n')
+
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('helpers.get_cassandra_yaml_file')
+    @patch('helpers.get_seeds')
+    @patch('charmhelpers.core.host.write_file')
+    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file,
+                                      relation_get):
+        hookenv.config().update(dict(num_tokens=128,
+                                     cluster_name=None,
+                                     partitioner='my_partitioner'))
+
+        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
+
+        existing_config = '''
+            seed_provider:
+                - class_name: blah.blah.SimpleSeedProvider
+                  parameters:
+                      - seeds: 127.0.0.1  # Comma separated list.
+            '''
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yaml_config = os.path.join(tmpdir, 'c.yaml')
+            yaml_file.return_value = yaml_config
+            with open(yaml_config, 'w', encoding='UTF-8') as f:
+                f.write(existing_config)
+
+            helpers.configure_cassandra_yaml()
+
+            self.assertEqual(write_file.call_count, 2)
+            new_config = write_file.call_args[0][1]
+
+            expected_config = dedent('''\
+                cluster_name: service
+                authenticator: PasswordAuthenticator
+                num_tokens: 128
+                partitioner: my_partitioner
+                listen_address: 10.20.0.1
+                rpc_address: 10.30.0.1
+                rpc_port: 9160
+                native_transport_port: 9042
+                storage_port: 7000
+                ssl_storage_port: 7001
+                authorizer: AllowAllAuthorizer
+                seed_provider:
+                    - class_name: blah.blah.SimpleSeedProvider
+                      parameters:
+                        # No whitespace in seeds is important.
+                        - seeds: '10.20.0.1,10.20.0.2,10.20.0.3'
+                data_file_directories:
+                    - /var/lib/cassandra/data
+                commitlog_directory: /var/lib/cassandra/commitlog
+                saved_caches_directory: /var/lib/cassandra/saved_caches
+                ''')
+            self.maxDiff = None
+            self.assertEqual(yaml.safe_load(new_config),
+                             yaml.safe_load(expected_config))
+
+            # Confirm we can use an explicit cluster_name too.
+            write_file.reset_mock()
+            hookenv.config()['cluster_name'] = 'fubar'
+            helpers.configure_cassandra_yaml()
+            new_config = write_file.call_args[0][1]
+            self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
+                             'fubar')
+
+    @patch('charmhelpers.core.hookenv.relation_get')
+    @patch('helpers.get_cassandra_yaml_file')
+    @patch('helpers.get_seeds')
+    @patch('charmhelpers.core.host.write_file')
+    def test_configure_cassandra_yaml_overrides(self, write_file, get_seeds,
+                                                yaml_file, relation_get):
+        hookenv.config().update(dict(num_tokens=128,
+                                     cluster_name=None,
+                                     partitioner='my_partitioner'))
+
+        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
+
+        existing_config = dedent('''\
+            seed_provider:
+                - class_name: blah.blah.SimpleSeedProvider
+                  parameters:
+                      - seeds: 127.0.0.1  # Comma separated list.
+            ''')
+        overrides = dict(partitioner='overridden_partitioner')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yaml_config = os.path.join(tmpdir, 'c.yaml')
+            yaml_file.return_value = yaml_config
+            with open(yaml_config, 'w', encoding='UTF-8') as f:
+                f.write(existing_config)
+
+            helpers.configure_cassandra_yaml(overrides=overrides)
+
+            self.assertEqual(write_file.call_count, 2)
+            new_config = write_file.call_args[0][1]
+
+            self.assertEqual(yaml.safe_load(new_config)['partitioner'],
+                             'overridden_partitioner')
+
+    def test_get_pid_from_file(self):
+        with tempfile.NamedTemporaryFile('w') as pid_file:
+            pid_file.write(' 42\t')
+            pid_file.flush()
+            self.assertEqual(helpers.get_pid_from_file(pid_file.name), 42)
+            pid_file.write('\nSome Noise')
+            pid_file.flush()
+            self.assertEqual(helpers.get_pid_from_file(pid_file.name), 42)
+
+        for invalid_pid in ['-1', '0', 'fred']:
+            with self.subTest(invalid_pid=invalid_pid):
+                with tempfile.NamedTemporaryFile('w') as pid_file:
+                    pid_file.write(invalid_pid)
+                    pid_file.flush()
+                    self.assertRaises(ValueError,
+                                      helpers.get_pid_from_file, pid_file.name)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.assertRaises(OSError, helpers.get_pid_from_file,
+                              os.path.join(tmpdir, 'invalid.pid'))
+
+    @patch('os.path.exists')
+    @patch('helpers.get_cassandra_pid_file')
+    def test_is_cassandra_running_not_running(self, get_pid_file, exists):
+        # When Cassandra is not running, there is no pidfile.
+        get_pid_file.return_value = sentinel.pid_file
+        exists.return_value = False
+        self.assertFalse(helpers.is_cassandra_running())
+        exists.assert_called_once_with(sentinel.pid_file)
+
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
+    def test_is_cassandra_running_invalid_pid(self, get_pid_from_file, exists):
+        # get_pid_from_file raises a ValueError if the pid is illegal.
+        get_pid_from_file.side_effect = ValueError('Whoops')
+        exists.return_value = True  # The pid file is there, just insane.
+
+        # is_cassandra_running() fails hard in this case, since we
+        # cannot safely continue when the system is insane.
+        self.assertRaises(ValueError, helpers.is_cassandra_running)
+
+    @patch('time.sleep')
+    @patch('os.kill')
+    @patch('helpers.get_pid_from_file')
+    @patch('subprocess.call')
+    def test_is_cassandra_running_starting_up(self, call, get_pid_from_file,
+                                              kill, sleep):
+        sleep.return_value = None  # Don't actually sleep in unittests.
+        os.kill.return_value = True  # There is a running pid.
+        get_pid_from_file.return_value = 42
+        subprocess.call.side_effect = iter([3, 2, 1, 0])  # 4th time the charm
+        self.assertTrue(helpers.is_cassandra_running())
+
+    @patch('time.sleep')
+    @patch('os.kill')
+    @patch('subprocess.call')
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
+    def test_is_cassandra_running_shutting_down(self, get_pid_from_file,
+                                                exists, call, kill, sleep):
+        # If Cassandra is in the process of shutting down, it might take
+        # several failed checks before the pid file disappears.
+        os.kill.return_value = None  # The process is running
+        call.return_value = 1  # But nodetool is not succeeding.
+        sleep.return_value = None  # Don't actually sleep in unittests.
+
+        # Fourth time, the pid file is gone.
+        get_pid_from_file.side_effect = iter([42, 42, 42, OSError('Whoops')])
+        exists.return_value = False
+        self.assertFalse(helpers.is_cassandra_running())
+        exists.assert_called_once_with(helpers.get_cassandra_pid_file())
+
+    @patch('time.sleep')
+    @patch('os.kill')
+    @patch('subprocess.call')
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
+    def test_is_cassandra_running_hung(self, get_pid, exists, subprocess_call,
+                                       kill, sleep):
+        get_pid.return_value = 42  # The pid is known.
+        os.kill.return_value = None  # The process is running.
+        subprocess_call.return_value = 1  # nodetool is failing.
+        sleep.return_value = None  # Don't actually sleep between retries.
+
+        self.assertRaises(SystemExit, helpers.is_cassandra_running)
+
+        # Binary backoff up to 256 seconds, or up to 8.5 minutes total.
+        sleep.assert_has_calls([call(i) for i in
+                                [1, 2, 4, 8, 16, 32, 64, 128, 256]])
+
+    @patch('os.path.isdir')
+    @patch('helpers.get_all_database_directories')
+    @patch('helpers.set_io_scheduler')
+    def test_reset_all_io_schedulers(self, set_io_scheduler, dbdirs, isdir):
+        hookenv.config()['io_scheduler'] = sentinel.io_scheduler
+        dbdirs.return_value = dict(
+            data_file_directories=[sentinel.d1, sentinel.d2],
+            commitlog_directory=sentinel.cl,
+            saved_caches_directory=sentinel.sc)
+        isdir.return_value = True
+        helpers.reset_all_io_schedulers()
+        set_io_scheduler.assert_has_calls([
+            call(sentinel.io_scheduler, sentinel.d1),
+            call(sentinel.io_scheduler, sentinel.d2),
+            call(sentinel.io_scheduler, sentinel.cl),
+            call(sentinel.io_scheduler, sentinel.sc)],
+            any_order=True)
+
+        # If directories don't exist yet, nothing happens.
+        set_io_scheduler.reset_mock()
+        isdir.return_value = False
+        helpers.reset_all_io_schedulers()
+        self.assertFalse(set_io_scheduler.called)
 
     @patch('helpers.query')
     @patch('helpers.connect')
