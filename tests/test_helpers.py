@@ -745,14 +745,17 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(hookenv.local_unit(), 'service/1')
         self.assertEqual(helpers.superuser_username(), 'juju_service_1')
 
-    @patch('host.pwgen')
     @patch('helpers.superuser_username')
     @patch('helpers.get_cqlshrc_path')
-    def superuser_credentials(self, get_cqlshrc_path, get_username, pwgen):
+    @patch('charmhelpers.core.host.pwgen')
+    def test_superuser_credentials(self, pwgen,
+                                   get_cqlshrc_path, get_username):
         with tempfile.NamedTemporaryFile() as cqlshrc_file:
             get_cqlshrc_path.return_value = cqlshrc_file.name
             get_username.return_value = 'foo'
             pwgen.return_value = 'secret'
+            hookenv.unit_public_ip.return_value = '1.2.3.4'
+            hookenv.config()['native_client_port'] = 666
 
             # First time generates username & password.
             username, password = helpers.superuser_credentials()
@@ -764,9 +767,13 @@ class TestHelpers(TestCaseBase):
                                       [authentication]
                                       username = foo
                                       password = secret
+
+                                      [connection]
+                                      hostname = 1.2.3.4
+                                      port = 666
                                       ''').strip()
-            self.assertEqual(open(cqlshrc_file, 'r').read(),
-                             expected_cqlshrc)
+            with open(cqlshrc_file.name, 'r') as f:
+                self.assertEqual(f.read().strip(), expected_cqlshrc)
 
             # If the credentials have been stored, they are not
             # regenerated.
@@ -775,8 +782,8 @@ class TestHelpers(TestCaseBase):
             username, password = helpers.superuser_credentials()
             self.assertEqual(username, 'foo')
             self.assertEqual(password, 'secret')
-            self.assertEqual(open(cqlshrc_file, 'r').read(),
-                             expected_cqlshrc)
+            with open(cqlshrc_file.name, 'r') as f:
+                self.assertEqual(f.read().strip(), expected_cqlshrc)
 
     @patch('helpers.query')
     @patch('helpers.connect')
@@ -920,22 +927,7 @@ class TestHelpers(TestCaseBase):
     @patch('cassandra.cluster.Cluster')
     @patch('helpers.superuser_credentials')
     @patch('helpers.read_cassandra_yaml')
-    def test_connect_bad_auth(self, yaml, creds, cluster):
-        yaml.return_value = dict(rpc_address=sentinel.address,
-                                 native_transport_port=666)
-        creds.return_value = ('un', 'pw')
-        # If there is an AuthenticationFailed in the NoHostsAvailable,
-        # it is returned instead to make catching auth failures easier.
-        cluster().connect.side_effect = NoHostAvailable(
-            'whoops', errors={sentinel.address: AuthenticationFailed()})
-        self.assertRaises(AuthenticationFailed, helpers.connect().__enter__)
-        cluster().shutdown.assert_called_once_with()
-
-    @patch('cassandra.cluster.Cluster')
-    @patch('cassandra.auth.PlainTextAuthProvider')
-    @patch('helpers.superuser_credentials')
-    @patch('helpers.read_cassandra_yaml')
-    def test_connect_badauth(self, yaml, creds, auth_provider, cluster):
+    def test_connect_badauth(self, yaml, creds, cluster):
         # host and port are pulled from the current active
         # cassandra.yaml file, rather than configuration, as
         # configuration may not match reality (if for no other reason
@@ -945,11 +937,9 @@ class TestHelpers(TestCaseBase):
                                  native_transport_port=666)
 
         creds.return_value = ('un', 'pw')
-        auth_provider.return_value = sentinel.ap
 
         x = NoHostAvailable('whoops', {'1.2.3.4': AuthenticationFailed()})
         cluster().connect.side_effect = x
-        cluster.reset_mock()
 
         self.assertRaises(AuthenticationFailed, helpers.connect().__enter__)
 
@@ -1004,10 +994,11 @@ class TestHelpers(TestCaseBase):
         creds.return_value = ('un', 'pw')
         auth_provider.return_value = sentinel.ap
 
-        cluster().connect.side_effect = [NoHostAvailable('1', {}),
-                                         NoHostAvailable('2', {}),
-                                         NoHostAvailable('3', {}),
-                                         sentinel.session]
+        cluster().connect.side_effect = [
+            NoHostAvailable('1', {}),
+            NoHostAvailable('2', {'1.2.3.4': Exception()}),
+            NoHostAvailable('3', {}),
+            sentinel.session]
         cluster.reset_mock()
 
         # Force a timeout

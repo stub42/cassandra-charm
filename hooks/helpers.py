@@ -1,3 +1,4 @@
+import collections
 import configparser
 from contextlib import contextmanager
 import errno
@@ -520,9 +521,15 @@ def superuser_credentials():
 
     hookenv.log('Generated username {}'.format(username))
 
-    cqlshrc['authentication'] = dict(username=username, password=password)
-    cqlshrc['connection'] = dict(hostname=hookenv.unit_public_ip(),
-                                 port=config['native_client_port'])
+    # We set items separately, rather than together, so that we have a
+    # defined order for the ConfigParser to preserve and the tests to
+    # rely on.
+    cqlshrc.setdefault('authentication', {})
+    cqlshrc['authentication']['username'] = username
+    cqlshrc['authentication']['password'] = password
+    cqlshrc.setdefault('connection', {})
+    cqlshrc['connection']['hostname'] = hookenv.unit_public_ip()
+    cqlshrc['connection']['port'] = str(config['native_client_port'])
 
     ini = io.StringIO()
     cqlshrc.write(ini)
