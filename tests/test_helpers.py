@@ -438,6 +438,22 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
+    @patch('time.time')
+    @patch('time.sleep')
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_start')
+    @patch('helpers.is_cassandra_running')
+    def test_start_cassandra_timeout(self, is_cassandra_running,
+                                     service_start, get_service, sleep, time):
+        get_service.return_value = sentinel.service_name
+        is_cassandra_running.return_value = False
+        time.side_effect = iter([10, 20, 30, 40, 3600])
+        self.assertRaises(SystemExit, helpers.start_cassandra)
+        service_start.assert_called_once_with(sentinel.service_name)
+        # An error was logged.
+        hookenv.log.assert_has_calls([call(ANY, hookenv.ERROR)])
+
+
     @patch('os.chmod')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
@@ -653,6 +669,7 @@ class TestHelpers(TestCaseBase):
                 native_transport_port: 9042
                 storage_port: 7000
                 ssl_storage_port: 7001
+                authorizer: AllowAllAuthorizer
                 seed_provider:
                     - class_name: blah.blah.SimpleSeedProvider
                       parameters:

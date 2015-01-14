@@ -216,6 +216,7 @@ RESTART_REQUIRED_KEYS = set([
     'force_seed_nodes',
     'max_heap_size',
     'heap_newsize',
+    'authorizer',
     'edition',  # TODO: Is it possible to switch edition?
     'jvm'])
 
