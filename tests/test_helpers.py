@@ -453,7 +453,6 @@ class TestHelpers(TestCaseBase):
         # An error was logged.
         hookenv.log.assert_has_calls([call(ANY, hookenv.ERROR)])
 
-
     @patch('os.chmod')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
@@ -888,6 +887,48 @@ class TestHelpers(TestCaseBase):
             self.assertIs(session, sentinel.session)
             self.assertFalse(cluster().shutdown.called)
 
+        cluster().shutdown.assert_called_once_with()
+
+    @patch('cassandra.cluster.Cluster')
+    @patch('cassandra.auth.PlainTextAuthProvider')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.read_cassandra_yaml')
+    def test_connect_with_creds(self, yaml, creds, auth_provider, cluster):
+        # host and port are pulled from the current active
+        # cassandra.yaml file, rather than configuration, as
+        # configuration may not match reality (if for no other reason
+        # that we are running this code in order to make reality match
+        # the desired configuration).
+        yaml.return_value = dict(rpc_address='1.2.3.4',
+                                 native_transport_port=666)
+
+        auth_provider.return_value = sentinel.ap
+
+        cluster().connect.return_value = sentinel.session
+        cluster.reset_mock()
+
+        with helpers.connect(username='explicit', password='boo') as session:
+            auth_provider.assert_called_once_with(username='explicit',
+                                                  password='boo')
+            cluster.assert_called_once_with(['1.2.3.4'], port=666,
+                                            auth_provider=sentinel.ap)
+            self.assertIs(session, sentinel.session)
+            self.assertFalse(cluster().shutdown.called)
+
+        cluster().shutdown.assert_called_once_with()
+
+    @patch('cassandra.cluster.Cluster')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.read_cassandra_yaml')
+    def test_connect_bad_auth(self, yaml, creds, cluster):
+        yaml.return_value = dict(rpc_address=sentinel.address,
+                                 native_transport_port=666)
+        creds.return_value = ('un', 'pw')
+        # If there is an AuthenticationFailed in the NoHostsAvailable,
+        # it is returned instead to make catching auth failures easier.
+        cluster().connect.side_effect = NoHostAvailable(
+            'whoops', errors={sentinel.address: AuthenticationFailed()})
+        self.assertRaises(AuthenticationFailed, helpers.connect().__enter__)
         cluster().shutdown.assert_called_once_with()
 
     @patch('cassandra.cluster.Cluster')
