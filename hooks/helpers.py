@@ -1,4 +1,3 @@
-import collections
 import configparser
 from contextlib import contextmanager
 import errno
@@ -695,11 +694,8 @@ def get_auth_keyspace_replication_factor():
             WHERE keyspace_name='system_auth'
             ''')
         r = query(session, statement, ConsistencyLevel.QUORUM)
-        if r:
-            strategy_options = json.loads(r[0][0])
-            return int(strategy_options['replication_factor'])
-        else:
-            return 1
+        strategy_options = json.loads(r[0][0])
+        return int(strategy_options['replication_factor'])
 
 
 def set_auth_keyspace_replication_factor(rf):

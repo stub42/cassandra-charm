@@ -1009,6 +1009,31 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(cluster().connect.call_count, 2)
         self.assertEqual(cluster().shutdown.call_count, 2)
 
+    @patch('helpers.query')
+    @patch('helpers.connect')
+    def test_get_auth_keyspace_replication_factor(self, connect, query):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        query.return_value = [('{"replication_factor":"12"}',)]
+        self.assertEqual(helpers.get_auth_keyspace_replication_factor(), 12)
+        connect.assert_called_with()  # Connected as the superuser
+        query.assert_called_with(sentinel.session, dedent('''\
+            SELECT strategy_options FROM system.schema_keyspaces
+            WHERE keyspace_name='system_auth'
+            '''), ConsistencyLevel.QUORUM)
+
+    @patch('helpers.query')
+    @patch('helpers.connect')
+    def test_set_auth_keyspace_replication_factor(self, connect, query):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        helpers.set_auth_keyspace_replication_factor(22)
+        connect.assert_called_with()  # Connected as the superuser
+        query.assert_called_with(sentinel.session, dedent('''\
+            ALTER KEYSPACE system_auth WITH REPLICATION =
+                {'class': 'SimpleStrategy', 'replication_factor': %s}
+            '''), ConsistencyLevel.QUORUM, (22,))
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):
