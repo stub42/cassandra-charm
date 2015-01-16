@@ -287,6 +287,19 @@ class TestHelpers(TestCaseBase):
         self.assertTrue(helpers.accept_oracle_jvm_license())
         self.assertFalse(popen.called)  # No need to repeat commands.
 
+    def test_get_cassandra_edition(self):
+        hookenv.config()['edition'] = 'community'
+        self.assertEqual(helpers.get_cassandra_edition(), 'community')
+
+        hookenv.config()['edition'] = 'DSE'  # Case insensitive
+        self.assertEqual(helpers.get_cassandra_edition(), 'dse')
+
+        self.assertFalse(hookenv.log.called)
+
+        hookenv.config()['edition'] = 'typo'  # Default to community
+        self.assertEqual(helpers.get_cassandra_edition(), 'community')
+        hookenv.log.assert_any_call(ANY, hookenv.ERROR)  # Logs an error.
+
     @patch('helpers.get_cassandra_edition')
     def test_get_cassandra_service(self, get_edition):
         get_edition.return_value = 'whatever'

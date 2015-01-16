@@ -501,6 +501,16 @@ class TestsActions(TestCaseBase):
         actions.start_cassandra('ignored')
         helpers_start_cassandra.assert_called_once_with()
 
+    @patch('helpers.reset_default_password')
+    def test_reset_default_password(self, helpers_reset_default_password):
+        actions.reset_default_password('ignored')
+        helpers_reset_default_password.assert_called_once_with()
+
+    @patch('helpers.ensure_superuser')
+    def test_ensure_superuser(self, helpers_ensure_superuser):
+        actions.ensure_superuser('ignored')
+        helpers_ensure_superuser.assert_called_once_with()
+
     @patch('helpers.reset_all_io_schedulers')
     def test_reset_all_io_schedulers(self, helpers_reset_all_io_schedulers):
         actions.reset_all_io_schedulers('ignored')

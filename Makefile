@@ -64,7 +64,7 @@ coverage: lint
 		(gnome-open coverage/index.html; false)
 
 clean:
-	rm -rf .venv? tests/.venv? .stamp-* coverage
+	rm -rf .venv? tests/.venv? .stamp-* coverage .coverage
 	find . -name __pycache__ -type d | xargs rm -rf
 
 packages: .stamp-packages
