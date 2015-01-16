@@ -903,14 +903,14 @@ class TestHelpers(TestCaseBase):
     def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file,
                                       relation_get):
         hookenv.config().update(dict(num_tokens=128,
-                                     cluster_name=None,
-                                     partitioner='my_partitioner'))
+                                     cluster_name='test_cluster_name',
+                                     partitioner='test_partitioner'))
 
         get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
 
         existing_config = '''
             seed_provider:
-                - class_name: blah.blah.SimpleSeedProvider
+                - class_name: blah.SimpleSeedProvider
                   parameters:
                       - seeds: 127.0.0.1  # Comma separated list.
             '''
@@ -927,10 +927,10 @@ class TestHelpers(TestCaseBase):
             new_config = write_file.call_args[0][1]
 
             expected_config = dedent('''\
-                cluster_name: service
+                cluster_name: test_cluster_name
                 authenticator: PasswordAuthenticator
                 num_tokens: 128
-                partitioner: my_partitioner
+                partitioner: test_partitioner
                 listen_address: 10.20.0.1
                 rpc_address: 10.30.0.1
                 rpc_port: 9160
@@ -939,10 +939,11 @@ class TestHelpers(TestCaseBase):
                 ssl_storage_port: 7001
                 authorizer: AllowAllAuthorizer
                 seed_provider:
-                    - class_name: blah.blah.SimpleSeedProvider
+                    - class_name: blah.SimpleSeedProvider
                       parameters:
                         # No whitespace in seeds is important.
                         - seeds: '10.20.0.1,10.20.0.2,10.20.0.3'
+                endpoint_snitch: GossipingPropertyFileSnitch
                 data_file_directories:
                     - /var/lib/cassandra/data
                 commitlog_directory: /var/lib/cassandra/commitlog

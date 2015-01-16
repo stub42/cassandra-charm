@@ -24,6 +24,7 @@ def get_service_definitions():
              required_data=[relations.StorageRelation()],
              provided_data=[relations.StorageRelation()],
              data_ready=[actions.preinstall,
+                         actions.revert_unchangeable_config,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
                          actions.publish_cluster_relation,

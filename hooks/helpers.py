@@ -582,8 +582,7 @@ def configure_cassandra_yaml(overrides={}):
 
     cassandra_yaml = read_cassandra_yaml()
 
-    cassandra_yaml['cluster_name'] = (config['cluster_name']
-                                      or hookenv.service_name())
+    cassandra_yaml['cluster_name'] = config['cluster_name']
 
     seeds = ','.join(get_seeds())  # Don't include whitespace!
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
@@ -607,6 +606,8 @@ def configure_cassandra_yaml(overrides={}):
 
     cassandra_yaml['authenticator'] = 'PasswordAuthenticator'
     cassandra_yaml['authorizer'] = config['authorizer']
+
+    cassandra_yaml['endpoint_snitch'] = 'GossipingPropertyFileSnitch'
 
     cassandra_yaml.update(overrides)
 

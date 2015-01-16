@@ -9,11 +9,70 @@ import subprocess
 from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
-from charmhelpers.core.hookenv import WARNING
+from charmhelpers.core.hookenv import ERROR, WARNING
 
 import helpers
 import relations
 import rollingrestart
+
+
+# These config keys cannot be changed after service deployment.
+UNCHANGEABLE_KEYS = set(['datacenter', 'rack'])
+
+# If any of these config items are changed, Cassandra needs to be
+# restarted and maybe remounted.
+RESTART_REQUIRED_KEYS = set([
+    'cluster_name',
+    'data_file_directories',
+    'commitlog_directory',
+    'saved_caches_directory',
+    'cluster_port',
+    'cluster_ssl_port',
+    'thrift_client_port',
+    'native_client_port',
+    'jmx_port',
+    'partitioner',
+    'num_tokens',
+    'force_seed_nodes',
+    'max_heap_size',
+    'heap_newsize',
+    'authorizer',
+    'edition',  # TODO: Is it possible to switch edition?
+    'jvm'])
+
+
+# All other config items. By maintaining both lists, we can detect if
+# someone forgot to update these lists when they added a new config item.
+RESTART_NOT_REQUIRED_KEYS = set([
+    'extra_packages',
+    'package_status',
+    'install_sources',
+    'install_keys',
+    'wait_for_storage_broker',
+    'io_scheduler',
+    'nagios_context',
+    'nagios_servicegroups',
+    'nagios_heapchk_warn_pct',
+    'nagios_heapchk_crit_pct',
+    'nagios_disk_warn_pct',
+    'nagios_disk_crit_pct'])
+
+
+def revert_unchangeable_config(servicename):
+    if hookenv.hook_name() == 'install':
+        # config.previous() only becomes meaningful after the install
+        # hook has run. During the first run on the unit hook, it
+        # reports everything has having None as the previous value.
+        return
+
+    config = hookenv.config()
+    for key in UNCHANGEABLE_KEYS:
+        if config.changed(key):
+            previous = config.previous(key)
+            hookenv.log('{} cannot be changed after service deployment. '
+                        'Using original setting {!r}'.format(key, previous),
+                        ERROR)
+            config[key] = previous
 
 
 # FOR CHARMHELPERS
@@ -173,6 +232,13 @@ def configure_cassandra_env(servicename):
     host.write_file(cassandra_env_path, env.encode('UTF-8'))
 
 
+def configure_cassandra_rackdc(servicename):
+    rackdc_path = helpers.get_cassandra_rackdc_file()
+    rackdc_properties = 'dc={datacenter}\nrack={rack}'.format(
+        **hookenv.config())
+    host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
+
+
 # Unfortunately, we can't decommission a unit in its peer
 # relation-broken hook. Decomissioning a unit involves streaming its
 # data to the remaining nodes. If the entire service is being torn down,
@@ -197,45 +263,6 @@ def configure_cassandra_env(servicename):
 #
 #         # Node is dead, so restart will fail.
 #         rollingrestart.cancel_restart()
-
-
-# If any of these config items are changed, Cassandra needs to be
-# restarted and maybe remounted.
-RESTART_REQUIRED_KEYS = set([
-    'cluster_name',
-    'data_file_directories',
-    'commitlog_directory',
-    'saved_caches_directory',
-    'cluster_port',
-    'cluster_ssl_port',
-    'thrift_client_port',
-    'native_client_port',
-    'jmx_port',
-    'partitioner',
-    'num_tokens',
-    'force_seed_nodes',
-    'max_heap_size',
-    'heap_newsize',
-    'authorizer',
-    'edition',  # TODO: Is it possible to switch edition?
-    'jvm'])
-
-
-# All other config items. By maintaining both lists, we can detect if
-# someone forgot to update these lists when they added a new config item.
-RESTART_NOT_REQUIRED_KEYS = set([
-    'extra_packages',
-    'package_status',
-    'install_sources',
-    'install_keys',
-    'wait_for_storage_broker',
-    'io_scheduler',
-    'nagios_context',
-    'nagios_servicegroups',
-    'nagios_heapchk_warn_pct',
-    'nagios_heapchk_crit_pct',
-    'nagios_disk_warn_pct',
-    'nagios_disk_crit_pct'])
 
 
 def maybe_schedule_restart(servicename):

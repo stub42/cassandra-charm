@@ -215,11 +215,12 @@ options:
     # Cassandra.yaml related options
     cluster_name:
         type: string
-        default: ""
+        default: "juju"
         description: >
             Name of the Cassandra cluster. This is mainly used to
             prevent machines in one logical cluster from joining
-            another. Defaults to the Juju service name.
+            another. All Cassandra services you wish to cluster together
+            must have the same cluster_name.
     partitioner:
         default: Murmur3Partitioner
         type: string
@@ -237,6 +238,22 @@ options:
             A comma separated list of seed node ip addresses. This is
             useful if the cluster being created in this juju environment
             is part of a larger cluser and the seed nodes are remote.
+            
+    # Topology of the service in the cluster.
+    datacenter:
+        type: string
+        default: "juju"
+        description: |
+            The node's datacenter used by the endpoint_snitch. e.g. "DC1".
+            It cannot be changed after service deployment.
+    rack: 
+        type: string
+        default: ""
+        description: |
+            The rack used by the endpoint_snitch for all units in this
+            service. e.g. "Rack1". This cannot be changed after deployment.
+            It defaults to the service name. Cassandra will store replicated
+            data in different racks whenever possible to improve 
             
     # Networking options.
     cluster_port:

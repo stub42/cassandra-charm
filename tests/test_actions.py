@@ -23,6 +23,51 @@ patch = functools.partial(patch, autospec=True)  # autospec=True as default.
 
 
 class TestsActions(TestCaseBase):
+    def test_revert_unchangeable_config(self):
+        hookenv.hook_name.return_value = 'config-changed'
+        config = hookenv.config()
+
+        self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
+        self.assertNotIn('cluster_name', actions.UNCHANGEABLE_KEYS)
+
+        config['datacenter'] = 'mission_control'
+        config['cluster_name'] = 'tier_1'
+        config.save()
+        config.load_previous()
+        config['datacenter'] = 'orbital_1'
+        config['cluster_name'] = 'tier_3'
+
+        self.assertTrue(config.changed('datacenter'))
+
+        actions.revert_unchangeable_config('')
+        self.assertEqual(config['datacenter'], 'mission_control')  # Reverted
+        self.assertEqual(config['cluster_name'], 'tier_3')  # Unchanged
+
+        hookenv.log.assert_called_once_with(ANY, hookenv.ERROR)
+
+    def test_revert_unchangeable_config_install(self):
+        hookenv.hook_name.return_value = 'install'
+        config = hookenv.config()
+
+        self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
+        self.assertNotIn('cluster_name', actions.UNCHANGEABLE_KEYS)
+
+        config['datacenter'] = 'mission_control'
+        config['cluster_name'] = 'tier_3'
+        config.save()
+        config.load_previous()
+        config['datacenter'] = 'orbital_1'
+
+        self.assertTrue(config.changed('datacenter'))
+
+        # In the install hook, revert_unchangeable_config() does
+        # nothing.
+        actions.revert_unchangeable_config('')
+        self.assertEqual(config['datacenter'], 'orbital_1')
+        self.assertEqual(config['cluster_name'], 'tier_3')
+
+        self.assertFalse(hookenv.log.called)
+
     @patch('subprocess.check_call')
     def test_preinstall(self, check_call):
         # Noop if there are no preinstall hooks found running the
@@ -355,6 +400,16 @@ class TestsActions(TestCaseBase):
                 with self.subTest(override=config_key):
                     self.assertIsNone(regexp.search(generated_env))
 
+    @patch('helpers.get_cassandra_rackdc_file')
+    def test_configure_cassandra_rackdc(self, rackdc_file):
+        hookenv.config()['datacenter'] = 'test_dc'
+        hookenv.config()['rack'] = 'test_rack'
+        with tempfile.NamedTemporaryFile() as rackdc:
+            rackdc_file.return_value = rackdc.name
+            actions.configure_cassandra_rackdc('')
+            with open(rackdc.name, 'r') as f:
+                self.assertEqual(f.read(), 'dc=test_dc\nrack=test_rack')
+
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
@@ -516,18 +571,19 @@ class TestsActions(TestCaseBase):
         actions.reset_all_io_schedulers('ignored')
         helpers_reset_all_io_schedulers.assert_called_once_with()
 
-    def test_restart_keys_complete(self):
+    def test_config_key_lists_complete(self):
         # Ensure that we have listed all keys in either
-        # RESTART_REQUIRED_KEYS or RESTART_NOT_REQUIRED_KEYS. This
-        # is to ensure that RESTART_REQUIRED_KEYS is maintained as new
-        # config items are added over time.
+        # RESTART_REQUIRED_KEYS, RESTART_NOT_REQUIRED_KEYS or
+        # UNCHANGEABLE_KEYS. This is to ensure that RESTART_REQUIRED_KEYS
+        # is maintained as new config items are added over time.
         config_path = os.path.join(os.path.dirname(__file__), os.pardir,
                                    'config.yaml')
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
 
         combined = actions.RESTART_REQUIRED_KEYS.union(
-            actions.RESTART_NOT_REQUIRED_KEYS)
+            actions.RESTART_NOT_REQUIRED_KEYS).union(
+                actions.UNCHANGEABLE_KEYS)
 
         for key in config['options']:
             with self.subTest(key=key):
