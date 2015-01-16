@@ -560,6 +560,13 @@ class TestHelpers(TestCaseBase):
                 session, 'ALTER USER cassandra WITH PASSWORD %s',
                 ConsistencyLevel.ALL, (sentinel.password,))
 
+    @patch('helpers.query')
+    @patch('helpers.connect')
+    def test_reset_default_password_already_done(self, connect, query):
+        connect().__enter__.side_effect = AuthenticationFailed()
+        helpers.reset_default_password()
+        self.assertFalse(query.called)  # Nothing happened.
+
     @patch('cassandra.cluster.Cluster')
     @patch('cassandra.auth.PlainTextAuthProvider')
     @patch('helpers.superuser_credentials')
