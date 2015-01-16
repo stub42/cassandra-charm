@@ -553,17 +553,19 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.connect')
     def test_reset_default_password(self, connect, query, pwgen):
         pwgen.return_value = sentinel.password
+        connect().__enter__.return_value = sentinel.session
+        connect.reset_mock()
         helpers.reset_default_password()
         connect.assert_called_once_with('cassandra', 'cassandra')
-        with connect() as session:
-            query.assert_called_once_with(
-                session, 'ALTER USER cassandra WITH PASSWORD %s',
-                ConsistencyLevel.ALL, (sentinel.password,))
+        query.assert_called_once_with(
+            sentinel.session, 'ALTER USER cassandra WITH PASSWORD %s',
+            ConsistencyLevel.ALL, (sentinel.password,))
 
     @patch('helpers.query')
     @patch('helpers.connect')
     def test_reset_default_password_already_done(self, connect, query):
         connect().__enter__.side_effect = AuthenticationFailed()
+        connect().__exit__.return_value = False
         helpers.reset_default_password()
         self.assertFalse(query.called)  # Nothing happened.
 
@@ -1103,6 +1105,18 @@ class TestHelpers(TestCaseBase):
         # Binary backoff up to 256 seconds, or up to 8.5 minutes total.
         sleep.assert_has_calls([call(i) for i in
                                 [1, 2, 4, 8, 16, 32, 64, 128, 256]])
+
+    @patch('os.kill')
+    @patch('subprocess.call')
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
+    def test_is_cassandra_running_failsafe(self, get_pid_from_file,
+                                           exists, subprocess_call, kill):
+        get_pid_from_file.return_value = sentinel.pid_file
+        exists.return_value = True  # The pid file is there
+        subprocess_call.side_effect = RuntimeError('whoops')
+        # Weird errors are reraised.
+        self.assertRaises(RuntimeError, helpers.is_cassandra_running)
 
     @patch('os.path.isdir')
     @patch('helpers.get_all_database_directories')
