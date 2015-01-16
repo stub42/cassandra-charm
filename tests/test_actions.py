@@ -28,20 +28,16 @@ class TestsActions(TestCaseBase):
         config = hookenv.config()
 
         self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
-        self.assertNotIn('cluster_name', actions.UNCHANGEABLE_KEYS)
 
         config['datacenter'] = 'mission_control'
-        config['cluster_name'] = 'tier_1'
         config.save()
         config.load_previous()
         config['datacenter'] = 'orbital_1'
-        config['cluster_name'] = 'tier_3'
 
         self.assertTrue(config.changed('datacenter'))
 
         actions.revert_unchangeable_config('')
         self.assertEqual(config['datacenter'], 'mission_control')  # Reverted
-        self.assertEqual(config['cluster_name'], 'tier_3')  # Unchanged
 
         hookenv.log.assert_called_once_with(ANY, hookenv.ERROR)
 
@@ -50,10 +46,8 @@ class TestsActions(TestCaseBase):
         config = hookenv.config()
 
         self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
-        self.assertNotIn('cluster_name', actions.UNCHANGEABLE_KEYS)
 
         config['datacenter'] = 'mission_control'
-        config['cluster_name'] = 'tier_3'
         config.save()
         config.load_previous()
         config['datacenter'] = 'orbital_1'
@@ -64,7 +58,6 @@ class TestsActions(TestCaseBase):
         # nothing.
         actions.revert_unchangeable_config('')
         self.assertEqual(config['datacenter'], 'orbital_1')
-        self.assertEqual(config['cluster_name'], 'tier_3')
 
         self.assertFalse(hookenv.log.called)
 
@@ -658,31 +651,26 @@ class TestsActions(TestCaseBase):
         check_call.assert_called_once_with(['nodetool',
                                             'repair', 'system_auth'])
 
-    @patch('charmhelpers.core.hookenv.relation_set')
-    def test_publish_cluster_relation(self, relation_set):
+    def test_publish_cluster_relation(self):
         actions.publish_cluster_relation('')
-        relation_set.assert_called_once_with('cluster:1',
-                                             {'public-address': '10.30.0.1'})
+        hookenv.relation_set.assert_called_once_with(
+            'cluster:1', {'public-address': '10.30.0.1'})
 
     @patch('rollingrestart.get_peer_relation_id')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    def test_publish_cluster_relation_not_yet(self, relation_set, get_relid):
+    def test_publish_cluster_relation_not_yet(self, get_relid):
         get_relid.return_value = None  # Peer relation not yet joined.
         actions.publish_cluster_relation('')  # Noop
-        self.assertFalse(relation_set.called)
+        self.assertFalse(hookenv.relation_set.called)
 
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_alone(self, get_peers, pwgen,
-                                              relation_get, relation_set,
                                               ensure_user, utcnow_str):
         get_peers.return_value = set()
         pwgen.side_effect = iter(['secret1', 'secret2'])
-        relation_get.return_value = {}
+        hookenv.relation_get.return_value = {}
         config = hookenv.config()
         config['native_client_port'] = 666
         config['thrift_client_port'] = 777
@@ -694,12 +682,12 @@ class TestsActions(TestCaseBase):
         actions.publish_database_relations('')
 
         # Checked this unit for existing data.
-        relation_get.assert_called_once_with(rid='database:1',
-                                             unit='service/1')
+        hookenv.relation_get.assert_called_once_with(rid='database:1',
+                                                     unit='service/1')
 
         ensure_user.assert_called_once_with('juju_database_1', 'secret1')
 
-        relation_set.assert_has_calls([
+        hookenv.relation_set.assert_has_calls([
             call('cluster:1', ping='whenever'),
             call('database:1',
                  username='juju_database_1', password='secret1',
@@ -709,15 +697,13 @@ class TestsActions(TestCaseBase):
 
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_alone2(self, get_peers,
-                                               relation_get, relation_set,
                                                ensure_user, utcnow_str):
         get_peers.return_value = set()
         # There are existing credentials on the relation.
-        relation_get.return_value = dict(username='un', password='pw')
+        hookenv.relation_set(relation_id='database:1',
+                             username='un', password='pw')
         config = hookenv.config()
         config['native_client_port'] = 666
         config['thrift_client_port'] = 777
@@ -729,14 +715,14 @@ class TestsActions(TestCaseBase):
         actions.publish_database_relations('')
 
         # Checked this unit for existing data.
-        relation_get.assert_called_once_with(rid='database:1',
-                                             unit='service/1')
+        hookenv.relation_get.assert_called_once_with(rid='database:1',
+                                                     unit='service/1')
 
         # Even if the stored creds are unchanged, we ensure the password
         # is valid and reset it if necessary.
         ensure_user.assert_called_once_with('un', 'pw')
 
-        relation_set.assert_has_calls([
+        hookenv.relation_set.assert_has_calls([
             # Credentials unchanged, so no peer wakeup.
             # call('cluster:1', ping='whenever'),
 
@@ -749,16 +735,13 @@ class TestsActions(TestCaseBase):
 
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_leader(self, get_peers, pwgen,
-                                               relation_get, relation_set,
                                                ensure_user, utcnow_str):
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
-        relation_get.return_value = {}
+        hookenv.relation_get.return_value = {}
         config = hookenv.config()
         config['native_client_port'] = 666
         config['thrift_client_port'] = 777
@@ -770,12 +753,12 @@ class TestsActions(TestCaseBase):
         actions.publish_database_relations('')
 
         # Checked this unit for existing data.
-        relation_get.assert_called_once_with(rid='database:1',
-                                             unit='service/1')
+        hookenv.relation_get.assert_called_once_with(rid='database:1',
+                                                     unit='service/1')
 
         ensure_user.assert_called_once_with('juju_database_1', 'secret1')
 
-        relation_set.assert_has_calls([
+        hookenv.relation_set.assert_has_calls([
             call('cluster:1', ping='whenever'),
             call('database:1',
                  username='juju_database_1', password='secret1',
@@ -785,15 +768,13 @@ class TestsActions(TestCaseBase):
 
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_leader2(self, get_peers,
-                                                relation_get, relation_set,
                                                 ensure_user, utcnow_str):
         get_peers.return_value = set()
         # There are existing credentials on the relation.
-        relation_get.return_value = dict(username='un', password='pw')
+        hookenv.relation_set(relation_id='database:1',
+                             username='un', password='pw')
         config = hookenv.config()
         config['native_client_port'] = 666
         config['thrift_client_port'] = 777
@@ -805,14 +786,14 @@ class TestsActions(TestCaseBase):
         actions.publish_database_relations('')
 
         # Checked this unit for existing data.
-        relation_get.assert_called_once_with(rid='database:1',
-                                             unit='service/1')
+        hookenv.relation_get.assert_called_once_with(rid='database:1',
+                                                     unit='service/1')
 
         # Even if the stored creds are unchanged, we ensure the password
         # is valid and reset it if necessary.
         ensure_user.assert_called_once_with('un', 'pw')
 
-        relation_set.assert_has_calls([
+        hookenv.relation_set.assert_has_calls([
             # Credentials unchanged, so no peer wakeup.
             # call('cluster:1', ping='whenever'),
 
@@ -826,19 +807,14 @@ class TestsActions(TestCaseBase):
     @patch('charmhelpers.core.hookenv.local_unit')
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_follow(self, get_peers, pwgen,
-                                               relation_get, relation_set,
                                                ensure_user, utcnow_str,
                                                local_unit):
         local_unit.return_value = 'service/4'
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
-        # There are no existing credentials on the relation.
-        relation_get.return_value = dict()
         config = hookenv.config()
         config['native_client_port'] = 666
         config['thrift_client_port'] = 777
@@ -850,12 +826,13 @@ class TestsActions(TestCaseBase):
         actions.publish_database_relations('')
 
         # Checked first unit for existing data.
-        relation_get.assert_called_once_with(rid='database:1',
-                                             unit='service/2')
+        # There are no existing credentials on the relation.
+        hookenv.relation_get.assert_called_once_with(rid='database:1',
+                                                     unit='service/2')
 
         self.assertFalse(ensure_user.called)
 
-        relation_set.assert_has_calls([
+        hookenv.relation_set.assert_has_calls([
             # No wakeup, because we are following. Only the leader
             # sets creds.
             # call('cluster:1', ping='whenever'),
@@ -870,19 +847,19 @@ class TestsActions(TestCaseBase):
     @patch('charmhelpers.core.hookenv.local_unit')
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_follow2(self, get_peers, pwgen,
-                                                relation_get, relation_set,
                                                 ensure_user, utcnow_str,
                                                 local_unit):
-        local_unit.return_value = 'service/4'
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         # Existing credentials on the relation.
-        relation_get.return_value = dict(username='un', password='pw')
+        hookenv.local_unit.return_value = 'service/2'
+        hookenv.relation_set(relation_id='database:1',
+                             username='un', password='pw')
+        hookenv.local_unit.return_value = 'service/4'
+        hookenv.relation_get.reset_mock()
         config = hookenv.config()
         config['native_client_port'] = 666
         config['thrift_client_port'] = 777
@@ -894,12 +871,12 @@ class TestsActions(TestCaseBase):
         actions.publish_database_relations('')
 
         # Checked first unit for existing data.
-        relation_get.assert_called_once_with(rid='database:1',
-                                             unit='service/2')
+        hookenv.relation_get.assert_called_once_with(rid='database:1',
+                                                     unit='service/2')
 
         self.assertFalse(ensure_user.called)
 
-        relation_set.assert_has_calls([
+        hookenv.relation_set.assert_has_calls([
             # No wakeup, because we are following. Only the leader
             # sets creds.
             # call('cluster:1', ping='whenever'),

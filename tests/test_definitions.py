@@ -15,7 +15,6 @@ patch = functools.partial(patch, autospec=True)
 
 
 class TestDefinitions(TestCaseBase):
-    @patch('charmhelpers.core.hookenv.relation_get')
     def test_get_service_definitions(self, *args):
         # We can't really test this in unit tests, but at least we can
         # ensure the basic data structure is returned and accepted.
@@ -25,7 +24,6 @@ class TestDefinitions(TestCaseBase):
             with self.subTest(d=d):
                 self.assertIsInstance(d, dict)
 
-    @patch('charmhelpers.core.hookenv.relation_get')
     def test_get_service_manager(self, *args):
         self.assertIsInstance(definitions.get_service_manager(),
                               ServiceManager)

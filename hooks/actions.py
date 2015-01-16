@@ -17,12 +17,11 @@ import rollingrestart
 
 
 # These config keys cannot be changed after service deployment.
-UNCHANGEABLE_KEYS = set(['datacenter', 'rack'])
+UNCHANGEABLE_KEYS = set(['cluster_name', 'datacenter', 'rack'])
 
 # If any of these config items are changed, Cassandra needs to be
 # restarted and maybe remounted.
 RESTART_REQUIRED_KEYS = set([
-    'cluster_name',
     'data_file_directories',
     'commitlog_directory',
     'saved_caches_directory',

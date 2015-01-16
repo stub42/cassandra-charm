@@ -56,22 +56,26 @@ def autostart_disabled(services=None, _policy_rc='/usr/sbin/policy-rc.d'):
 def get_seeds():
     '''Return a list of seed nodes.
 
-    This is the list of private IPs for all units in the service,
-    unless overridden by the force_seed_nodes configuration item.
+    This list may be calculated, or manually overridden by the
+    force_seed_nodes configuration setting.
     '''
-
     config_dict = hookenv.config()
 
     if config_dict['force_seed_nodes']:
         return config_dict['force_seed_nodes'].split(',')
 
-    seeds = []
-    for peer in hookenv.relations_of_type(reltype="cluster"):
-        seeds.append(peer['private-address'])
+    nodes = list(rollingrestart.get_peers()) + [hookenv.local_unit()]
+    nodes.sort(key=lambda x: int(x.split('/')[-1]))
+    seed_units = nodes[:2]  # First two nodes are seeds.
 
-    seeds.append(hookenv.unit_private_ip())
-    seeds.sort()
-    return seeds
+    relid = rollingrestart.get_peer_relation_id()
+    seed_ips = [hookenv.relation_get('private-address', unit, relid)
+                for unit in seed_units]
+    hookenv.log('Nodes == {!r}'.format(nodes))
+    hookenv.log('Seeds == {!r}'.format(seed_units))
+    hookenv.log('Seed IPs == {!r}'.format(seed_ips))
+
+    return seed_ips
 
 
 def get_database_directory(config_path):

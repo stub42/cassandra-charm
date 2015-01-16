@@ -66,8 +66,9 @@ def mock_charmhelpers(test_case):
         'charmhelpers.core.hookenv.log',
         'charmhelpers.core.hookenv.hook_name',
         'charmhelpers.core.hookenv.related_units',
+        'charmhelpers.core.hookenv.relation_get',
+        'charmhelpers.core.hookenv.relation_set',
         'charmhelpers.core.hookenv.relation_ids',
-        'charmhelpers.core.hookenv.relation_for_unit',
         'charmhelpers.core.hookenv.relation_type',
         'charmhelpers.core.hookenv.service_name',
         'charmhelpers.core.hookenv.unit_private_ip',
@@ -90,6 +91,49 @@ def mock_charmhelpers(test_case):
     hookenv.relation_ids.side_effect = (
         lambda x: ['{}:1'.format(x)] if x else [])
     hookenv.related_units.return_value = ('service/2', 'service/3')
+
+    relinfos = dict()
+
+    def mock_relation_set(relation_id=None, relation_settings=None, **kwargs):
+        if relation_id is None:
+            relation_id = hookenv.relation_id()
+        unit = hookenv.local_unit()
+        unit_num = int(unit.split('/')[-1])
+        relinfo = mock_relation_get(unit=unit, rid=relation_id)
+        if relation_settings is not None:
+            relinfo.update(relation_settings)
+        relinfo.update(kwargs)
+        return None
+    hookenv.relation_set.side_effect = mock_relation_set
+
+    def mock_relation_get(attribute=None, unit=None, rid=None):
+        if rid is None:
+            rid = hookenv.relation_id()
+        if unit is None:
+            unit = hookenv.remove_unit()
+        service, unit_num = unit.split('/')
+        unit_num = int(unit_num)
+        relinfos.setdefault(rid, {})
+        relinfos[rid].setdefault(
+            unit, {'private-address': '10.20.0.{}'.format(unit_num)})
+        relinfo = relinfos[rid][unit]
+        if attribute is None or attribute == '-':
+            return relinfo
+        return relinfo.get(attribute)
+    hookenv.relation_get.side_effect = mock_relation_get
+
+    def mock_chown(target, uid, gid):
+        assert uid == 0
+        assert gid == 0
+        assert os.path.exists(target)
+    os.chown.side_effect = mock_chown
+
+    def mock_fchown(fd, uid, gid):
+        assert uid == 0
+        assert gid == 0
+    os.fchown.side_effect = mock_fchown
+
+    fetch.filter_installed_packages.side_effect = lambda pkgs: list(pkgs)
 
     def mock_relation_for_unit(unit=None, rid=None):
         if unit is None:

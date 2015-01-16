@@ -210,7 +210,8 @@ options:
             Name of the Cassandra cluster. This is mainly used to
             prevent machines in one logical cluster from joining
             another. All Cassandra services you wish to cluster together
-            must have the same cluster_name.
+            must have the same cluster_name. This setting cannot be changed
+            after service deployment.
     partitioner:
         default: Murmur3Partitioner
         type: string
@@ -460,15 +461,3 @@ options:
 ##         description:
 ##             Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
 ##             append a string to the EC2 region name. Used with cassandra >= 1.2.x
-##     datacenter:
-##         default: 
-##         type: string
-##         default:
-##         description:
-##             The datacenter used by the enpoint_snitch. i.e. "DC1"
-##     rack:
-##         default:
-##         type: string
-##         default:
-##         description:
-##             The rack used by the enpoint_snitch. i.e. "Rack1"

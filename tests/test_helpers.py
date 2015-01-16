@@ -82,8 +82,8 @@ class TestHelpers(TestCaseBase):
 
     def test_get_seeds(self):
         self.assertEqual(
-            sorted(['10.20.0.1', '10.20.0.2', '10.20.0.3']),
-            sorted(helpers.get_seeds()))
+            ['10.20.0.1', '10.20.0.2'],
+            helpers.get_seeds())
 
     @patch('relations.StorageRelation')
     def test_get_database_directory(self, storage_relation):
@@ -854,23 +854,21 @@ class TestHelpers(TestCaseBase):
             with open(cqlshrc_file.name, 'r') as f:
                 self.assertEqual(f.read().strip(), expected_cqlshrc)
 
-    @patch('charmhelpers.core.hookenv.relation_get')
-    def test_get_node_public_addresses(self, relation_get):
+    def test_get_node_public_addresses(self):
         hookenv.unit_public_ip.return_value = '9.8.7.6'
-        relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
+        hookenv.relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
         self.assertSetEqual(helpers.get_node_public_addresses(),
                             set(['1.2.3.4', '5.6.7.8', '9.8.7.6']))
-        relation_get.assert_has_calls([
+        hookenv.relation_get.assert_has_calls([
             call('public-address', 'service/2', 'cluster:1'),
             call('public-address', 'service/3', 'cluster:1')], any_order=True)
 
-    @patch('charmhelpers.core.hookenv.relation_get')
-    def test_get_node_private_addresses(self, relation_get):
+    def test_get_node_private_addresses(self):
         hookenv.unit_private_ip.return_value = '9.8.7.6'
-        relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
+        hookenv.relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
         self.assertSetEqual(helpers.get_node_private_addresses(),
                             set(['1.2.3.4', '5.6.7.8', '9.8.7.6']))
-        relation_get.assert_has_calls([
+        hookenv.relation_get.assert_has_calls([
             call('private-address', 'service/2', 'cluster:1'),
             call('private-address', 'service/3', 'cluster:1')], any_order=True)
 
@@ -896,12 +894,10 @@ class TestHelpers(TestCaseBase):
             with open(f.name, 'r') as f2:
                 self.assertEqual(f2.read(), '[1, 2, 3]\n')
 
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('helpers.get_cassandra_yaml_file')
     @patch('helpers.get_seeds')
     @patch('charmhelpers.core.host.write_file')
-    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file,
-                                      relation_get):
+    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file):
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name='test_cluster_name',
                                      partitioner='test_partitioner'))
@@ -961,12 +957,11 @@ class TestHelpers(TestCaseBase):
             self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
                              'fubar')
 
-    @patch('charmhelpers.core.hookenv.relation_get')
     @patch('helpers.get_cassandra_yaml_file')
     @patch('helpers.get_seeds')
     @patch('charmhelpers.core.host.write_file')
     def test_configure_cassandra_yaml_overrides(self, write_file, get_seeds,
-                                                yaml_file, relation_get):
+                                                yaml_file):
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name=None,
                                      partitioner='my_partitioner'))
