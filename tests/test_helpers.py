@@ -1033,6 +1033,28 @@ class TestHelpers(TestCaseBase):
         # cannot safely continue when the system is insane.
         self.assertRaises(ValueError, helpers.is_cassandra_running)
 
+    @patch('os.kill')
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
+    def test_is_cassandra_running_missing_process(self, get_pid_from_file,
+                                                  exists, kill):
+        # get_pid_from_file raises a ValueError if the pid is illegal.
+        get_pid_from_file.return_value = sentinel.pid_file
+        exists.return_value = True  # The pid file is there
+        kill.side_effect = ProcessLookupError()  # But the process isn't
+        self.assertFalse(helpers.is_cassandra_running())
+
+    @patch('os.kill')
+    @patch('os.path.exists')
+    @patch('helpers.get_pid_from_file')
+    def test_is_cassandra_running_wrong_user(self, get_pid_from_file,
+                                             exists, kill):
+        # get_pid_from_file raises a ValueError if the pid is illegal.
+        get_pid_from_file.return_value = sentinel.pid_file
+        exists.return_value = True  # The pid file is there
+        kill.side_effect = PermissionError()  # But the process isn't
+        self.assertRaises(PermissionError, helpers.is_cassandra_running)
+
     @patch('time.sleep')
     @patch('os.kill')
     @patch('helpers.get_pid_from_file')
