@@ -683,8 +683,12 @@ class TestsActions(TestCaseBase):
         get_peers.return_value = set()
         pwgen.side_effect = iter(['secret1', 'secret2'])
         relation_get.return_value = {}
-        hookenv.config()['native_client_port'] = 666
-        hookenv.config()['thrift_client_port'] = 777
+        config = hookenv.config()
+        config['native_client_port'] = 666
+        config['thrift_client_port'] = 777
+        config['cluster_name'] = 'fred'
+        config['datacenter'] = 'mission_control'
+        config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
         actions.publish_database_relations('')
@@ -699,7 +703,9 @@ class TestsActions(TestCaseBase):
             call('cluster:1', ping='whenever'),
             call('database:1',
                  username='juju_database_1', password='secret1',
-                 port=666, thrift_port=777)])
+                 host='10.30.0.1', port=666, thrift_port=777,
+                 cluster_name='fred', datacenter='mission_control',
+                 rack='01')])
 
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
@@ -712,8 +718,12 @@ class TestsActions(TestCaseBase):
         get_peers.return_value = set()
         # There are existing credentials on the relation.
         relation_get.return_value = dict(username='un', password='pw')
-        hookenv.config()['native_client_port'] = 666
-        hookenv.config()['thrift_client_port'] = 777
+        config = hookenv.config()
+        config['native_client_port'] = 666
+        config['thrift_client_port'] = 777
+        config['cluster_name'] = 'fred'
+        config['datacenter'] = 'mission_control'
+        config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
         actions.publish_database_relations('')
@@ -731,9 +741,11 @@ class TestsActions(TestCaseBase):
             # call('cluster:1', ping='whenever'),
 
             # relation_set still called, despite no credentials being
-            # changed, in case the ports have changed.
+            # changed, in case the other details have changed.
             call('database:1', username='un', password='pw',
-                 port=666, thrift_port=777)])
+                 host='10.30.0.1', port=666, thrift_port=777,
+                 cluster_name='fred', datacenter='mission_control',
+                 rack='01')])
 
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
@@ -747,8 +759,12 @@ class TestsActions(TestCaseBase):
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         relation_get.return_value = {}
-        hookenv.config()['native_client_port'] = 666
-        hookenv.config()['thrift_client_port'] = 777
+        config = hookenv.config()
+        config['native_client_port'] = 666
+        config['thrift_client_port'] = 777
+        config['cluster_name'] = 'fred'
+        config['datacenter'] = 'mission_control'
+        config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
         actions.publish_database_relations('')
@@ -763,7 +779,9 @@ class TestsActions(TestCaseBase):
             call('cluster:1', ping='whenever'),
             call('database:1',
                  username='juju_database_1', password='secret1',
-                 port=666, thrift_port=777)])
+                 host='10.30.0.1', port=666, thrift_port=777,
+                 cluster_name='fred', datacenter='mission_control',
+                 rack='01')])
 
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
@@ -776,8 +794,12 @@ class TestsActions(TestCaseBase):
         get_peers.return_value = set()
         # There are existing credentials on the relation.
         relation_get.return_value = dict(username='un', password='pw')
-        hookenv.config()['native_client_port'] = 666
-        hookenv.config()['thrift_client_port'] = 777
+        config = hookenv.config()
+        config['native_client_port'] = 666
+        config['thrift_client_port'] = 777
+        config['cluster_name'] = 'fred'
+        config['datacenter'] = 'mission_control'
+        config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
         actions.publish_database_relations('')
@@ -797,7 +819,9 @@ class TestsActions(TestCaseBase):
             # relation_set still called, despite no credentials being
             # changed, in case the ports have changed.
             call('database:1', username='un', password='pw',
-                 port=666, thrift_port=777)])
+                 host='10.30.0.1', port=666, thrift_port=777,
+                 cluster_name='fred', datacenter='mission_control',
+                 rack='01')])
 
     @patch('charmhelpers.core.hookenv.local_unit')
     @patch('rollingrestart.utcnow_str')
@@ -815,8 +839,12 @@ class TestsActions(TestCaseBase):
         pwgen.side_effect = iter(['secret1', 'secret2'])
         # There are no existing credentials on the relation.
         relation_get.return_value = dict()
-        hookenv.config()['native_client_port'] = 666
-        hookenv.config()['thrift_client_port'] = 777
+        config = hookenv.config()
+        config['native_client_port'] = 666
+        config['thrift_client_port'] = 777
+        config['cluster_name'] = 'fred'
+        config['datacenter'] = 'mission_control'
+        config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
         actions.publish_database_relations('')
@@ -835,7 +863,9 @@ class TestsActions(TestCaseBase):
                  # Still publish details, despite no creds, in case we
                  # are not using password authentication.
                  username=None, password=None,
-                 port=666, thrift_port=777)])
+                 host='10.30.0.1', port=666, thrift_port=777,
+                 cluster_name='fred', datacenter='mission_control',
+                 rack='01')])
 
     @patch('charmhelpers.core.hookenv.local_unit')
     @patch('rollingrestart.utcnow_str')
@@ -853,8 +883,12 @@ class TestsActions(TestCaseBase):
         pwgen.side_effect = iter(['secret1', 'secret2'])
         # Existing credentials on the relation.
         relation_get.return_value = dict(username='un', password='pw')
-        hookenv.config()['native_client_port'] = 666
-        hookenv.config()['thrift_client_port'] = 777
+        config = hookenv.config()
+        config['native_client_port'] = 666
+        config['thrift_client_port'] = 777
+        config['cluster_name'] = 'fred'
+        config['datacenter'] = 'mission_control'
+        config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
         actions.publish_database_relations('')
@@ -870,10 +904,10 @@ class TestsActions(TestCaseBase):
             # sets creds.
             # call('cluster:1', ping='whenever'),
             call('database:1',
-                 # Still publish details, despite no creds, in case we
-                 # are not using password authentication.
                  username='un', password='pw',
-                 port=666, thrift_port=777)])
+                 host='10.30.0.1', port=666, thrift_port=777,
+                 cluster_name='fred', datacenter='mission_control',
+                 rack='01')])
 
 
 if __name__ == '__main__':

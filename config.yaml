@@ -200,16 +200,6 @@ options:
 ##             Add a suffix to a datacenter name. Used by the Ec2Snitch
 ##             and Ec2MultiRegionSnitch to append a string to the EC2
 ##             region name. Used with cassandra >= 1.2.x
-##     datacenter:
-##         type: string
-##         default: ""
-##         description:
-##             The datacenter used by the endpoint_snitch. i.e. "DC1"
-##     rack: 
-##         type: string
-##         default: ""
-##         description:
-##             The rack used by the endpoint_snitch. i.e. "Rack1"
 
 
     # Cassandra.yaml related options

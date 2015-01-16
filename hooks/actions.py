@@ -404,8 +404,18 @@ def publish_database_relations(servicename):
             # unit. Fix this behavior once juju provides real
             # leadership.
             helpers.ensure_user(username, password)
-        # Publish the credentials on the relation where clients
-        # and peers can find them.
-        hookenv.relation_set(relid, username=username, password=password,
+        # Publish the information the client needs on the relation where
+        # they can find it.
+        #  - authentication credentials
+        #  - address and port
+        #  - cluster_name, so clients can differentiate multiple clusters
+        #  - datacenter + rack, so clients know what names they can use
+        #    when altering keyspace replication settings.
+        hookenv.relation_set(relid,
+                             username=username, password=password,
+                             host=hookenv.unit_public_ip(),
                              port=config['native_client_port'],
-                             thrift_port=config['thrift_client_port'])
+                             thrift_port=config['thrift_client_port'],
+                             cluster_name=config['cluster_name'],
+                             datacenter=config['datacenter'],
+                             rack=config['rack'])
