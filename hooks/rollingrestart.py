@@ -39,14 +39,14 @@ def get_restart_queue():
     The local unit will not be included until after rolling_restart
     has been called.
     '''
-    queue = []
-
     relid = get_peer_relation_id()
     if relid is None:
-        return queue
+        return []
 
     all_units = set(get_peers())
     all_units.add(hookenv.local_unit())
+
+    queue = []
 
     # Iterate over all units, retrieving restartrequest flags.
     # We can't use the peerstorage helpers here, as that will only
@@ -57,26 +57,27 @@ def get_restart_queue():
         request = relinfo.get('rollingrestart_{}'.format(unit))
         if request is not None:
             queue.append((request, unit))
-
     queue.sort()
-
     return [unit for _, unit in queue]
 
 
 def _enqueue(flag):
     '''Add or remove an entry from peerstorage queue.'''
-    if not get_peer_relation_id():
+    relid = get_peer_relation_id()
+    if not relid:
         # No peer relation, no problems. If there is no peer relation,
         # there are no peers to coordinate with.
         return
 
-    if flag and (hookenv.local_unit() in get_restart_queue()):
-        return
+    unit = hookenv.local_unit()
+    queue = get_restart_queue()
+    if flag and unit in queue:
+        return  # Already queued.
 
+    key = _peerstorage_key()
     value = utcnow_str() if flag else None
-    hookenv.log('Restart queue value {}'.format(value))
-    hookenv.relation_set(get_peer_relation_id(),
-                         {_peerstorage_key(): value})
+    hookenv.log('Restart queue {} = {}'.format(key, value))
+    hookenv.relation_set(relid, {key: value})
 
 
 def rolling_restart(restart_hooks):
@@ -186,8 +187,13 @@ def get_peer_relation_id():
 
 
 def get_peers():
+    """Return the sorted list of peer units.
+
+    Peers only. Does not include the local unit.
+    """
     for relid in hookenv.relation_ids(get_peer_relation_name()):
-        return set(hookenv.related_units(relid))
+        return sorted(hookenv.related_units(relid),
+                      key=lambda x: int(x.split('/')[-1]))
     return []
 
 

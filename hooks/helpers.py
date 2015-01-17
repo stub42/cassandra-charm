@@ -1,6 +1,7 @@
 import configparser
 from contextlib import contextmanager
 import errno
+from functools import wraps
 import io
 import json
 import os.path
@@ -28,6 +29,15 @@ import rollingrestart
 RESTART_TIMEOUT = 300
 
 
+def logged(func):
+    @wraps(func)
+    def wrapper(*args, **kw):
+        hookenv.log("** Helper {}/{}".format(hookenv.hook_name(),
+                                             func.__name__))
+        return func(*args, **kw)
+    return wrapper
+
+
 # FOR CHARMHELPERS
 @contextmanager
 def autostart_disabled(services=None, _policy_rc='/usr/sbin/policy-rc.d'):
@@ -53,29 +63,72 @@ def autostart_disabled(services=None, _policy_rc='/usr/sbin/policy-rc.d'):
             shutil.move("{}-orig".format(_policy_rc), _policy_rc)
 
 
+# FOR CHARMHELPERS
+@logged
+def install_packages(packages):
+    packages = list(packages)
+    if hookenv.config('extra_packages'):
+        packages.extend(hookenv.config('extra_packages').split())
+    packages = fetch.filter_installed_packages(packages)
+    # if 'ntp' in packages:
+    #     fetch.apt_install(['ntp'], fatal=True)  # With autostart
+    #     packages.remove('ntp')
+    if packages:
+        with autostart_disabled(['cassandra']):
+            fetch.apt_install(packages, fatal=True)
+
+
+# FOR CHARMHELPERS
+@logged
+def ensure_package_status(packages):
+    config_dict = hookenv.config()
+
+    package_status = config_dict['package_status']
+
+    if package_status not in ['install', 'hold']:
+        raise RuntimeError("package_status must be 'install' or 'hold', "
+                           "not {!r}".format(package_status))
+
+    selections = []
+    for package in packages:
+        selections.append('{} {}\n'.format(package, package_status))
+    dpkg = subprocess.Popen(['dpkg', '--set-selections'],
+                            stdin=subprocess.PIPE)
+    dpkg.communicate(input=''.join(selections).encode('US-ASCII'))
+
+
 def get_seeds():
     '''Return a list of seed nodes.
 
     This list may be calculated, or manually overridden by the
     force_seed_nodes configuration setting.
+
+    If this is the only unit in the service, then the local unit's IP
+    address is returned as the only seed.
+
+    If there is more than one unit in the service, then the IP addresses
+    of the three lowest numbered peers are returned. The local unit will
+    never be listed as a seed, and ensures that the local unit will always
+    bootstrap.
     '''
     config_dict = hookenv.config()
 
     if config_dict['force_seed_nodes']:
         return config_dict['force_seed_nodes'].split(',')
 
-    nodes = list(rollingrestart.get_peers()) + [hookenv.local_unit()]
-    nodes.sort(key=lambda x: int(x.split('/')[-1]))
-    seed_units = nodes[:2]  # First two nodes are seeds.
+    peers = rollingrestart.get_peers()
+    if not peers:
+        hookenv.log('Local seed')
+        return [hookenv.unit_private_ip()]
 
+    seeds = [seed for seed in
+             sorted(list(peers) + [hookenv.local_unit()],
+                    key=lambda x: int(x.split('/')[-1]))[:3]
+             if seed != hookenv.local_unit()]
+    hookenv.log('Seeds == [{}]'.format(','.join(seeds)))
     relid = rollingrestart.get_peer_relation_id()
-    seed_ips = [hookenv.relation_get('private-address', unit, relid)
-                for unit in seed_units]
-    hookenv.log('Nodes == {!r}'.format(nodes))
-    hookenv.log('Seeds == {!r}'.format(seed_units))
-    hookenv.log('Seed IPs == {!r}'.format(seed_ips))
-
-    return seed_ips
+    return [hookenv.relation_get('private-address', seed, relid)
+            for seed in seeds]
 
 
 def get_database_directory(config_path):
@@ -328,12 +381,14 @@ def get_cassandra_packages():
     return packages
 
 
+@logged
 def stop_cassandra():
     if is_cassandra_running():
         host.service_stop(get_cassandra_service())
     assert not is_cassandra_running()
 
 
+@logged
 def start_cassandra():
     if is_cassandra_running():
         return
@@ -350,12 +405,14 @@ def start_cassandra():
     raise SystemExit(1)
 
 
+@logged
 def reconfigure_and_restart_cassandra(overrides={}):
     stop_cassandra()
     configure_cassandra_yaml(overrides)
     start_cassandra()
 
 
+@logged
 def remount_cassandra():
     '''If a new mountpoint is ready, migrate data across to it.'''
     assert not is_cassandra_running()  # Guard against data loss.
@@ -372,6 +429,7 @@ def remount_cassandra():
             os.chmod(root, 0o750)
 
 
+@logged
 def ensure_database_directories():
     '''Ensure that directories Cassandra expects to store its data in exist.'''
     db_dirs = get_all_database_directories()
@@ -382,6 +440,7 @@ def ensure_database_directories():
         ensure_database_directory(db_dir)
 
 
+@logged
 def reset_default_password():
     # If we can connect using the default superuser password
     # 'cassandra', change it to something random. We do the connection
@@ -394,6 +453,9 @@ def reset_default_password():
                   ConsistencyLevel.ALL, (host.pwgen(),))  # pragma: no branch
     except cassandra.AuthenticationFailed:
         hookenv.log('Default admin password already changed')
+
+
+CONNECT_TIMEOUT = 120
 
 
 @contextmanager
@@ -411,7 +473,7 @@ def connect(username=None, password=None):
     # If Cassandra has just been restarted, we might need to wait a
     # while until the initial gossiping has finished and connections
     # start being accepted.
-    timeout = time.time() + 30
+    timeout = time.time() + CONNECT_TIMEOUT
 
     while True:
         cluster = cassandra.cluster.Cluster([address], port=port,
@@ -446,6 +508,7 @@ def ensure_user(username, password):
               ConsistencyLevel.QUORUM, (username, password,))
 
 
+@logged
 def ensure_superuser():
     '''If the unit's superuser account is not working, recreate it.'''
     try:
@@ -461,6 +524,7 @@ def ensure_superuser():
         hookenv.log('Unit superuser password reset successful')
 
 
+@logged
 def create_superuser():
     '''Create or recreate the unit's superuser account.
 
@@ -542,26 +606,6 @@ def superuser_credentials():
     return username, password
 
 
-def get_node_public_addresses():
-    peer_relid = rollingrestart.get_peer_relation_id()
-    # The charm explicitly sets public-address on the peer relation, as
-    # unlike private-address it is not available by default.
-    addresses = set(hookenv.relation_get('public-address', peer, peer_relid)
-                    for peer in rollingrestart.get_peers())
-    addresses.add(hookenv.unit_public_ip())
-    addresses.discard(None)
-    return addresses
-
-
-def get_node_private_addresses():
-    peer_relid = rollingrestart.get_peer_relation_id()
-    addresses = set(hookenv.relation_get('private-address', peer, peer_relid)
-                    for peer in rollingrestart.get_peers())
-    addresses.add(hookenv.unit_private_ip())
-    addresses.discard(None)
-    return addresses
-
-
 def num_nodes():
     return len(rollingrestart.get_peers()) + 1
 
@@ -572,6 +616,7 @@ def read_cassandra_yaml():
         return yaml.safe_load(f)
 
 
+@logged
 def write_cassandra_yaml(cassandra_yaml):
     cassandra_yaml_path = get_cassandra_yaml_file()
     host.write_file(cassandra_yaml_path,
@@ -682,6 +727,7 @@ def is_cassandra_running():
         raise
 
 
+@logged
 def reset_all_io_schedulers():
     dirs = get_all_database_directories()
     dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']]
@@ -692,26 +738,53 @@ def reset_all_io_schedulers():
             set_io_scheduler(config['io_scheduler'], d)
 
 
-def get_auth_keyspace_replication_factor():
+@logged
+def reset_auth_keyspace_replication():
+    # Cassandra requires you to manually set the replication factor of
+    # the system_auth keyspace, to ensure availability and redundancy.
+    # The charm can't control how many or which units might get dropped,
+    # so for authentication to work we need to set the replication factor
+    # on the system_auth keyspace so that every node contains all of the
+    # data. Authentication information will remain available, even in the
+    # face of all the other nodes having gone away due to an in progress
+    # 'juju destroy-service'.
+    n = num_nodes()
+    datacenter = hookenv.config()['datacenter']
     with connect() as session:
-        statement = dedent('''\
-            SELECT strategy_options FROM system.schema_keyspaces
-            WHERE keyspace_name='system_auth'
-            ''')
-        r = query(session, statement, ConsistencyLevel.QUORUM)
-        strategy_options = json.loads(r[0][0])
-        return int(strategy_options['replication_factor'])
+        strategy_opts = get_auth_keyspace_replication(session)
+
+        rf = strategy_opts.get(datacenter, 0)
+        if rf == n and strategy_opts['class'] == 'NetworkTopologyStrategy':
+            hookenv.log('system_auth rf={!r}'.format(strategy_opts))
+        else:
+            strategy_opts['class'] = 'NetworkTopologyStrategy'
+            strategy_opts[datacenter] = n
+            if 'replication_factor' in strategy_opts:
+                del strategy_opts['replication_factor']
+            set_auth_keyspace_replication(session, strategy_opts)
 
 
-def set_auth_keyspace_replication_factor(rf):
-    # TODO: This will fail if we are linking multiple Cassandra
-    # services, as we are only counting nodes in this service. Instead,
-    # we could set the rf for this services rack to match the number of
-    # nodes in the service.
-    hookenv.log('Updating system_auth rf={}'.format(rf))
-    with connect() as session:
-        statement = dedent('''\
-            ALTER KEYSPACE system_auth WITH REPLICATION =
-                {'class': 'SimpleStrategy', 'replication_factor': %s}
-            ''')
-        query(session, statement, ConsistencyLevel.QUORUM, (rf,))
+def get_auth_keyspace_replication(session):
+    statement = dedent('''\
+        SELECT strategy_options FROM system.schema_keyspaces
+        WHERE keyspace_name='system_auth'
+        ''')
+    r = query(session, statement, ConsistencyLevel.QUORUM)
+    return json.loads(r[0][0])
+
+
+def set_auth_keyspace_replication(session, settings):
+    hookenv.log('Updating system_auth rf={!r}'.format(settings))
+    statement = 'ALTER KEYSPACE system_auth WITH REPLICATION = %s'
+    query(session, statement, ConsistencyLevel.QUORUM, (settings,))
+
+
+@logged
+def repair_auth_keyspace():
+    # If the number of nodes has changed, so has system_auth replication
+    # factor. We need to run nodetool repair on the system_auth
+    # keyspace.
+    config = hookenv.config()
+    config['num_nodes'] = num_nodes()
+    if config.changed('num_nodes'):
+        subprocess.check_call(['nodetool', 'repair', 'system_auth'])

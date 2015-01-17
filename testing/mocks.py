@@ -71,6 +71,7 @@ def mock_charmhelpers(test_case):
         'charmhelpers.core.hookenv.relation_ids',
         'charmhelpers.core.hookenv.relation_type',
         'charmhelpers.core.hookenv.service_name',
+        'charmhelpers.core.hookenv.local_unit',
         'charmhelpers.core.hookenv.unit_private_ip',
         'charmhelpers.core.hookenv.unit_public_ip',
         'charmhelpers.core.host.log',
@@ -84,10 +85,20 @@ def mock_charmhelpers(test_case):
         mock.start()
         test_case.addCleanup(mock.stop)
 
-    os.environ['JUJU_UNIT_NAME'] = 'service/1'
-    hookenv.unit_private_ip.return_value = '10.20.0.1'
-    hookenv.unit_public_ip.return_value = '10.30.0.1'
-    hookenv.service_name.return_value = 'service'
+    hookenv.local_unit.return_value = 'service/1'
+
+    def mock_unit_private_ip():
+        return '10.20.0.{}'.format(hookenv.local_unit().split('/')[-1])
+    hookenv.unit_private_ip.side_effect = mock_unit_private_ip
+
+    def mock_unit_public_ip():
+        return '10.30.0.{}'.format(hookenv.local_unit().split('/')[-1])
+    hookenv.unit_public_ip.side_effect = mock_unit_public_ip
+
+    def mock_service_name():
+        return hookenv.local_unit().split('/')[0]
+    hookenv.service_name.side_effect = mock_service_name
+
     hookenv.relation_ids.side_effect = (
         lambda x: ['{}:1'.format(x)] if x else [])
     hookenv.related_units.return_value = ('service/2', 'service/3')
@@ -98,7 +109,6 @@ def mock_charmhelpers(test_case):
         if relation_id is None:
             relation_id = hookenv.relation_id()
         unit = hookenv.local_unit()
-        unit_num = int(unit.split('/')[-1])
         relinfo = mock_relation_get(unit=unit, rid=relation_id)
         if relation_settings is not None:
             relinfo.update(relation_settings)

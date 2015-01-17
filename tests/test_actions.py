@@ -11,7 +11,6 @@ import unittest
 from unittest.mock import ANY, call, patch, sentinel
 import yaml
 
-from charmhelpers import fetch
 from charmhelpers.core import hookenv
 
 from tests.base import TestCaseBase
@@ -39,7 +38,7 @@ class TestsActions(TestCaseBase):
         actions.revert_unchangeable_config('')
         self.assertEqual(config['datacenter'], 'mission_control')  # Reverted
 
-        hookenv.log.assert_called_once_with(ANY, hookenv.ERROR)
+        hookenv.log.assert_any_call(ANY, hookenv.ERROR)
 
     def test_revert_unchangeable_config_install(self):
         hookenv.hook_name.return_value = 'install'
@@ -59,8 +58,6 @@ class TestsActions(TestCaseBase):
         actions.revert_unchangeable_config('')
         self.assertEqual(config['datacenter'], 'orbital_1')
 
-        self.assertFalse(hookenv.log.called)
-
     @patch('subprocess.check_call')
     def test_preinstall(self, check_call):
         # Noop if there are no preinstall hooks found running the
@@ -68,7 +65,7 @@ class TestsActions(TestCaseBase):
         hookenv.hook_name.return_value = 'install'
         actions.preinstall('')
         self.assertFalse(check_call.called)
-        hookenv.log.assert_called_once_with('No preinstall hooks found')
+        hookenv.log.assert_any_call('No preinstall hooks found')
 
         # If preinstall hooks are found running the install hook,
         # the preinstall hooks are run.
@@ -131,7 +128,7 @@ class TestsActions(TestCaseBase):
         check_call.side_effect = RuntimeError()
         actions.swapoff('', '')
         # A warning is generated if swapoff fails.
-        hookenv.log.assert_called_once_with(ANY, hookenv.WARNING)
+        hookenv.log.assert_any_call(ANY, hookenv.WARNING)
 
     @patch('subprocess.check_call')
     def test_swapoff_lxc(self, check_call):
@@ -139,7 +136,6 @@ class TestsActions(TestCaseBase):
         helpers.is_lxc.return_value = True
         actions.swapoff('')
         self.assertFalse(check_call.called)
-        hookenv.log.assert_called_once_with(ANY)
 
     @patch('charmhelpers.fetch.configure_sources')
     def test_configure_sources(self, configure_sources):
@@ -211,7 +207,7 @@ class TestsActions(TestCaseBase):
         check_call.side_effect = OSError(errno.EACCES, 'Permission Denied')
         actions.reset_sysctl('')
         # A warning is generated if permission denied was raised.
-        hookenv.log.assert_called_once_with(ANY, hookenv.WARNING)
+        hookenv.log.assert_any_call(ANY, hookenv.WARNING)
 
     @patch('subprocess.check_call')
     @patch('charmhelpers.core.host.write_file')
@@ -226,98 +222,25 @@ class TestsActions(TestCaseBase):
         helpers.is_lxc.return_value = True
         actions.reset_sysctl('')
         self.assertFalse(check_call.called)
-        hookenv.log.assert_called_once_with("In an LXC. "
-                                            "Leaving sysctl unchanged.")
-
-    @patch('subprocess.Popen')
-    def test_ensure_package_status(self, popen):
-        for status in ['install', 'hold']:
-            with self.subTest(status=status):
-                popen.reset_mock()
-                hookenv.config()['package_status'] = status
-                actions.ensure_package_status('', ['a_pack', 'b_pack'])
-
-                selections = 'a_pack {}\nb_pack {}\n'.format(
-                    status, status).encode('US-ASCII')
-
-                self.assertEqual([
-                    call(['dpkg', '--set-selections'], stdin=subprocess.PIPE),
-                    call().communicate(input=selections),
-                    ], popen.mock_calls)
-
-        popen.reset_mock()
-        hookenv.config()['package_status'] = 'invalid'
-        self.assertRaises(RuntimeError,
-                          actions.ensure_package_status,
-                          '', ['a_pack', 'b_back'])
-        self.assertFalse(popen.called)
+        hookenv.log.assert_any_call('In an LXC. '
+                                    'Leaving sysctl unchanged.')
 
     @patch('helpers.get_cassandra_packages')
-    @patch('actions.ensure_package_status')
+    @patch('helpers.ensure_package_status')
     def test_ensure_cassandra_package_status(self, ensure_package_status,
                                              get_cassandra_packages):
         get_cassandra_packages.return_value = sentinel.cassandra_packages
-        actions.ensure_cassandra_package_status(sentinel.servicename)
+        actions.ensure_cassandra_package_status('')
         ensure_package_status.assert_called_once_with(
-            sentinel.servicename, sentinel.cassandra_packages)
-
-    @patch('helpers.autostart_disabled')
-    @patch('charmhelpers.fetch.apt_install')
-    def test_install_packages(self, apt_install, autostart_disabled):
-        packages = ['a_pack', 'b_pack']
-        actions.install_packages('', packages)
-
-        # All packages got installed, and hook aborted if package
-        # installation failed.
-        apt_install.assert_called_once_with(['a_pack', 'b_pack'], fatal=True)
-
-        # The autostart_disabled context manager was used to stop
-        # package installation starting services.
-        autostart_disabled().__enter__.assert_called_once_with()
-        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
-
-    @patch('helpers.autostart_disabled')
-    @patch('charmhelpers.fetch.apt_install')
-    def test_install_packages_extras(self, apt_install, autostart_disabled):
-        packages = ['a_pack', 'b_pack']
-        hookenv.config()['extra_packages'] = 'c_pack d_pack'
-        actions.install_packages('', packages)
-
-        # All packages got installed, and hook aborted if package
-        # installation failed.
-        apt_install.assert_called_once_with(['a_pack', 'b_pack',
-                                             'c_pack', 'd_pack'], fatal=True)
-
-        # The autostart_disabled context manager was used to stop
-        # package installation starting services.
-        autostart_disabled().__enter__.assert_called_once_with()
-        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
-
-    @patch('helpers.autostart_disabled')
-    @patch('charmhelpers.fetch.apt_install')
-    def test_install_packages_noop(self, apt_install, autostart_disabled):
-        # Everything is already installed. Nothing to do.
-        fetch.filter_installed_packages.side_effect = lambda pkgs: []
-
-        packages = ['a_pack', 'b_pack']
-        hookenv.config()['extra_packages'] = 'c_pack d_pack'
-        actions.install_packages('', packages)
-
-        # All packages got installed, and hook aborted if package
-        # installation failed.
-        self.assertFalse(apt_install.called)
-
-        # Autostart wasn't messed with.
-        self.assertFalse(autostart_disabled.called)
+            sentinel.cassandra_packages)
 
     @patch('helpers.get_cassandra_packages')
-    @patch('actions.install_packages')
+    @patch('helpers.install_packages')
     def test_install_cassandra_packages(self, install_packages,
                                         get_cassandra_packages):
         get_cassandra_packages.return_value = sentinel.cassandra_packages
-        actions.install_cassandra_packages(sentinel.servicename)
-        install_packages.assert_called_once_with(
-            sentinel.servicename, sentinel.cassandra_packages)
+        actions.install_cassandra_packages('')
+        install_packages.assert_called_once_with(sentinel.cassandra_packages)
 
     @patch('helpers.configure_cassandra_yaml')
     def test_configure_cassandra_yaml(self, configure_cassandra_yaml):
@@ -401,7 +324,8 @@ class TestsActions(TestCaseBase):
             rackdc_file.return_value = rackdc.name
             actions.configure_cassandra_rackdc('')
             with open(rackdc.name, 'r') as f:
-                self.assertEqual(f.read(), 'dc=test_dc\nrack=test_rack')
+                self.assertEqual(f.read().strip(),
+                                 'dc=test_dc\nrack=test_rack')
 
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
@@ -426,8 +350,8 @@ class TestsActions(TestCaseBase):
 
         actions.maybe_schedule_restart('')
         request_restart.assert_called_once_with()
-        hookenv.log.assert_called_once_with('Mountpoint changed. '
-                                            'Restart and migration required.')
+        hookenv.log.assert_any_call('Mountpoint changed. '
+                                    'Restart and migration required.')
 
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
@@ -452,8 +376,8 @@ class TestsActions(TestCaseBase):
 
         actions.maybe_schedule_restart('')
         request_restart.assert_called_once_with()
-        hookenv.log.assert_called_once_with('Seed list changed. '
-                                            'Restart required.')
+        hookenv.log.assert_any_call('Seed list changed. '
+                                    'Restart required.')
 
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
@@ -510,8 +434,7 @@ class TestsActions(TestCaseBase):
 
         actions.maybe_schedule_restart('')
         request_restart.assert_called_once_with()
-        hookenv.log.assert_called_once_with('max_heap_size changed. '
-                                            'Restart required.')
+        hookenv.log.assert_any_call('max_heap_size changed. Restart required.')
 
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
@@ -536,8 +459,8 @@ class TestsActions(TestCaseBase):
 
         actions.maybe_schedule_restart('')
         request_restart.assert_called_once_with()
-        hookenv.log.assert_called_once_with('Unit IP address changed. '
-                                            'Restart required.')
+        hookenv.log.assert_any_call('Unit IP address changed. '
+                                    'Restart required.')
 
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
@@ -581,75 +504,6 @@ class TestsActions(TestCaseBase):
         for key in config['options']:
             with self.subTest(key=key):
                 self.assertIn(key, combined)
-
-    @patch('helpers.connect')
-    @patch('helpers.is_cassandra_running')
-    def test_reset_auth_keyspace_rf_down(self, is_running, connect):
-        is_running.return_value = False
-        actions.reset_auth_keyspace_replication_factor('')  # Noop
-        self.assertFalse(connect.called)  # No attempt was made.
-
-    @patch('helpers.set_auth_keyspace_replication_factor')
-    @patch('helpers.get_auth_keyspace_replication_factor')
-    @patch('helpers.num_nodes')
-    @patch('helpers.is_cassandra_running')
-    def test_reset_auth_keyspace_rf_changed(self, is_running, num_nodes,
-                                            get_auth_rf, set_auth_rf):
-        is_running.return_value = True
-        num_nodes.return_value = 2
-        get_auth_rf.return_value = 3
-
-        # If the number of nodes does not match the system_auth
-        # keyspace's replication factor, the system_auth keyspace's
-        # replication factor is updated to match.
-        actions.reset_auth_keyspace_replication_factor('')
-        set_auth_rf.assert_called_once_with(2)
-
-    @patch('helpers.set_auth_keyspace_replication_factor')
-    @patch('helpers.get_auth_keyspace_replication_factor')
-    @patch('helpers.num_nodes')
-    @patch('helpers.is_cassandra_running')
-    def test_reset_auth_keyspace_rf_unchanged(self, is_running, num_nodes,
-                                              get_auth_rf, set_auth_rf):
-        is_running.return_value = True
-        num_nodes.return_value = 3
-        get_auth_rf.return_value = 3
-
-        # If the number of nodes matches the system_auth
-        # keyspace's replication factor, nothing happens.
-        actions.reset_auth_keyspace_replication_factor('')
-        self.assertFalse(set_auth_rf.called)
-
-    @patch('subprocess.check_call')
-    @patch('helpers.num_nodes')
-    def test_repair_auth_keyspace(self, num_nodes, check_call):
-        # If the number of nodes has changed, we need to run
-        # 'nodetool repair system_auth' on all the units.
-        num_nodes.return_value = 2
-
-        # First time, there is no preserved state, and we repair.
-        actions.repair_auth_keyspace('')
-        check_call.assert_called_once_with(['nodetool',
-                                            'repair', 'system_auth'])
-
-        hookenv.config().save()
-        hookenv.config().load_previous()
-        check_call.reset_mock()
-
-        # Next time, there is no change so do nothing.
-        actions.repair_auth_keyspace('')
-        self.assertFalse(check_call.called)
-
-        hookenv.config().save()
-        hookenv.config().load_previous()
-        check_call.reset_mock()
-
-        # If the number of nodes changes from preserved state, we
-        # repair.
-        num_nodes.return_value = 3
-        actions.repair_auth_keyspace('')
-        check_call.assert_called_once_with(['nodetool',
-                                            'repair', 'system_auth'])
 
     def test_publish_cluster_relation(self):
         actions.publish_cluster_relation('')
@@ -804,15 +658,13 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
-    @patch('charmhelpers.core.hookenv.local_unit')
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_follow(self, get_peers, pwgen,
-                                               ensure_user, utcnow_str,
-                                               local_unit):
-        local_unit.return_value = 'service/4'
+                                               ensure_user, utcnow_str):
+        hookenv.local_unit.return_value = 'service/4'
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         config = hookenv.config()
@@ -840,18 +692,16 @@ class TestsActions(TestCaseBase):
                  # Still publish details, despite no creds, in case we
                  # are not using password authentication.
                  username=None, password=None,
-                 host='10.30.0.1', port=666, thrift_port=777,
+                 host='10.30.0.4', port=666, thrift_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
-    @patch('charmhelpers.core.hookenv.local_unit')
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
     def test_publish_database_relations_follow2(self, get_peers, pwgen,
-                                                ensure_user, utcnow_str,
-                                                local_unit):
+                                                ensure_user, utcnow_str):
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         # Existing credentials on the relation.
@@ -882,7 +732,7 @@ class TestsActions(TestCaseBase):
             # call('cluster:1', ping='whenever'),
             call('database:1',
                  username='un', password='pw',
-                 host='10.30.0.1', port=666, thrift_port=777,
+                 host='10.30.0.4', port=666, thrift_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 

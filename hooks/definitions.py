@@ -34,28 +34,29 @@ def get_service_definitions():
                          actions.ensure_cassandra_package_status,
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env,
+                         actions.configure_cassandra_rackdc,
                          actions.reset_all_io_schedulers,
                          actions.maybe_schedule_restart],
-             stop=[actions.stop_cassandra],
-             start=[actions.start_cassandra,
-                    actions.reset_default_password,
-                    actions.ensure_superuser]),
+             stop=[actions.stop_cassandra], start=[]),
 
         # Rolling restart. This service will call the restart hook when
         # it is this units turn to restart. This is also where we do
-        # actions done while Cassandra is not running.
-        rollingrestart.make_service([helpers.stop_cassandra,
-                                     helpers.remount_cassandra,
-                                     helpers.ensure_database_directories,
-                                     helpers.start_cassandra,
-                                     helpers.reset_default_password,
-                                     helpers.ensure_superuser]),
+        # actions done while Cassandra is not running, and where we do
+        # actions that should only be done by one node at a time.
+        rollingrestart.make_service([
+            helpers.stop_cassandra,
+            helpers.remount_cassandra,
+            helpers.ensure_database_directories,
+            helpers.start_cassandra,
+            helpers.reset_default_password,
+            helpers.ensure_superuser,
+            helpers.reset_auth_keyspace_replication,
+            helpers.repair_auth_keyspace]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresCassandra()],  # Yucky hack.
-             data_ready=[actions.reset_auth_keyspace_replication_factor,
-                         actions.repair_auth_keyspace,
+             data_ready=[actions.remove_nodes,
                          actions.publish_database_relations],
              start=[], stop=[])]
 

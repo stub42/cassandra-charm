@@ -126,41 +126,19 @@ class TestRollingRestart(TestCaseBase):
     @patch('rollingrestart.get_peers')
     @patch('rollingrestart.get_peer_relation_name')
     @patch('rollingrestart.get_peer_relation_id')
-    @patch('charmhelpers.core.hookenv.local_unit')
-    @patch('charmhelpers.core.hookenv.relation_set')
-    @patch('charmhelpers.core.hookenv.relation_get')
-    def test_restart_queue(self, relation_get, relation_set, local_unit,
-                           get_rid, get_relname, get_peers):
+    def test_get_restart_queue(self, get_rid, get_relname, get_peers):
 
         get_rid.return_value = None
         get_relname.return_value = None
         get_peers.return_value = []
-        rel_storage = {sentinel.peer_rid: {}}
-
-        def _relation_get(attribute=None, unit=None, rid=None):
-            assert attribute is None or attribute == '-'
-            assert unit is not None
-            assert rid is not None
-            return rel_storage[rid].get(unit, {})
-
-        relation_get.side_effect = _relation_get
-
-        def _relation_set(relation_id, m={}, **kwargs):
-            for k, v in list(m.items()) + list(kwargs.items()):
-                rel_storage[relation_id].setdefault(local_unit(), {})
-                if v is not None:
-                    rel_storage[relation_id][local_unit()][k] = v
-                elif k in rel_storage[relation_id][local_unit()]:
-                    del rel_storage[relation_id][local_unit()][k]
-
-        relation_set.side_effect = _relation_set
 
         # The queue starts empty
         self.assertListEqual(rollingrestart.get_restart_queue(), [])
 
         def enqueue_unit(unit, flag):
-            local_unit.return_value = unit
+            hookenv.local_unit.return_value = unit
             rollingrestart._enqueue(flag)
+            hookenv.local_unit.return_value = 'unit/1'
 
         # If there are no peers, trying to queue a unit does nothing.
         enqueue_unit('unit/1', True)
@@ -168,32 +146,32 @@ class TestRollingRestart(TestCaseBase):
 
         get_rid.return_value = sentinel.peer_rid
         get_relname.return_value = sentinel.peer_relname
-        get_peers.return_value = ['unit/{}'.format(n) for n in range(0, 10)]
+        get_peers.return_value = ['unit/{}'.format(n) for n in range(2, 10)]
 
-        # Adding units grows it.
+        # Once there is a peer relation we can queue units.
         enqueue_unit('unit/1', True)
         self.assertListEqual(rollingrestart.get_restart_queue(), ['unit/1'])
 
         # They are returned in order added.
-        enqueue_unit('unit/0', True)
-        enqueue_unit('unit/6', True)
         enqueue_unit('unit/8', True)
+        enqueue_unit('unit/3', True)
+        enqueue_unit('unit/6', True)
         self.assertListEqual(rollingrestart.get_restart_queue(),
-                             ['unit/1', 'unit/0', 'unit/6', 'unit/8'])
+                             ['unit/1', 'unit/8', 'unit/3', 'unit/6'])
 
         # They can be removed.
-        enqueue_unit('unit/0', False)
+        enqueue_unit('unit/3', False)
         self.assertListEqual(rollingrestart.get_restart_queue(),
-                             ['unit/1', 'unit/6', 'unit/8'])
+                             ['unit/1', 'unit/8', 'unit/6'])
         enqueue_unit('unit/1', False)
         self.assertListEqual(rollingrestart.get_restart_queue(),
-                             ['unit/6', 'unit/8'])
+                             ['unit/8', 'unit/6'])
 
         # Adding a unit again does nothing, and the unit maintains its
         # position in the queue.
-        enqueue_unit('unit/6', True)
+        enqueue_unit('unit/8', True)
         self.assertListEqual(rollingrestart.get_restart_queue(),
-                             ['unit/6', 'unit/8'])
+                             ['unit/8', 'unit/6'])
         enqueue_unit('unit/6', False)
         self.assertListEqual(rollingrestart.get_restart_queue(),
                              ['unit/8'])
@@ -394,8 +372,8 @@ class TestRollingRestart(TestCaseBase):
     @patch('rollingrestart.get_peer_relation_name')
     def test_get_peers(self, get_peer_relation_name):
         get_peer_relation_name.return_value = 'cluster'
-        self.assertSetEqual(rollingrestart.get_peers(),
-                            set(['service/2', 'service/3']))
+        self.assertListEqual(rollingrestart.get_peers(),
+                             ['service/2', 'service/3'])
 
         # If the peer relation has yet to be joined, returns get_peers
         # returns an empty list.

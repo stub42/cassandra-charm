@@ -1,10 +1,12 @@
 from contextlib import closing
 import errno
+from functools import wraps
 import glob
 import os.path
 import re
 import shlex
 import subprocess
+from textwrap import dedent
 
 from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
@@ -57,7 +59,17 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'nagios_disk_crit_pct'])
 
 
-def revert_unchangeable_config(servicename):
+def action(func):
+    @wraps(func)
+    def wrapper(servicename, *args, **kw):
+        hookenv.log("** Action {}/{}".format(hookenv.hook_name(),
+                                             func.__name__))
+        return func(*args, **kw)
+    return wrapper
+
+
+@action
+def revert_unchangeable_config():
     if hookenv.hook_name() == 'install':
         # config.previous() only becomes meaningful after the install
         # hook has run. During the first run on the unit hook, it
@@ -75,7 +87,8 @@ def revert_unchangeable_config(servicename):
 
 
 # FOR CHARMHELPERS
-def preinstall(servicename):
+@action
+def preinstall():
     '''Preinstallation data_ready hook.'''
     # Only run the preinstall hooks from the actual install hook.
     if hookenv.hook_name() == 'install':
@@ -94,7 +107,8 @@ def preinstall(servicename):
 
 
 # FOR CHARMHELPERS
-def swapoff(servicename, fstab='/etc/fstab'):
+@action
+def swapoff(fstab='/etc/fstab'):
     '''Turn off swapping in the container, permanently.'''
     # Turn off swap in the current session
     if helpers.is_lxc():
@@ -119,14 +133,16 @@ def swapoff(servicename, fstab='/etc/fstab'):
 
 
 # FOR CHARMHELPERS
-def configure_sources(servicename):
+@action
+def configure_sources():
     '''Standard charmhelpers package source configuration.'''
     config = hookenv.config()
     if config.changed('install_sources') or config.changed('install_keys'):
         fetch.configure_sources(True)
 
 
-def add_implicit_package_signing_keys(servicename):
+@action
+def add_implicit_package_signing_keys():
     # Rather than blindly add these keys, we should sniff
     # config['install_sources'] for apache.org or datastax.com urls and
     # add only the appropriate keys.
@@ -136,7 +152,8 @@ def add_implicit_package_signing_keys(servicename):
                               stdin=subprocess.DEVNULL)
 
 
-def reset_sysctl(servicename):
+@action
+def reset_sysctl():
     '''Configure sysctl settings for Cassandra'''
     if helpers.is_lxc():
         hookenv.log("In an LXC. Leaving sysctl unchanged.")
@@ -157,55 +174,23 @@ def reset_sysctl(servicename):
                 raise
 
 
-# FOR CHARMHELPERS
-def ensure_package_status(servicename, packages):
-    config_dict = hookenv.config()
-
-    package_status = config_dict['package_status']
-    # TODO: dse
-    # if config_dict['dse']:
-    #     packages = ['dse']
-    # else:
-
-    if package_status not in ['install', 'hold']:
-        raise RuntimeError("package_status must be 'install' or 'hold', "
-                           "not {!r}".format(package_status))
-
-    selections = []
-    for package in packages:
-        selections.append('{} {}\n'.format(package, package_status))
-    dpkg = subprocess.Popen(['dpkg', '--set-selections'],
-                            stdin=subprocess.PIPE)
-    dpkg.communicate(input=''.join(selections).encode('US-ASCII'))
+@action
+def install_cassandra_packages():
+    helpers.install_packages(helpers.get_cassandra_packages())
 
 
-# FOR CHARMHELPERS
-def install_packages(servicename, packages):
-    packages = list(packages)
-    if hookenv.config('extra_packages'):
-        packages.extend(hookenv.config('extra_packages').split())
-    packages = fetch.filter_installed_packages(packages)
-    # if 'ntp' in packages:
-    #     fetch.apt_install(['ntp'], fatal=True)  # With autostart
-    #     packages.remove('ntp')
-    if packages:
-        with helpers.autostart_disabled(['cassandra']):
-            fetch.apt_install(packages, fatal=True)
+@action
+def ensure_cassandra_package_status():
+    helpers.ensure_package_status(helpers.get_cassandra_packages())
 
 
-def install_cassandra_packages(servicename):
-    install_packages(servicename, helpers.get_cassandra_packages())
-
-
-def ensure_cassandra_package_status(servicename):
-    ensure_package_status(servicename, helpers.get_cassandra_packages())
-
-
-def configure_cassandra_yaml(servicename):
+@action
+def configure_cassandra_yaml():
     helpers.configure_cassandra_yaml()
 
 
-def configure_cassandra_env(servicename):
+@action
+def configure_cassandra_env():
     cassandra_env_path = helpers.get_cassandra_env_file()
     assert os.path.exists(cassandra_env_path)
 
@@ -231,10 +216,16 @@ def configure_cassandra_env(servicename):
     host.write_file(cassandra_env_path, env.encode('UTF-8'))
 
 
-def configure_cassandra_rackdc(servicename):
+@action
+def configure_cassandra_rackdc():
+    config = hookenv.config()
+    datacenter = config['datacenter'].strip()
+    rack = config['rack'].strip() or hookenv.service_name()
+    rackdc_properties = dedent('''\
+                               dc={}
+                               rack={}
+                               ''').format(datacenter, rack)
     rackdc_path = helpers.get_cassandra_rackdc_file()
-    rackdc_properties = 'dc={datacenter}\nrack={rack}'.format(
-        **hookenv.config())
     host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
 
 
@@ -244,7 +235,8 @@ def configure_cassandra_rackdc(servicename):
 # this will almost certainly fail as the data ends up on fewer and fewer
 # units until the remaining units run out of disk space.
 #
-# def maybe_decommission(servicename):
+# @action
+# def maybe_decommission():
 #     peer_relname = rollingrestart.get_peer_relation_name()
 #     if hookenv.hook_name() == '{}-relation-broken'.format(peer_relname):
 #         i = 1
@@ -264,7 +256,8 @@ def configure_cassandra_rackdc(servicename):
 #         rollingrestart.cancel_restart()
 
 
-def maybe_schedule_restart(servicename):
+@action
+def maybe_schedule_restart():
     '''Prepare for and schedule a rolling restart if necessary.'''
     # If any of these config items changed, a restart is required.
     config = hookenv.config()
@@ -298,60 +291,40 @@ def maybe_schedule_restart(servicename):
         rollingrestart.request_restart()
 
 
-def stop_cassandra(servicename):
+@action
+def stop_cassandra():
     helpers.stop_cassandra()
 
 
-def start_cassandra(servicename):
+@action
+def start_cassandra():
     helpers.start_cassandra()
 
 
-def reset_default_password(servicename):
+@action
+def reset_default_password():
     helpers.reset_default_password()
 
 
-def ensure_superuser(servicename):
+@action
+def ensure_superuser():
     helpers.ensure_superuser()
 
 
-def reset_all_io_schedulers(servicename):
+@action
+def reset_all_io_schedulers():
     helpers.reset_all_io_schedulers()
 
 
-def reset_auth_keyspace_replication_factor(servicename):
-    # Cassandra requires you to manually set the replication factor of
-    # the system_auth keyspace, to ensure availability and redundancy.
-    # The charm can't control how many or which units might get dropped,
-    # so for authentication to work we need to set the replication factor
-    # on the system_auth keyspace so that every node contains all of the
-    # data. Authentication information will remain available, even in the
-    # face of all the other nodes having gone away due to an in progress
-    # 'juju destroy-service'.
-    if not helpers.is_cassandra_running():
-        # If Cassandra is not running locally, skip. At least one unit
-        # will have a running Cassandra when its cluster-relation-joined
-        # hook is invoked, and that is the important place for this to
-        # happen.
-        return
-    num_nodes = helpers.num_nodes()
-    rf = helpers.get_auth_keyspace_replication_factor()
-    if rf == num_nodes:
-        hookenv.log('system_auth rf={}'.format(num_nodes))
-    else:
-        helpers.set_auth_keyspace_replication_factor(num_nodes)
+@action
+def remove_nodes():
+    # TODO: Remove dead nodes from the cluster.
+    # peers = rollingrestart
+    pass
 
 
-def repair_auth_keyspace(servicename):
-    # If the number of nodes has changed, so as system_auth replication
-    # factor. We need to run nodetool repair on the system_auth
-    # keyspace.
-    config = hookenv.config()
-    config['num_nodes'] = helpers.num_nodes()
-    if config.changed('num_nodes'):
-        subprocess.check_call(['nodetool', 'repair', 'system_auth'])
-
-
-def publish_cluster_relation(servicename):
+@action
+def publish_cluster_relation():
     # Per Bug #1409763, this functionality is an action rather than a
     # provided_data item.
     relid = rollingrestart.get_peer_relation_id()
@@ -360,7 +333,8 @@ def publish_cluster_relation(servicename):
                              {'public-address': hookenv.unit_public_ip()})
 
 
-def publish_database_relations(servicename):
+@action
+def publish_database_relations():
     # Due to Bug #1409763, this functionality is as action rather than a
     # provided_data item.
     #

@@ -14,6 +14,7 @@ from cassandra import AuthenticationFailed, ConsistencyLevel
 from cassandra.cluster import NoHostAvailable
 import yaml
 
+from charmhelpers import fetch
 from charmhelpers.core import hookenv, host
 
 from tests.base import TestCaseBase
@@ -76,14 +77,114 @@ class TestHelpers(TestCaseBase):
             self.assertFalse(os.path.exists(prc_backup))
             self.assertFalse(os.path.exists(prc))
 
+    @patch('helpers.autostart_disabled')
+    @patch('charmhelpers.fetch.apt_install')
+    def test_install_packages(self, apt_install, autostart_disabled):
+        packages = ['a_pack', 'b_pack']
+        helpers.install_packages(packages)
+
+        # All packages got installed, and hook aborted if package
+        # installation failed.
+        apt_install.assert_called_once_with(['a_pack', 'b_pack'], fatal=True)
+
+        # The autostart_disabled context manager was used to stop
+        # package installation starting services.
+        autostart_disabled().__enter__.assert_called_once_with()
+        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
+
+    @patch('helpers.autostart_disabled')
+    @patch('charmhelpers.fetch.apt_install')
+    def test_install_packages_extras(self, apt_install, autostart_disabled):
+        packages = ['a_pack', 'b_pack']
+        hookenv.config()['extra_packages'] = 'c_pack d_pack'
+        helpers.install_packages(packages)
+
+        # All packages got installed, and hook aborted if package
+        # installation failed.
+        apt_install.assert_called_once_with(['a_pack', 'b_pack',
+                                             'c_pack', 'd_pack'], fatal=True)
+
+        # The autostart_disabled context manager was used to stop
+        # package installation starting services.
+        autostart_disabled().__enter__.assert_called_once_with()
+        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
+
+    @patch('helpers.autostart_disabled')
+    @patch('charmhelpers.fetch.apt_install')
+    def test_install_packages_noop(self, apt_install, autostart_disabled):
+        # Everything is already installed. Nothing to do.
+        fetch.filter_installed_packages.side_effect = lambda pkgs: []
+
+        packages = ['a_pack', 'b_pack']
+        hookenv.config()['extra_packages'] = 'c_pack d_pack'
+        helpers.install_packages(packages)
+
+        # All packages got installed, and hook aborted if package
+        # installation failed.
+        self.assertFalse(apt_install.called)
+
+        # Autostart wasn't messed with.
+        self.assertFalse(autostart_disabled.called)
+
+    @patch('subprocess.Popen')
+    def test_ensure_package_status(self, popen):
+        for status in ['install', 'hold']:
+            with self.subTest(status=status):
+                popen.reset_mock()
+                hookenv.config()['package_status'] = status
+                helpers.ensure_package_status(['a_pack', 'b_pack'])
+
+                selections = 'a_pack {}\nb_pack {}\n'.format(
+                    status, status).encode('US-ASCII')
+
+                self.assertEqual([
+                    call(['dpkg', '--set-selections'], stdin=subprocess.PIPE),
+                    call().communicate(input=selections),
+                    ], popen.mock_calls)
+
+        popen.reset_mock()
+        hookenv.config()['package_status'] = 'invalid'
+        self.assertRaises(RuntimeError,
+                          helpers.ensure_package_status, ['a_pack', 'b_back'])
+        self.assertFalse(popen.called)
+
+    @patch('rollingrestart.get_peers')
+    def test_get_seeds(self, get_peers):
+        hookenv.local_unit.return_value = 'service/1'
+        get_peers.return_value = set(['service/2', 'service/3', 'service/4'])
+
+        # The first three units are used as the seed list, except for
+        # the local unit (so seed nodes list up to two seeds and the
+        # remaining nodes list up to three seeds).
+        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
+        self.assertEqual(['10.20.0.2', '10.20.0.3'], helpers.get_seeds())
+
+    @patch('rollingrestart.get_peers')
+    def test_get_seeds_nonseed(self, get_peers):
+        hookenv.local_unit.return_value = 'service/4'
+        get_peers.return_value = set(['service/1', 'service/2', 'service/3'])
+
+        # The first three units are used as the seed list, except for
+        # the local unit (so seed nodes list up to two seeds and the
+        # remaining nodes list up to three seeds).
+        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.4')
+        self.assertEqual(['10.20.0.1', '10.20.0.2', '10.20.0.3'],
+                         helpers.get_seeds())
+
+    @patch('rollingrestart.get_peers')
+    def test_get_seeds_alone(self, get_peers):
+        hookenv.local_unit.return_value = 'service/1'
+        get_peers.return_value = set()
+
+        # The first three units are used as the seed list, except for
+        # the local unit (so seed nodes list up to two seeds and the
+        # remaining nodes list up to three seeds).
+        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
+        self.assertEqual(['10.20.0.1'], helpers.get_seeds())
+
     def test_get_seeds_forced(self):
         hookenv.config()['force_seed_nodes'] = 'a,b,c'
         self.assertEqual(['a', 'b', 'c'], sorted(helpers.get_seeds()))
-
-    def test_get_seeds(self):
-        self.assertEqual(
-            ['10.20.0.1', '10.20.0.2'],
-            helpers.get_seeds())
 
     @patch('relations.StorageRelation')
     def test_get_database_directory(self, storage_relation):
@@ -700,16 +801,20 @@ class TestHelpers(TestCaseBase):
             NoHostAvailable('1', {}),
             NoHostAvailable('2', {'1.2.3.4': Exception()}),
             NoHostAvailable('3', {}),
-            sentinel.session]
+            AssertionError('Timeout before this call')]
         cluster.reset_mock()
 
         # Force a timeout
-        time.side_effect = [10, 20, 60, 70]
+        time.side_effect = [0,                          # Determining timeout
+                            helpers.CONNECT_TIMEOUT-2,  # connect #1
+                            helpers.CONNECT_TIMEOUT-1,  # connect #2
+                            helpers.CONNECT_TIMEOUT+2,  # connect #3
+                            AssertionError('Timeout before call')]
 
         self.assertRaises(NoHostAvailable, helpers.connect().__enter__)
 
-        self.assertEqual(cluster().connect.call_count, 2)
-        self.assertEqual(cluster().shutdown.call_count, 2)
+        self.assertEqual(cluster().connect.call_count, 3)
+        self.assertEqual(cluster().shutdown.call_count, 3)
 
     @patch('cassandra.query.SimpleStatement')
     def test_query(self, simple_statement):
@@ -823,7 +928,6 @@ class TestHelpers(TestCaseBase):
             get_cqlshrc_path.return_value = cqlshrc_file.name
             get_username.return_value = 'foo'
             pwgen.return_value = 'secret'
-            hookenv.unit_public_ip.return_value = '1.2.3.4'
             hookenv.config()['native_client_port'] = 666
 
             # First time generates username & password.
@@ -838,7 +942,7 @@ class TestHelpers(TestCaseBase):
                                       password = secret
 
                                       [connection]
-                                      hostname = 1.2.3.4
+                                      hostname = 10.30.0.1
                                       port = 666
                                       ''').strip()
             with open(cqlshrc_file.name, 'r') as f:
@@ -853,24 +957,6 @@ class TestHelpers(TestCaseBase):
             self.assertEqual(password, 'secret')
             with open(cqlshrc_file.name, 'r') as f:
                 self.assertEqual(f.read().strip(), expected_cqlshrc)
-
-    def test_get_node_public_addresses(self):
-        hookenv.unit_public_ip.return_value = '9.8.7.6'
-        hookenv.relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
-        self.assertSetEqual(helpers.get_node_public_addresses(),
-                            set(['1.2.3.4', '5.6.7.8', '9.8.7.6']))
-        hookenv.relation_get.assert_has_calls([
-            call('public-address', 'service/2', 'cluster:1'),
-            call('public-address', 'service/3', 'cluster:1')], any_order=True)
-
-    def test_get_node_private_addresses(self):
-        hookenv.unit_private_ip.return_value = '9.8.7.6'
-        hookenv.relation_get.side_effect = iter(['1.2.3.4', '5.6.7.8'])
-        self.assertSetEqual(helpers.get_node_private_addresses(),
-                            set(['1.2.3.4', '5.6.7.8', '9.8.7.6']))
-        hookenv.relation_get.assert_has_calls([
-            call('private-address', 'service/2', 'cluster:1'),
-            call('private-address', 'service/3', 'cluster:1')], any_order=True)
 
     @patch('rollingrestart.get_peers')
     def test_num_nodes(self, get_peers):
@@ -1138,30 +1224,73 @@ class TestHelpers(TestCaseBase):
         helpers.reset_all_io_schedulers()
         self.assertFalse(set_io_scheduler.called)
 
-    @patch('helpers.query')
+    @patch('helpers.set_auth_keyspace_replication')
+    @patch('helpers.get_auth_keyspace_replication')
     @patch('helpers.connect')
-    def test_get_auth_keyspace_replication_factor(self, connect, query):
+    @patch('helpers.num_nodes')
+    def test_reset_auth_keyspace_replication(self, num_nodes, connect,
+                                             get_rep, set_rep):
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
-        query.return_value = [('{"replication_factor":"12"}',)]
-        self.assertEqual(helpers.get_auth_keyspace_replication_factor(), 12)
-        connect.assert_called_with()  # Connected as the superuser
-        query.assert_called_with(sentinel.session, dedent('''\
-            SELECT strategy_options FROM system.schema_keyspaces
-            WHERE keyspace_name='system_auth'
-            '''), ConsistencyLevel.QUORUM)
+        num_nodes.return_value = 8
+        get_rep.return_value = {'replication_factor': 18}
+        helpers.reset_auth_keyspace_replication()
+        set_rep.assert_called_once_with(sentinel.session,
+                                        {'class': 'NetworkTopologyStrategy',
+                                         'juju': 8})
+
+    @patch('helpers.set_auth_keyspace_replication')
+    @patch('helpers.get_auth_keyspace_replication')
+    @patch('helpers.connect')
+    @patch('helpers.num_nodes')
+    def test_reset_auth_keyspace_replication_noop(self, num_nodes, connect,
+                                                  get_rep, set_rep):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        connect.reset_mock()
+        num_nodes.return_value = 8
+        get_rep.return_value = {'class': 'NetworkTopologyStrategy',
+                                'juju': 8,
+                                'other_dc': 2}
+        helpers.reset_auth_keyspace_replication()
+        self.assertFalse(set_rep.called)
+        connect.assert_called_once_with()  # As superuser.
 
     @patch('helpers.query')
-    @patch('helpers.connect')
-    def test_set_auth_keyspace_replication_factor(self, connect, query):
-        connect().__enter__.return_value = sentinel.session
-        connect().__exit__.return_value = False
-        helpers.set_auth_keyspace_replication_factor(22)
-        connect.assert_called_with()  # Connected as the superuser
-        query.assert_called_with(sentinel.session, dedent('''\
-            ALTER KEYSPACE system_auth WITH REPLICATION =
-                {'class': 'SimpleStrategy', 'replication_factor': %s}
-            '''), ConsistencyLevel.QUORUM, (22,))
+    def test_get_auth_keyspace_replication(self, query):
+        query.return_value = [('{"json": true}',)]
+        settings = helpers.get_auth_keyspace_replication(sentinel.session)
+        self.assertDictEqual(settings, dict(json=True))
+        query.assert_called_once_with(
+            sentinel.session, dedent('''\
+                SELECT strategy_options FROM system.schema_keyspaces
+                WHERE keyspace_name='system_auth'
+                '''), ConsistencyLevel.QUORUM)
+
+    @patch('helpers.query')
+    def test_set_auth_keyspace_replication(self, query):
+        settings = dict(json=True)
+        helpers.set_auth_keyspace_replication(sentinel.session, settings)
+        query.assert_called_once_with(sentinel.session,
+                                      'ALTER KEYSPACE system_auth '
+                                      'WITH REPLICATION = %s',
+                                      ConsistencyLevel.QUORUM, (settings,))
+
+    @patch('subprocess.check_call')
+    @patch('helpers.num_nodes')
+    def test_repair_auth_keyspace(self, num_nodes, check_call):
+        # If num_nodes has changed, run a repair
+        num_nodes.return_value = 1
+        helpers.repair_auth_keyspace()
+        check_call.assert_called_once_with(['nodetool',
+                                            'repair', 'system_auth'])
+
+        # If num_nodes is unchanged, do nothing
+        hookenv.config().save()
+        hookenv.config().load_previous()
+        check_call.reset_mock()
+        helpers.repair_auth_keyspace()
+        self.assertFalse(check_call.called)
 
 
 class TestIsLxc(unittest.TestCase):
