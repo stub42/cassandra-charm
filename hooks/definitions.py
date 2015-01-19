@@ -48,6 +48,7 @@ def get_service_definitions():
             helpers.remount_cassandra,
             helpers.ensure_database_directories,
             helpers.start_cassandra,
+            helpers.post_bootstrap,
             helpers.reset_default_password,
             helpers.ensure_superuser,
             helpers.reset_auth_keyspace_replication,
@@ -56,8 +57,10 @@ def get_service_definitions():
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresCassandra()],  # Yucky hack.
-             data_ready=[actions.remove_nodes,
-                         actions.publish_database_relations],
+             data_ready=[actions.publish_database_relations,
+                         # actions.reset_auth_keyspace_replication,
+                         # actions.repair_auth_keyspace,
+                         actions.maybe_decommission_node],
              start=[], stop=[])]
 
 

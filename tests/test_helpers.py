@@ -593,15 +593,18 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     def test_remount_cassandra(self, storage, is_running, chmod):
+        config = hookenv.config()
         storage().needs_remount.return_value = True
         storage().mountpoint = '/srv/foo'
         is_running.return_value = False
-        hookenv.config()['data_file_directories'] = '/srv/ext/data1 data2'
+        config['data_file_directories'] = '/srv/ext/data1 data2'
+        config['bootstrapped_into_cluster'] = True
 
         helpers.remount_cassandra()
         storage().migrate.assert_called_once_with('/var/lib/cassandra',
                                                   'cassandra')
         chmod.assert_called_once_with('/srv/foo/cassandra', 0o750)
+        self.assertEqual(config['bootstrapped_into_cluster'], False)
 
     @patch('os.chmod')
     @patch('helpers.is_cassandra_running')
@@ -670,11 +673,16 @@ class TestHelpers(TestCaseBase):
         helpers.reset_default_password()
         self.assertFalse(query.called)  # Nothing happened.
 
+    @patch('helpers.ReconnectUntilReconnectionPolicy')
+    @patch('helpers.RetryUntilRetryPolicy')
     @patch('cassandra.cluster.Cluster')
     @patch('cassandra.auth.PlainTextAuthProvider')
     @patch('helpers.superuser_credentials')
     @patch('helpers.read_cassandra_yaml')
-    def test_connect(self, yaml, creds, auth_provider, cluster):
+    def test_connect(self, yaml, creds, auth_provider, cluster,
+                     retry_policy, reconnection_policy):
+        retry_policy.return_value = sentinel.retry_policy
+        reconnection_policy.return_value = sentinel.reconnection_policy
         # host and port are pulled from the current active
         # cassandra.yaml file, rather than configuration, as
         # configuration may not match reality (if for no other reason
@@ -692,8 +700,11 @@ class TestHelpers(TestCaseBase):
         with helpers.connect() as session:
             auth_provider.assert_called_once_with(username='un',
                                                   password='pw')
-            cluster.assert_called_once_with(['1.2.3.4'], port=666,
-                                            auth_provider=sentinel.ap)
+            cluster.assert_called_once_with(
+                ['1.2.3.4'], port=666, auth_provider=sentinel.ap,
+                default_retry_policy=sentinel.retry_policy,
+                reconnection_policy=sentinel.reconnection_policy,
+                conviction_policy_factory=helpers.OptimisticConvictionPolicy)
             self.assertIs(session, sentinel.session)
             self.assertFalse(cluster().shutdown.called)
 
@@ -714,18 +725,9 @@ class TestHelpers(TestCaseBase):
 
         auth_provider.return_value = sentinel.ap
 
-        cluster().connect.return_value = sentinel.session
-        cluster.reset_mock()
-
-        with helpers.connect(username='explicit', password='boo') as session:
+        with helpers.connect(username='explicit', password='boo'):
             auth_provider.assert_called_once_with(username='explicit',
                                                   password='boo')
-            cluster.assert_called_once_with(['1.2.3.4'], port=666,
-                                            auth_provider=sentinel.ap)
-            self.assertIs(session, sentinel.session)
-            self.assertFalse(cluster().shutdown.called)
-
-        cluster().shutdown.assert_called_once_with()
 
     @patch('cassandra.cluster.Cluster')
     @patch('helpers.superuser_credentials')
@@ -748,73 +750,74 @@ class TestHelpers(TestCaseBase):
 
         cluster().shutdown.assert_called_once_with()
 
-    @patch('cassandra.cluster.Cluster')
-    @patch('cassandra.auth.PlainTextAuthProvider')
-    @patch('helpers.superuser_credentials')
-    @patch('helpers.read_cassandra_yaml')
-    def test_connect_retry(self, yaml, creds, auth_provider, cluster):
-        # host and port are pulled from the current active
-        # cassandra.yaml file, rather than configuration, as
-        # configuration may not match reality (if for no other reason
-        # that we are running this code in order to make reality match
-        # the desired configuration).
-        yaml.return_value = dict(rpc_address='1.2.3.4',
-                                 native_transport_port=666)
+    # @patch('cassandra.cluster.Cluster')
+    # @patch('cassandra.auth.PlainTextAuthProvider')
+    # @patch('helpers.superuser_credentials')
+    # @patch('helpers.read_cassandra_yaml')
+    # def test_connect_retry(self, yaml, creds, auth_provider, cluster):
+    #     # host and port are pulled from the current active
+    #     # cassandra.yaml file, rather than configuration, as
+    #     # configuration may not match reality (if for no other reason
+    #     # that we are running this code in order to make reality match
+    #     # the desired configuration).
+    #     yaml.return_value = dict(rpc_address='1.2.3.4',
+    #                              native_transport_port=666)
 
-        creds.return_value = ('un', 'pw')
-        auth_provider.return_value = sentinel.ap
+    #     creds.return_value = ('un', 'pw')
+    #     auth_provider.return_value = sentinel.ap
 
-        cluster().connect.side_effect = [NoHostAvailable('1', {}),
-                                         NoHostAvailable('2', {}),
-                                         NoHostAvailable('3', {}),
-                                         sentinel.session]
-        cluster.reset_mock()
+    #     cluster().connect.side_effect = [NoHostAvailable('1', {}),
+    #                                      NoHostAvailable('2', {}),
+    #                                      NoHostAvailable('3', {}),
+    #                                      sentinel.session]
+    #     cluster.reset_mock()
 
-        with helpers.connect() as session:
-            auth_provider.assert_called_once_with(username='un',
-                                                  password='pw')
-            cluster.assert_called_with(['1.2.3.4'],
-                                       port=666, auth_provider=sentinel.ap)
-            self.assertEqual(cluster().connect.call_count, 4)
-            self.assertIs(session, sentinel.session)
+    #     with helpers.connect() as session:
+    #         auth_provider.assert_called_once_with(username='un',
+    #                                               password='pw')
+    #         cluster.assert_called_with(['1.2.3.4'],
+    #                                    port=666, auth_provider=sentinel.ap)
+    #         self.assertEqual(cluster().connect.call_count, 4)
+    #         self.assertIs(session, sentinel.session)
 
-        self.assertEqual(cluster().shutdown.call_count, 4)
+    #     self.assertEqual(cluster().shutdown.call_count, 4)
 
-    @patch('time.time')
-    @patch('cassandra.cluster.Cluster')
-    @patch('cassandra.auth.PlainTextAuthProvider')
-    @patch('helpers.superuser_credentials')
-    @patch('helpers.read_cassandra_yaml')
-    def test_connect_timeout(self, yaml, creds, auth_provider, cluster, time):
-        # host and port are pulled from the current active
-        # cassandra.yaml file, rather than configuration, as
-        # configuration may not match reality (if for no other reason
-        # that we are running this code in order to make reality match
-        # the desired configuration).
-        yaml.return_value = dict(rpc_address='1.2.3.4',
-                                 native_transport_port=666)
+    # @patch('time.time')
+    # @patch('cassandra.cluster.Cluster')
+    # @patch('cassandra.auth.PlainTextAuthProvider')
+    # @patch('helpers.superuser_credentials')
+    # @patch('helpers.read_cassandra_yaml')
+    # def test_connect_timeout(self, yaml, creds, auth_provider, cluster,
+    # time):
+    #     # host and port are pulled from the current active
+    #     # cassandra.yaml file, rather than configuration, as
+    #     # configuration may not match reality (if for no other reason
+    #     # that we are running this code in order to make reality match
+    #     # the desired configuration).
+    #     yaml.return_value = dict(rpc_address='1.2.3.4',
+    #                              native_transport_port=666)
 
-        creds.return_value = ('un', 'pw')
-        auth_provider.return_value = sentinel.ap
+    #     creds.return_value = ('un', 'pw')
+    #     auth_provider.return_value = sentinel.ap
 
-        cluster().connect.side_effect = [
-            NoHostAvailable('1', {}),
-            NoHostAvailable('2', {'1.2.3.4': Exception()}),
-            NoHostAvailable('3', {}),
-            AssertionError('Timeout before this call')]
-        cluster.reset_mock()
+    #     cluster().connect.side_effect = [
+    #         NoHostAvailable('1', {}),
+    #         NoHostAvailable('2', {'1.2.3.4': Exception()}),
+    #         NoHostAvailable('3', {}),
+    #         AssertionError('Timeout before this call')]
+    #     cluster.reset_mock()
 
-        # Force a timeout
-        time.side_effect = [0,                          # Determining timeout
-                            helpers.CONNECT_TIMEOUT-2,  # connect #1
-                            helpers.CONNECT_TIMEOUT-1,  # connect #2
-                            helpers.CONNECT_TIMEOUT+2,  # connect #3
-                            AssertionError('Timeout before call')]
+    #     # Force a timeout
+    #     time.side_effect = [0,                          # Determining timeout
+    #                         helpers.CONNECT_TIMEOUT-2,  # connect #1
+    #                         helpers.CONNECT_TIMEOUT-1,  # connect #2
+    #                         helpers.CONNECT_TIMEOUT+2,  # connect #3
+    #                         AssertionError('Timeout before call')]
 
-        self.assertRaises(NoHostAvailable, helpers.connect().__enter__)
+    #     self.assertRaises(NoHostAvailable, helpers.connect().__enter__)
 
-        self.assertEqual(cluster().connect.call_count, 3)
-        self.assertEqual(cluster().shutdown.call_count, 3)
+    #     self.assertEqual(cluster().connect.call_count, 3)
+    #     self.assertEqual(cluster().shutdown.call_count, 3)
 
     @patch('cassandra.query.SimpleStatement')
     def test_query(self, simple_statement):

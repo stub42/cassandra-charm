@@ -190,6 +190,16 @@ def configure_cassandra_yaml():
 
 
 @action
+def reset_auth_keyspace_replication():
+    helpers.reset_auth_keyspace_replication()
+
+
+@action
+def repair_auth_keyspace():
+    helpers.repair_auth_keyspace()
+
+
+@action
 def configure_cassandra_env():
     cassandra_env_path = helpers.get_cassandra_env_file()
     assert os.path.exists(cassandra_env_path)
@@ -229,31 +239,27 @@ def configure_cassandra_rackdc():
     host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
 
 
-# Unfortunately, we can't decommission a unit in its peer
-# relation-broken hook. Decomissioning a unit involves streaming its
-# data to the remaining nodes. If the entire service is being torn down,
-# this will almost certainly fail as the data ends up on fewer and fewer
-# units until the remaining units run out of disk space.
-#
-# @action
-# def maybe_decommission():
-#     peer_relname = rollingrestart.get_peer_relation_name()
-#     if hookenv.hook_name() == '{}-relation-broken'.format(peer_relname):
-#         i = 1
-#         while True:
-#             hookenv.log('Unit leaving service. '
-#                         'Decommissioning Cassandra node. '
-#                         'Attempt {}.'.format(i), WARNING)
-#             rv = subprocess.call(['nodetool', 'decommission'],
-#                                  stderr=subprocess.DEVNULL)
-#             if rv == 0:
-#                 break
-#             assert rv == 2, 'Unknown return value from nodetool decommission'
-#             time.sleep(max(2 ** i, 120))
-#             i += 1
-#
-#         # Node is dead, so restart will fail.
-#         rollingrestart.cancel_restart()
+@action
+def maybe_decommission_node():
+    '''If the unit is leaving, decommission.
+
+    This will fail when we are destroying a service where the entire
+    dataset cannot fit on a single node - each unit will decommission,
+    draining their data to other units, and eventually one will fail.
+    We can't fix this until juju provides a way to determine between
+    removing a few units or destroying the service. This failure is not
+    fatal, as juju will continue destroying the service even if the
+    peer relation-broken hooks fail.
+    '''
+    peers = rollingrestart.get_peers()
+    peer_relname = rollingrestart.get_peer_relation_name()
+    if (hookenv.hook_name() == '{}-relation-broken'.format(peer_relname)
+            and len(peers) > 0):
+        helpers.reset_auth_keyspace_replication()
+        helpers.repair_auth_keyspace()
+        helpers.decommission_node()
+        # Node is dead, so restart will fail.
+        rollingrestart.cancel_restart()
 
 
 @action
@@ -314,13 +320,6 @@ def ensure_superuser():
 @action
 def reset_all_io_schedulers():
     helpers.reset_all_io_schedulers()
-
-
-@action
-def remove_nodes():
-    # TODO: Remove dead nodes from the cluster.
-    # peers = rollingrestart
-    pass
 
 
 @action

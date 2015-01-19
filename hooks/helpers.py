@@ -15,6 +15,7 @@ import bcrypt
 from cassandra import ConsistencyLevel
 import cassandra.auth
 import cassandra.cluster
+import cassandra.policies
 import cassandra.query
 import yaml
 
@@ -418,6 +419,7 @@ def remount_cassandra():
     assert not is_cassandra_running()  # Guard against data loss.
     storage = relations.StorageRelation()
     if storage.needs_remount():
+        hookenv.config()['bootstrapped_into_cluster'] = False
         if storage.mountpoint is None:
             hookenv.log('External storage AND DATA gone. '
                         'Reverting to local storage. '
@@ -470,26 +472,68 @@ def connect(username=None, password=None):
     auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
                                                          password=password)
 
-    # If Cassandra has just been restarted, we might need to wait a
-    # while until the initial gossiping has finished and connections
-    # start being accepted.
-    timeout = time.time() + CONNECT_TIMEOUT
-
+    until = time.time() + CONNECT_TIMEOUT
     while True:
-        cluster = cassandra.cluster.Cluster([address], port=port,
-                                            auth_provider=auth_provider)
+        cluster = cassandra.cluster.Cluster(
+            [address], port=port, auth_provider=auth_provider,
+            default_retry_policy=RetryUntilRetryPolicy(until),
+            reconnection_policy=ReconnectUntilReconnectionPolicy(until),
+            conviction_policy_factory=OptimisticConvictionPolicy)
         try:
-            yield cluster.connect()
+            session = cluster.connect()
+            session.default_timeout = CONNECT_TIMEOUT
+            yield session
             break
         except cassandra.cluster.NoHostAvailable as x:
             if address in x.errors:
                 actual = x.errors[address]
                 if isinstance(actual, cassandra.AuthenticationFailed):
                     raise actual
-            if time.time() > timeout:
+            if time.time() > until:
                 raise
         finally:
             cluster.shutdown()
+
+
+class OptimisticConvictionPolicy(cassandra.policies.ConvictionPolicy):
+    def add_failure(self, connection_exc):
+        return False
+
+    def reset(self):
+        return
+
+
+class ReconnectUntilReconnectionPolicy(cassandra.policies.ReconnectionPolicy):
+    def __init__(self, until):
+        self.until = until
+
+    def new_scheduled(self):
+        return self
+
+    def __next__(self):
+        if time.time() > self.until:
+            raise StopIteration
+        return 2
+
+
+class RetryUntilRetryPolicy(cassandra.policies.RetryPolicy):
+    def __init__(self, until):
+        self.until = until
+
+    def on_read_timeout(self, query, consistency, *args, **kw):
+        if time.time() > self.until:
+            return (cassandra.policies.RetryPolicy.RETHROW, None)
+        return (cassandra.policies.RetryPolicy.RETRY, consistency)
+
+    def on_write_timeout(self, query, consistency, *args, **kw):
+        if time.time() > self.until:
+            return (cassandra.policies.RetryPolicy.RETHROW, None)
+        return (cassandra.policies.RetryPolicy.RETRY, consistency)
+
+    def on_unavailable(self, query, consistency, *args, **kw):
+        if time.time() > self.until:
+            return (cassandra.policies.RetryPolicy.RETHROW, None)
+        return (cassandra.policies.RetryPolicy.RETRY, consistency)
 
 
 def query(session, statement, consistency_level, args=None):
@@ -752,11 +796,9 @@ def reset_auth_keyspace_replication():
     datacenter = hookenv.config()['datacenter']
     with connect() as session:
         strategy_opts = get_auth_keyspace_replication(session)
-
-        rf = strategy_opts.get(datacenter, 0)
-        if rf == n and strategy_opts['class'] == 'NetworkTopologyStrategy':
-            hookenv.log('system_auth rf={!r}'.format(strategy_opts))
-        else:
+        rf = int(strategy_opts.get(datacenter, -1))
+        hookenv.log('system_auth rf={!r}'.format(strategy_opts))
+        if rf != n:
             strategy_opts['class'] = 'NetworkTopologyStrategy'
             strategy_opts[datacenter] = n
             if 'replication_factor' in strategy_opts:
@@ -788,3 +830,38 @@ def repair_auth_keyspace():
     config['num_nodes'] = num_nodes()
     if config.changed('num_nodes'):
         subprocess.check_call(['nodetool', 'repair', 'system_auth'])
+
+
+@logged
+def decomission_node():
+    i = 1
+    while i < 8:
+        hookenv.log('Decommissioning Cassandra node. '
+                    'Attempt {}.'.format(i), WARNING)
+        rv = subprocess.call(['nodetool', 'decommission'],
+                             stderr=subprocess.STDOUT)
+        if rv == 0:
+            return
+        assert rv == 2, 'Unknown return value from nodetool decommission'
+        time.sleep(max(2 ** i, 120))
+        i += 1
+    hookenv.log('Unable to decommission Cassandra node.', ERROR)
+
+
+@logged
+def post_bootstrap():
+    '''Maintain state on if the node has bootstrapped into the cluster.
+
+    Wait 2 minutes if the unit has just bootstrapped, so ensure no other
+    units bootstrap in this timeframe.
+    '''
+    config = hookenv.config()
+    if num_nodes() == 1:
+        # There is no cluster (just us), so we are not bootstrapped into
+        # the cluster.
+        config['bootstrapped_into_cluster'] = False
+    else:
+        config['bootstrapped_into_cluster'] = True
+        if config.changed('bootstrapped_into_cluster'):
+            hookenv.log('Bootstrapped into ring. Waiting 2 minutes.')
+            time.sleep(120)
