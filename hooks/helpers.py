@@ -1,5 +1,6 @@
 import configparser
 from contextlib import contextmanager
+from datetime import timedelta
 import errno
 from functools import wraps
 import io
@@ -865,3 +866,38 @@ def post_bootstrap():
         if config.changed('bootstrapped_into_cluster'):
             hookenv.log('Bootstrapped into ring. Waiting 2 minutes.')
             time.sleep(120)
+
+
+def week_spread(unit_num):
+    '''Pick a time for a unit's weekly job.
+
+    Jobs are spread out evenly throughout the week as best we can.
+    The chosen time only depends on the unit number, and does not change
+    if other units are added and removed; while the chosen time will not
+    be perfect, we don't have to worry about skipping a weekly job if
+    units are added or removed at the wrong moment.
+
+    Returns (dow, hour, minute) suitable for cron.
+    '''
+    def vdc(n, base=2):
+        '''Van der Corpet sequence. 0, 0.5, 0.25, 0.75, 0.125, 0.625, ...
+
+        http://rosettacode.org/wiki/Van_der_Corput_sequence#Python
+        '''
+        vdc, denom = 0, 1
+        while n:
+            denom *= base
+            n, remainder = divmod(n, base)
+            vdc += remainder / denom
+        return vdc
+    # We could use the vdc() helper to distribute jobs evenly throughout
+    # the week, so unit 0==0, unit 1==3.5days, unit 2==1.75 etc. But
+    # plain modulo for the day of week is easier for humans.
+    sched_day = unit_num % 7
+    # We spread time of day so each batch of 7 units gets the same time,
+    # as far spread out from the other batches of 7 units as possible.
+    minutes_in_day = 24 * 60
+    sched = timedelta(minutes=int(minutes_in_day * vdc(unit_num//7)))
+    sched_hour = sched.seconds//(60*60)
+    sched_minute = sched.seconds//60 - sched_hour * 60
+    return sched_day, sched_hour, sched_minute

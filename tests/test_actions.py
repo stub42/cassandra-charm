@@ -736,6 +736,31 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
+    @patch('charmhelpers.core.host.write_file')
+    def test_install_maintenance_crontab(self, write_file):
+        # First 7 units get distributed, one job per day.
+        hookenv.local_unit.return_value = 'foo/0'
+        actions.install_maintenance_crontab('')
+        write_file.assert_called_once_with('/etc/cron.d/cassandra-maintenance',
+                                           ANY)
+        contents = write_file.call_args[0][1]
+        expected = b'\n0 0 * * 0 cassandra nodetool repair -pr'
+        self.assertIn(expected, contents)
+
+        # Next 7 units distributed 12 hours out of sync with the first
+        # batch.
+        hookenv.local_unit.return_value = 'foo/8'
+        actions.install_maintenance_crontab('')
+        contents = write_file.call_args[0][1]
+        expected = b'\n0 12 * * 1 cassandra nodetool repair -pr'
+        self.assertIn(expected, contents)
+
+        # Later units per helpers.week_spread()
+        hookenv.local_unit.return_value = 'foo/411'
+        actions.install_maintenance_crontab('')
+        contents = write_file.call_args[0][1]
+        expected = b'\n37 8 * * 5 cassandra nodetool repair -pr'
+        self.assertIn(expected, contents)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

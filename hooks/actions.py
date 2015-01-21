@@ -9,6 +9,7 @@ import subprocess
 from textwrap import dedent
 
 from charmhelpers import fetch
+from charmhelpers.contrib.templating import jinja
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
 from charmhelpers.core.hookenv import ERROR, WARNING
@@ -391,3 +392,15 @@ def publish_database_relations():
                              cluster_name=config['cluster_name'],
                              datacenter=config['datacenter'],
                              rack=config['rack'])
+
+
+@action
+def install_maintenance_crontab():
+    # Every unit should run repair once per week (at least once per
+    # GCGraceSeconds, which defaults to 10 days but can be changed per
+    # keyspace). # Distribute the repair time evenly over the week.
+    unit_num = int(hookenv.local_unit().split('/')[-1])
+    dow, hour, minute = helpers.week_spread(unit_num)
+    contents = jinja.render('cassandra_maintenance_cron.tmpl', vars())
+    cron_path = "/etc/cron.d/cassandra-maintenance"
+    host.write_file(cron_path, contents.encode('US-ASCII'))

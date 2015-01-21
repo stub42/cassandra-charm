@@ -1295,6 +1295,33 @@ class TestHelpers(TestCaseBase):
         helpers.repair_auth_keyspace()
         self.assertFalse(check_call.called)
 
+    def test_week_spread(self):
+        # The first seven units run midnight on different days.
+        for i in range(0, 7):  # There is no unit 0
+            with self.subTest(unit=i):
+                self.assertTupleEqual(helpers.week_spread(i), (i, 0, 0))
+
+        # The next seven units run midday on different days.
+        for i in range(7, 14):
+            with self.subTest(unit=i):
+                self.assertTupleEqual(helpers.week_spread(i), (i-7, 12, 0))
+
+        # And the next seven units at 6 am on different days.
+        for i in range(14, 21):
+            with self.subTest(unit=i):
+                self.assertTupleEqual(helpers.week_spread(i), (i-14, 6, 0))
+
+        # This keeps going as best we can, subdividing the hours.
+        self.assertTupleEqual(helpers.week_spread(811), (6, 19, 18))
+
+        # The granularity is 1 minute, so eventually we wrap after about
+        # 7000 units.
+        self.assertTupleEqual(helpers.week_spread(0), (0, 0, 0))
+        for i in range(1, 7168):
+            with self.subTest(unit=i):
+                self.assertNotEqual(helpers.week_spread(i), (0, 0, 0))
+        self.assertTupleEqual(helpers.week_spread(7168), (0, 0, 0))
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):

@@ -58,8 +58,7 @@ def get_service_definitions():
         dict(service='post',
              required_data=[RequiresCassandra()],  # Yucky hack.
              data_ready=[actions.publish_database_relations,
-                         # actions.reset_auth_keyspace_replication,
-                         # actions.repair_auth_keyspace,
+                         actions.install_maintenance_crontab,
                          actions.maybe_decommission_node],
              start=[], stop=[])]
 

@@ -1,5 +1,4 @@
 # Cassandra maintenance
-# Staggerd weekly repairs
+# Staggered weekly repairs
 # m h  dom mon dow user  command
-0 1 * * {{repair_day}} cassandra nodetool -h localhost repair -pr
-
+{{minute}} {{hour}} * * {{dow}} cassandra nodetool repair -pr
