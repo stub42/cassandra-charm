@@ -6,4 +6,5 @@ include:
     - core
     - fetch
     - contrib.charmsupport
+    - contrib.templating.jinja
     - contrib.peerstorage
