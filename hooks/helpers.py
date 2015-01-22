@@ -450,7 +450,7 @@ def reset_default_password():
     # test in a loop, as a newly restarted server may not be accepting
     # client connections yet.
     try:
-        with connect('cassandra', 'cassandra') as session:
+        with connect('cassandra', 'cassandra', timeout=15) as session:
             hookenv.log('Changing default admin password')
             query(session, 'ALTER USER cassandra WITH PASSWORD %s',
                   ConsistencyLevel.ALL, (host.pwgen(),))  # pragma: no branch
@@ -458,11 +458,11 @@ def reset_default_password():
         hookenv.log('Default admin password already changed')
 
 
-CONNECT_TIMEOUT = 120
+CONNECT_TIMEOUT = 240
 
 
 @contextmanager
-def connect(username=None, password=None):
+def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
     cassandra_yaml = read_cassandra_yaml()
     address = cassandra_yaml['rpc_address']
     port = cassandra_yaml['native_transport_port']
@@ -473,7 +473,7 @@ def connect(username=None, password=None):
     auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
                                                          password=password)
 
-    until = time.time() + CONNECT_TIMEOUT
+    until = time.time() + timeout
     while True:
         cluster = cassandra.cluster.Cluster(
             [address], port=port, auth_provider=auth_provider,
@@ -486,14 +486,15 @@ def connect(username=None, password=None):
             yield session
             break
         except cassandra.cluster.NoHostAvailable as x:
-            if address in x.errors:
-                actual = x.errors[address]
-                if isinstance(actual, cassandra.AuthenticationFailed):
-                    raise actual
             if time.time() > until:
+                if address in x.errors:
+                    actual = x.errors[address]
+                    if isinstance(actual, cassandra.AuthenticationFailed):
+                        raise actual
                 raise
         finally:
             cluster.shutdown()
+        time.sleep(1)
 
 
 class OptimisticConvictionPolicy(cassandra.policies.ConvictionPolicy):
@@ -548,16 +549,16 @@ def ensure_user(username, password):
     hookenv.log('Creating user {}'.format(username))
     with connect() as session:
         query(session, 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
-              ConsistencyLevel.QUORUM, (username, password,))
+              ConsistencyLevel.ALL, (username, password,))
         query(session, 'ALTER USER %s WITH PASSWORD %s',
-              ConsistencyLevel.QUORUM, (username, password,))
+              ConsistencyLevel.ALL, (username, password,))
 
 
 @logged
 def ensure_superuser():
     '''If the unit's superuser account is not working, recreate it.'''
     try:
-        with connect():
+        with connect(timeout=15):
             hookenv.log('Unit superuser account already setup', DEBUG)
             return
     except cassandra.AuthenticationFailed:
@@ -788,11 +789,11 @@ def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
     # the system_auth keyspace, to ensure availability and redundancy.
     # The charm can't control how many or which units might get dropped,
-    # so for authentication to work we need to set the replication factor
+    # so for authentication to work we set the replication factor
     # on the system_auth keyspace so that every node contains all of the
-    # data. Authentication information will remain available, even in the
-    # face of all the other nodes having gone away due to an in progress
-    # 'juju destroy-service'.
+    # data. Authentication information will remain available on the
+    # local node, even in the face of all the other nodes having gone
+    # away due to an in progress 'juju destroy-service'.
     n = num_nodes()
     datacenter = hookenv.config()['datacenter']
     with connect() as session:
@@ -805,6 +806,7 @@ def reset_auth_keyspace_replication():
             if 'replication_factor' in strategy_opts:
                 del strategy_opts['replication_factor']
             set_auth_keyspace_replication(session, strategy_opts)
+            repair_auth_keyspace()
 
 
 def get_auth_keyspace_replication(session):
@@ -812,25 +814,19 @@ def get_auth_keyspace_replication(session):
         SELECT strategy_options FROM system.schema_keyspaces
         WHERE keyspace_name='system_auth'
         ''')
-    r = query(session, statement, ConsistencyLevel.QUORUM)
+    r = query(session, statement, ConsistencyLevel.ALL)
     return json.loads(r[0][0])
 
 
 def set_auth_keyspace_replication(session, settings):
     hookenv.log('Updating system_auth rf={!r}'.format(settings))
     statement = 'ALTER KEYSPACE system_auth WITH REPLICATION = %s'
-    query(session, statement, ConsistencyLevel.QUORUM, (settings,))
+    query(session, statement, ConsistencyLevel.ALL, (settings,))
 
 
 @logged
 def repair_auth_keyspace():
-    # If the number of nodes has changed, so has system_auth replication
-    # factor. We need to run nodetool repair on the system_auth
-    # keyspace.
-    config = hookenv.config()
-    config['num_nodes'] = num_nodes()
-    if config.changed('num_nodes'):
-        subprocess.check_call(['nodetool', 'repair', 'system_auth'])
+    subprocess.check_call(['nodetool', 'repair', 'system_auth'])
 
 
 @logged
@@ -847,6 +843,11 @@ def decomission_node():
         time.sleep(max(2 ** i, 120))
         i += 1
     hookenv.log('Unable to decommission Cassandra node.', ERROR)
+
+
+# def is_bootstrapped():
+#     '''Return True if the node has already bootstrapped into the cluster.'''
+#     return hookenv.config().get('bootstrapped_into_cluster', False)
 
 
 @logged
@@ -868,6 +869,25 @@ def post_bootstrap():
             time.sleep(120)
 
 
+@logged
+def emit_describe_cluster():
+    '''Run nodetool describecluster for the logs.'''
+    subprocess.call(['nodetool', 'describecluster'])
+
+
+@logged
+def emit_auth_keyspace_status():
+    '''Run 'nodetool status system_auth' for the logs.'''
+    subprocess.call(['nodetool', 'status', 'system_auth'])
+
+
+@logged
+def emit_netstats():
+    '''Run 'nodetool netstats' for the logs.'''
+    subprocess.call(['nodetool', 'netstats'])
+
+
+# FOR CHARMHELPERS (and think of a better name)
 def week_spread(unit_num):
     '''Pick a time for a unit's weekly job.
 
@@ -890,14 +910,15 @@ def week_spread(unit_num):
             n, remainder = divmod(n, base)
             vdc += remainder / denom
         return vdc
-    # We could use the vdc() helper to distribute jobs evenly throughout
+    # We could use the vdc() function to distribute jobs evenly throughout
     # the week, so unit 0==0, unit 1==3.5days, unit 2==1.75 etc. But
-    # plain modulo for the day of week is easier for humans.
-    sched_day = unit_num % 7
+    # plain modulo for the day of week is easier for humans and what
+    # you expect for 7 units or less.
+    sched_dow = unit_num % 7
     # We spread time of day so each batch of 7 units gets the same time,
     # as far spread out from the other batches of 7 units as possible.
     minutes_in_day = 24 * 60
     sched = timedelta(minutes=int(minutes_in_day * vdc(unit_num//7)))
     sched_hour = sched.seconds//(60*60)
     sched_minute = sched.seconds//60 - sched_hour * 60
-    return sched_day, sched_hour, sched_minute
+    return sched_dow, sched_hour, sched_minute

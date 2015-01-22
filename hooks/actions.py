@@ -63,8 +63,13 @@ RESTART_NOT_REQUIRED_KEYS = set([
 def action(func):
     @wraps(func)
     def wrapper(servicename, *args, **kw):
-        hookenv.log("** Action {}/{}".format(hookenv.hook_name(),
-                                             func.__name__))
+        if hookenv.remote_unit():
+            hookenv.log("** Action {}/{} ({})".format(hookenv.hook_name(),
+                                                      func.__name__,
+                                                      hookenv.remote_unit()))
+        else:
+            hookenv.log("** Action {}/{}".format(hookenv.hook_name(),
+                                                 func.__name__))
         return func(*args, **kw)
     return wrapper
 
@@ -192,12 +197,25 @@ def configure_cassandra_yaml():
 
 @action
 def reset_auth_keyspace_replication():
-    helpers.reset_auth_keyspace_replication()
+    # This action only resets the system_auth keyspace replication
+    # values in the peer relation-broken hook, to lower the
+    # replication factor as the nodes leave. The replication settings are
+    # also updated during rolling restart, which takes care of when new
+    # nodes are added.
+    relname = rollingrestart.get_peer_relation_name()
+    if hookenv.hook_name == '{}-relation-broken'.format(relname):
+        helpers.reset_auth_keyspace_replication()
 
 
-@action
-def repair_auth_keyspace():
-    helpers.repair_auth_keyspace()
+# @action
+# def repair_auth_keyspace():
+#     # If the number of nodes has changed, so has system_auth replication
+#     # factor (even if it wasn't this node that changed it). We need to run
+#     # nodetool repair on the system_auth keyspace. It would be nice
+#     config = hookenv.config()
+#     config['num_nodes'] = num_nodes()
+#     if config.changed('num_nodes'):
+#         helpers.repair_auth_keyspace()
 
 
 @action
@@ -252,12 +270,8 @@ def maybe_decommission_node():
     fatal, as juju will continue destroying the service even if the
     peer relation-broken hooks fail.
     '''
-    peers = rollingrestart.get_peers()
     peer_relname = rollingrestart.get_peer_relation_name()
-    if (hookenv.hook_name() == '{}-relation-broken'.format(peer_relname)
-            and len(peers) > 0):
-        helpers.reset_auth_keyspace_replication()
-        helpers.repair_auth_keyspace()
+    if hookenv.hook_name() == '{}-relation-broken'.format(peer_relname):
         helpers.decommission_node()
         # Node is dead, so restart will fail.
         rollingrestart.cancel_restart()
@@ -306,11 +320,6 @@ def stop_cassandra():
 @action
 def start_cassandra():
     helpers.start_cassandra()
-
-
-@action
-def reset_default_password():
-    helpers.reset_default_password()
 
 
 @action
@@ -404,3 +413,18 @@ def install_maintenance_crontab():
     contents = jinja.render('cassandra_maintenance_cron.tmpl', vars())
     cron_path = "/etc/cron.d/cassandra-maintenance"
     host.write_file(cron_path, contents.encode('US-ASCII'))
+
+
+@action
+def emit_describe_cluster():
+    helpers.emit_describe_cluster()
+
+
+@action
+def emit_auth_keyspace_status():
+    helpers.emit_auth_keyspace_status()
+
+
+@action
+def emit_netstats():
+    helpers.emit_netstats()

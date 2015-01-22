@@ -658,9 +658,10 @@ class TestHelpers(TestCaseBase):
     def test_reset_default_password(self, connect, query, pwgen):
         pwgen.return_value = sentinel.password
         connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
         connect.reset_mock()
         helpers.reset_default_password()
-        connect.assert_called_once_with('cassandra', 'cassandra')
+        connect.assert_called_once_with('cassandra', 'cassandra', timeout=15)
         query.assert_called_once_with(
             sentinel.session, 'ALTER USER cassandra WITH PASSWORD %s',
             ConsistencyLevel.ALL, (sentinel.password,))
@@ -729,10 +730,11 @@ class TestHelpers(TestCaseBase):
             auth_provider.assert_called_once_with(username='explicit',
                                                   password='boo')
 
+    @patch('time.time')
     @patch('cassandra.cluster.Cluster')
     @patch('helpers.superuser_credentials')
     @patch('helpers.read_cassandra_yaml')
-    def test_connect_badauth(self, yaml, creds, cluster):
+    def test_connect_badauth(self, yaml, creds, cluster, time):
         # host and port are pulled from the current active
         # cassandra.yaml file, rather than configuration, as
         # configuration may not match reality (if for no other reason
@@ -740,6 +742,7 @@ class TestHelpers(TestCaseBase):
         # the desired configuration).
         yaml.return_value = dict(rpc_address='1.2.3.4',
                                  native_transport_port=666)
+        time.side_effect = [0, 10, 99999]
 
         creds.return_value = ('un', 'pw')
 
@@ -748,76 +751,8 @@ class TestHelpers(TestCaseBase):
 
         self.assertRaises(AuthenticationFailed, helpers.connect().__enter__)
 
-        cluster().shutdown.assert_called_once_with()
-
-    # @patch('cassandra.cluster.Cluster')
-    # @patch('cassandra.auth.PlainTextAuthProvider')
-    # @patch('helpers.superuser_credentials')
-    # @patch('helpers.read_cassandra_yaml')
-    # def test_connect_retry(self, yaml, creds, auth_provider, cluster):
-    #     # host and port are pulled from the current active
-    #     # cassandra.yaml file, rather than configuration, as
-    #     # configuration may not match reality (if for no other reason
-    #     # that we are running this code in order to make reality match
-    #     # the desired configuration).
-    #     yaml.return_value = dict(rpc_address='1.2.3.4',
-    #                              native_transport_port=666)
-
-    #     creds.return_value = ('un', 'pw')
-    #     auth_provider.return_value = sentinel.ap
-
-    #     cluster().connect.side_effect = [NoHostAvailable('1', {}),
-    #                                      NoHostAvailable('2', {}),
-    #                                      NoHostAvailable('3', {}),
-    #                                      sentinel.session]
-    #     cluster.reset_mock()
-
-    #     with helpers.connect() as session:
-    #         auth_provider.assert_called_once_with(username='un',
-    #                                               password='pw')
-    #         cluster.assert_called_with(['1.2.3.4'],
-    #                                    port=666, auth_provider=sentinel.ap)
-    #         self.assertEqual(cluster().connect.call_count, 4)
-    #         self.assertIs(session, sentinel.session)
-
-    #     self.assertEqual(cluster().shutdown.call_count, 4)
-
-    # @patch('time.time')
-    # @patch('cassandra.cluster.Cluster')
-    # @patch('cassandra.auth.PlainTextAuthProvider')
-    # @patch('helpers.superuser_credentials')
-    # @patch('helpers.read_cassandra_yaml')
-    # def test_connect_timeout(self, yaml, creds, auth_provider, cluster,
-    # time):
-    #     # host and port are pulled from the current active
-    #     # cassandra.yaml file, rather than configuration, as
-    #     # configuration may not match reality (if for no other reason
-    #     # that we are running this code in order to make reality match
-    #     # the desired configuration).
-    #     yaml.return_value = dict(rpc_address='1.2.3.4',
-    #                              native_transport_port=666)
-
-    #     creds.return_value = ('un', 'pw')
-    #     auth_provider.return_value = sentinel.ap
-
-    #     cluster().connect.side_effect = [
-    #         NoHostAvailable('1', {}),
-    #         NoHostAvailable('2', {'1.2.3.4': Exception()}),
-    #         NoHostAvailable('3', {}),
-    #         AssertionError('Timeout before this call')]
-    #     cluster.reset_mock()
-
-    #     # Force a timeout
-    #     time.side_effect = [0,                          # Determining timeout
-    #                         helpers.CONNECT_TIMEOUT-2,  # connect #1
-    #                         helpers.CONNECT_TIMEOUT-1,  # connect #2
-    #                         helpers.CONNECT_TIMEOUT+2,  # connect #3
-    #                         AssertionError('Timeout before call')]
-
-    #     self.assertRaises(NoHostAvailable, helpers.connect().__enter__)
-
-    #     self.assertEqual(cluster().connect.call_count, 3)
-    #     self.assertEqual(cluster().shutdown.call_count, 3)
+        self.assertEqual(cluster().connect.call_count, 2)
+        self.assertEqual(cluster().shutdown.call_count, 2)
 
     @patch('cassandra.query.SimpleStatement')
     def test_query(self, simple_statement):
@@ -841,11 +776,11 @@ class TestHelpers(TestCaseBase):
         query.assert_has_calls([
             call(sentinel.session,
                  'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
-                 ConsistencyLevel.QUORUM,
+                 ConsistencyLevel.ALL,
                  (sentinel.username, sentinel.password)),
             call(sentinel.session,
                  'ALTER USER %s WITH PASSWORD %s',
-                 ConsistencyLevel.QUORUM,
+                 ConsistencyLevel.ALL,
                  (sentinel.username, sentinel.password))])
 
     @patch('helpers.create_superuser')
@@ -868,9 +803,11 @@ class TestHelpers(TestCaseBase):
 
         # If connect works, nothing happens
         helpers.ensure_superuser()
-        connect.assert_called_once_with()  # Superuser connection attempted.
+        connect.assert_called_once_with(timeout=15)  # Superuser requested.
         self.assertFalse(create_superuser.called)  # No need to create.
 
+    # @patch('helpers.repair_auth_keyspace')
+    # @patch('helpers.reset_auth_keyspace_replication')
     @patch('helpers.query')
     @patch('bcrypt.gensalt')
     @patch('bcrypt.hashpw')
@@ -878,7 +815,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.connect')
     @patch('helpers.superuser_credentials')
     def test_create_superuser(self, creds, connect, restart,
-                              bhash, bsalt, query):
+                              bhash, bsalt, query):  # , reset_ks, repair_ks):
         creds.return_value = ('super', 'secret')
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
@@ -898,6 +835,10 @@ class TestHelpers(TestCaseBase):
 
         # A connection was made as the superuser.
         connect.assert_called_once_with()
+
+        # The system_auth keyspace was fixed if necessary.
+        # reset_ks.assert_called_once_with(sentinel.session)
+        # repair_ks.assert_called_once_with()
 
         # Statements run to create or update the user.
         query.assert_has_calls([
@@ -1227,12 +1168,13 @@ class TestHelpers(TestCaseBase):
         helpers.reset_all_io_schedulers()
         self.assertFalse(set_io_scheduler.called)
 
+    @patch('helpers.repair_auth_keyspace')
     @patch('helpers.set_auth_keyspace_replication')
     @patch('helpers.get_auth_keyspace_replication')
     @patch('helpers.connect')
     @patch('helpers.num_nodes')
     def test_reset_auth_keyspace_replication(self, num_nodes, connect,
-                                             get_rep, set_rep):
+                                             get_rep, set_rep, repair):
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
         num_nodes.return_value = 8
@@ -1241,23 +1183,24 @@ class TestHelpers(TestCaseBase):
         set_rep.assert_called_once_with(sentinel.session,
                                         {'class': 'NetworkTopologyStrategy',
                                          'juju': 8})
+        repair.assert_called_once_with()
 
+    @patch('helpers.repair_auth_keyspace')
     @patch('helpers.set_auth_keyspace_replication')
     @patch('helpers.get_auth_keyspace_replication')
     @patch('helpers.connect')
     @patch('helpers.num_nodes')
     def test_reset_auth_keyspace_replication_noop(self, num_nodes, connect,
-                                                  get_rep, set_rep):
+                                                  get_rep, set_rep, repair):
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
-        connect.reset_mock()
         num_nodes.return_value = 8
         get_rep.return_value = {'class': 'NetworkTopologyStrategy',
                                 'juju': 8,
                                 'other_dc': 2}
         helpers.reset_auth_keyspace_replication()
         self.assertFalse(set_rep.called)
-        connect.assert_called_once_with()  # As superuser.
+        self.assertFalse(repair.called)
 
     @patch('helpers.query')
     def test_get_auth_keyspace_replication(self, query):
@@ -1268,7 +1211,7 @@ class TestHelpers(TestCaseBase):
             sentinel.session, dedent('''\
                 SELECT strategy_options FROM system.schema_keyspaces
                 WHERE keyspace_name='system_auth'
-                '''), ConsistencyLevel.QUORUM)
+                '''), ConsistencyLevel.ALL)
 
     @patch('helpers.query')
     def test_set_auth_keyspace_replication(self, query):
@@ -1277,23 +1220,29 @@ class TestHelpers(TestCaseBase):
         query.assert_called_once_with(sentinel.session,
                                       'ALTER KEYSPACE system_auth '
                                       'WITH REPLICATION = %s',
-                                      ConsistencyLevel.QUORUM, (settings,))
+                                      ConsistencyLevel.ALL, (settings,))
+
+    # @patch('subprocess.check_call')
+    # @patch('helpers.num_nodes')
+    # def test_repair_auth_keyspace(self, num_nodes, check_call):
+    #     # If num_nodes has changed, run a repair
+    #     num_nodes.return_value = 1
+    #     helpers.repair_auth_keyspace()
+    #     check_call.assert_called_once_with(['nodetool',
+    #                                         'repair', 'system_auth'])
+
+    #     # If num_nodes is unchanged, do nothing
+    #     hookenv.config().save()
+    #     hookenv.config().load_previous()
+    #     check_call.reset_mock()
+    #     helpers.repair_auth_keyspace()
+    #     self.assertFalse(check_call.called)
 
     @patch('subprocess.check_call')
-    @patch('helpers.num_nodes')
-    def test_repair_auth_keyspace(self, num_nodes, check_call):
-        # If num_nodes has changed, run a repair
-        num_nodes.return_value = 1
+    def test_repair_auth_keyspace(self, check_call):
         helpers.repair_auth_keyspace()
-        check_call.assert_called_once_with(['nodetool',
-                                            'repair', 'system_auth'])
-
-        # If num_nodes is unchanged, do nothing
-        hookenv.config().save()
-        hookenv.config().load_previous()
-        check_call.reset_mock()
-        helpers.repair_auth_keyspace()
-        self.assertFalse(check_call.called)
+        check_call.assert_called_once_with(['nodetool', 'repair',
+                                            'system_auth'])
 
     def test_week_spread(self):
         # The first seven units run midnight on different days.
