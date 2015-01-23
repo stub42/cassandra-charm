@@ -661,7 +661,7 @@ class TestHelpers(TestCaseBase):
         connect().__exit__.return_value = False
         connect.reset_mock()
         helpers.reset_default_password()
-        connect.assert_called_once_with('cassandra', 'cassandra', timeout=15)
+        connect.assert_called_once_with('cassandra', 'cassandra')
         query.assert_called_once_with(
             sentinel.session, 'ALTER USER cassandra WITH PASSWORD %s',
             ConsistencyLevel.ALL, (sentinel.password,))
@@ -751,8 +751,10 @@ class TestHelpers(TestCaseBase):
 
         self.assertRaises(AuthenticationFailed, helpers.connect().__enter__)
 
-        self.assertEqual(cluster().connect.call_count, 2)
-        self.assertEqual(cluster().shutdown.call_count, 2)
+        # Authentication failures fail immediately, unlike other
+        # connection errors which are retried.
+        self.assertEqual(cluster().connect.call_count, 1)
+        self.assertEqual(cluster().shutdown.call_count, 1)
 
     @patch('cassandra.query.SimpleStatement')
     def test_query(self, simple_statement):
@@ -803,7 +805,7 @@ class TestHelpers(TestCaseBase):
 
         # If connect works, nothing happens
         helpers.ensure_superuser()
-        connect.assert_called_once_with(timeout=15)  # Superuser requested.
+        connect.assert_called_once_with()  # Superuser requested.
         self.assertFalse(create_superuser.called)  # No need to create.
 
     # @patch('helpers.repair_auth_keyspace')

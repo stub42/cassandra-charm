@@ -6,6 +6,8 @@ import helpers
 import relations
 import rollingrestart
 
+import cassandra
+
 
 def get_service_definitions():
     # This looks like it could be a module level global list, but
@@ -70,7 +72,19 @@ def get_service_definitions():
 
 class RequiresCassandra:
     def __bool__(self):
-        return helpers.is_cassandra_running()
+        if helpers.is_cassandra_running():
+            try:
+                with helpers.connect():
+                    hookenv.log("Authentication working")
+                    return True
+            except cassandra.AuthenticationFailed:
+                hookenv.log('Unable to authenticate as superuser')
+                return False
+        return False
+
+
+def msg(msg):
+    return lambda x: hookenv.log
 
 
 def get_service_manager():

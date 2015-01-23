@@ -450,7 +450,7 @@ def reset_default_password():
     # test in a loop, as a newly restarted server may not be accepting
     # client connections yet.
     try:
-        with connect('cassandra', 'cassandra', timeout=15) as session:
+        with connect('cassandra', 'cassandra') as session:
             hookenv.log('Changing default admin password')
             query(session, 'ALTER USER cassandra WITH PASSWORD %s',
                   ConsistencyLevel.ALL, (host.pwgen(),))  # pragma: no branch
@@ -486,11 +486,11 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
             yield session
             break
         except cassandra.cluster.NoHostAvailable as x:
+            if address in x.errors:
+                actual = x.errors[address]
+                if isinstance(actual, cassandra.AuthenticationFailed):
+                    raise actual
             if time.time() > until:
-                if address in x.errors:
-                    actual = x.errors[address]
-                    if isinstance(actual, cassandra.AuthenticationFailed):
-                        raise actual
                 raise
         finally:
             cluster.shutdown()
@@ -558,7 +558,7 @@ def ensure_user(username, password):
 def ensure_superuser():
     '''If the unit's superuser account is not working, recreate it.'''
     try:
-        with connect(timeout=15):
+        with connect():
             hookenv.log('Unit superuser account already setup', DEBUG)
             return
     except cassandra.AuthenticationFailed:

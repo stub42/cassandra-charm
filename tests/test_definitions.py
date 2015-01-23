@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from charmhelpers.core.services import ServiceManager
 
+import cassandra
+
 from tests.base import TestCaseBase
 
 import definitions
@@ -28,10 +30,20 @@ class TestDefinitions(TestCaseBase):
         self.assertIsInstance(definitions.get_service_manager(),
                               ServiceManager)
 
+    @patch('helpers.connect')
     @patch('helpers.is_cassandra_running')
-    def test_requirescassandra(self, is_running):
+    def test_requirescassandra(self, is_running, connect):
+        # Is running and can authenticate
         is_running.return_value = True
+        # connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
         self.assertTrue(bool(definitions.RequiresCassandra()))
+
+        # Is running, but cannot authenticate
+        connect().__enter__.side_effect = cassandra.AuthenticationFailed()
+        self.assertFalse(bool(definitions.RequiresCassandra()))
+
+        # Is not running
         is_running.return_value = False
         self.assertFalse(bool(definitions.RequiresCassandra()))
 
