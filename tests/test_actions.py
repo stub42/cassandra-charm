@@ -347,6 +347,19 @@ class TestsActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
+    @patch('helpers.reset_auth_keyspace_replication')
+    def test_reset_auth_keyspace_replication(self, reset_auth_helper):
+        # Normally this action does nothing.
+        hookenv.hook_name.return_value = 'whatever'
+        actions.reset_auth_keyspace_replication('')
+        self.assertFalse(reset_auth_helper.called)
+
+        # In the peer relation-broken hook however, it lowers the
+        # replication level of the system_auth keyspace.
+        hookenv.hook_name.return_value = 'cluster-relation-broken'
+        actions.reset_auth_keyspace_replication('')
+        reset_auth_helper.assert_called_once_with()
+
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')

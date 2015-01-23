@@ -197,29 +197,6 @@ def configure_cassandra_yaml():
 
 
 @action
-def reset_auth_keyspace_replication():
-    # This action only resets the system_auth keyspace replication
-    # values in the peer relation-broken hook, to lower the
-    # replication factor as the nodes leave. The replication settings are
-    # also updated during rolling restart, which takes care of when new
-    # nodes are added.
-    relname = rollingrestart.get_peer_relation_name()
-    if hookenv.hook_name == '{}-relation-broken'.format(relname):
-        helpers.reset_auth_keyspace_replication()
-
-
-# @action
-# def repair_auth_keyspace():
-#     # If the number of nodes has changed, so has system_auth replication
-#     # factor (even if it wasn't this node that changed it). We need to run
-#     # nodetool repair on the system_auth keyspace. It would be nice
-#     config = hookenv.config()
-#     config['num_nodes'] = num_nodes()
-#     if config.changed('num_nodes'):
-#         helpers.repair_auth_keyspace()
-
-
-@action
 def configure_cassandra_env():
     cassandra_env_path = helpers.get_cassandra_env_file()
     assert os.path.exists(cassandra_env_path)
@@ -257,6 +234,18 @@ def configure_cassandra_rackdc():
                                ''').format(datacenter, rack)
     rackdc_path = helpers.get_cassandra_rackdc_file()
     host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
+
+
+@action
+def reset_auth_keyspace_replication():
+    # This action only resets the system_auth keyspace replication
+    # values in the peer relation-broken hook, to lower the
+    # replication factor as the nodes leave. The replication settings are
+    # also updated during rolling restart, which takes care of when new
+    # nodes are added.
+    relname = rollingrestart.get_peer_relation_name()
+    if hookenv.hook_name() == '{}-relation-broken'.format(relname):
+        helpers.reset_auth_keyspace_replication()
 
 
 @action
