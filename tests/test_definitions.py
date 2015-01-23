@@ -36,7 +36,7 @@ class TestDefinitions(TestCaseBase):
         # Is running and can authenticate
         is_running.return_value = True
         # connect().__enter__.return_value = sentinel.session
-        connect().__exit__.return_value = False
+        # connect().__exit__.return_value = False
         self.assertTrue(bool(definitions.RequiresCassandra()))
 
         # Is running, but cannot authenticate

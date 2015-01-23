@@ -830,7 +830,7 @@ def repair_auth_keyspace():
 
 
 @logged
-def decomission_node():
+def decommission_node():
     i = 1
     while i < 8:
         hookenv.log('Decommissioning Cassandra node. '
@@ -850,23 +850,55 @@ def decomission_node():
 #     return hookenv.config().get('bootstrapped_into_cluster', False)
 
 
-@logged
-def post_bootstrap():
-    '''Maintain state on if the node has bootstrapped into the cluster.
+# @logged
+# def post_bootstrap():
+#     '''Maintain state on if the node has bootstrapped into the cluster.
+#
+#     Wait 2 minutes if the unit has just bootstrapped, so ensure no other
+#     units bootstrap in this timeframe.
+#     '''
+#     config = hookenv.config()
+#     if num_nodes() == 1:
+#         # There is no cluster (just us), so we are not bootstrapped into
+#         # the cluster.
+#         config['bootstrapped_into_cluster'] = False
+#     else:
+#         config['bootstrapped_into_cluster'] = True
+#         if config.changed('bootstrapped_into_cluster'):
+#             hookenv.log('Bootstrapped into ring.')
+#
+#     wait_for_agreed_schema()
 
-    Wait 2 minutes if the unit has just bootstrapped, so ensure no other
-    units bootstrap in this timeframe.
-    '''
-    config = hookenv.config()
-    if num_nodes() == 1:
-        # There is no cluster (just us), so we are not bootstrapped into
-        # the cluster.
-        config['bootstrapped_into_cluster'] = False
-    else:
-        config['bootstrapped_into_cluster'] = True
-        if config.changed('bootstrapped_into_cluster'):
-            hookenv.log('Bootstrapped into ring. Waiting 2 minutes.')
-            time.sleep(120)
+
+def is_schema_agreed():
+    raw = subprocess.check_output(['nodetool', 'describecluster'])
+    # The output of nodetool describe cluster is almost yaml,
+    # so we use that tool once we fix the tabs.
+    description = yaml.load(raw.replace(b'\t', b' '))
+    versions = description['Cluster Information']['Schema versions'] or {}
+
+    required_ips = set(get_seeds() + [hookenv.unit_private_ip()])
+
+    for schema, schema_ips in versions.items():
+        schema_ips = set(schema_ips)
+        if required_ips.issubset(schema_ips):
+            hookenv.log('{!r} agree on schema'.format(required_ips), DEBUG)
+            return True
+    hookenv.log('{!r} do not agree on schema'.format(required_ips),
+                DEBUG)
+    return False
+
+
+@logged
+def wait_for_agreed_schema():
+    i = 0
+    while True:
+        if is_schema_agreed():
+            return
+        i += 1
+        hookenv.log('Unit and seeds do not agree on schema, '
+                    'check #{}'.format(i))
+        time.sleep(min(60, 2 ** i))
 
 
 @logged

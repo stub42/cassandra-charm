@@ -1224,27 +1224,46 @@ class TestHelpers(TestCaseBase):
                                       'WITH REPLICATION = %s',
                                       ConsistencyLevel.ALL, (settings,))
 
-    # @patch('subprocess.check_call')
-    # @patch('helpers.num_nodes')
-    # def test_repair_auth_keyspace(self, num_nodes, check_call):
-    #     # If num_nodes has changed, run a repair
-    #     num_nodes.return_value = 1
-    #     helpers.repair_auth_keyspace()
-    #     check_call.assert_called_once_with(['nodetool',
-    #                                         'repair', 'system_auth'])
-
-    #     # If num_nodes is unchanged, do nothing
-    #     hookenv.config().save()
-    #     hookenv.config().load_previous()
-    #     check_call.reset_mock()
-    #     helpers.repair_auth_keyspace()
-    #     self.assertFalse(check_call.called)
-
     @patch('subprocess.check_call')
     def test_repair_auth_keyspace(self, check_call):
         helpers.repair_auth_keyspace()
         check_call.assert_called_once_with(['nodetool', 'repair',
                                             'system_auth'])
+
+    @patch('helpers.get_seeds')
+    @patch('subprocess.check_output')
+    def test_is_schema_agreed(self, check_output, get_seeds):
+        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
+        get_seeds.return_value = ['10.0.0.2', '10.0.0.3']
+        check_output.return_value = dedent('''\
+            Cluster Information:
+            \tName: juju
+            \tSnitch: org.apache.cassandra.locator.DynamicEndpointSnitch
+            \tPartitioner: org.apache.cassandra.dht.Murmur3Partitioner
+            \tSchema versions:
+            \t\t15056434--0e7a98bbb067: [10.0.0.2, 10.20.0.1, 10.0.0.3]
+            ''').encode('UTF-8')
+        self.assertTrue(helpers.is_schema_agreed())
+        check_output.return_value = dedent('''\
+            Cluster Information:
+            \tName: juju
+            \tSnitch: org.apache.cassandra.locator.DynamicEndpointSnitch
+            \tPartitioner: org.apache.cassandra.dht.Murmur3Partitioner
+            \tSchema versions:
+            \t\t15056434--0e7a98bbb067: [10.0.0.3, 10.20.0.1]
+            \t\t98735432--234567890111: [10.0.0.2]
+            ''').encode('UTF-8')
+        self.assertFalse(helpers.is_schema_agreed())
+
+    @patch('time.sleep')
+    @patch('helpers.is_schema_agreed')
+    def test_wait_agreed_schema(self, is_agreed, sleep):
+        is_agreed.side_effect = iter([False, False, True, RuntimeError()])
+        helpers.wait_for_agreed_schema()
+        self.assertEqual(sleep.call_count, 2)
+        sleep.assert_has_calls([call(2), call(4)])
+        is_agreed.side_effect = iter([False, RuntimeError()])
+        self.assertRaises(RuntimeError, helpers.wait_for_agreed_schema)
 
     def test_week_spread(self):
         # The first seven units run midnight on different days.

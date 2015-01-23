@@ -50,7 +50,8 @@ def get_service_definitions():
             helpers.remount_cassandra,
             helpers.ensure_database_directories,
             helpers.start_cassandra,
-            helpers.post_bootstrap,
+            helpers.emit_describe_cluster,
+            helpers.wait_for_agreed_schema,
             helpers.emit_describe_cluster,
             helpers.reset_default_password,
             helpers.ensure_superuser,
@@ -81,10 +82,6 @@ class RequiresCassandra:
                 hookenv.log('Unable to authenticate as superuser')
                 return False
         return False
-
-
-def msg(msg):
-    return lambda x: hookenv.log
 
 
 def get_service_manager():

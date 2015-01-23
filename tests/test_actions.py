@@ -22,6 +22,26 @@ patch = functools.partial(patch, autospec=True)  # autospec=True as default.
 
 
 class TestsActions(TestCaseBase):
+    def test_action_wrapper(self):
+        @actions.action
+        def somefunc(*args, **kw):
+            return 42, args, kw
+
+        hookenv.hook_name.return_value = 'catch-fire'
+
+        # The wrapper stripts the servicename argument, which we have no
+        # use for, logs a message and invokes the wrapped function.
+        hookenv.remote_unit.return_value = None
+        self.assertEqual(somefunc('sn', 1, foo=4), (42, (1,), dict(foo=4)))
+        hookenv.log.assert_called_once_with('** Action catch-fire/somefunc')
+
+        # Different log message if there is a remote unit.
+        hookenv.log.reset_mock()
+        os.environ['JUJU_REMOTE_UNIT'] = 'foo'
+        self.assertEqual(somefunc('sn', 1, foo=4), (42, (1,), dict(foo=4)))
+        hookenv.log.assert_called_once_with(
+            '** Action catch-fire/somefunc (foo)')
+
     def test_revert_unchangeable_config(self):
         hookenv.hook_name.return_value = 'config-changed'
         config = hookenv.config()
