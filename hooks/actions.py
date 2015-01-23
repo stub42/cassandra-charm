@@ -57,7 +57,8 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'nagios_heapchk_warn_pct',
     'nagios_heapchk_crit_pct',
     'nagios_disk_warn_pct',
-    'nagios_disk_crit_pct'])
+    'nagios_disk_crit_pct',
+    '_post_bootstrap_wait'])
 
 
 def action(func):
@@ -272,6 +273,7 @@ def maybe_decommission_node():
     '''
     peer_relname = rollingrestart.get_peer_relation_name()
     if hookenv.hook_name() == '{}-relation-broken'.format(peer_relname):
+        helpers.wait_for_normality()
         helpers.decommission_node()
         # Node is dead, so restart will fail.
         rollingrestart.cancel_restart()

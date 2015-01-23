@@ -23,7 +23,8 @@ def get_service_definitions():
         dict(service=helpers.get_cassandra_service(),
              ports=[config['thrift_client_port'],   # Thrift clients.
                     config['native_client_port']],  # Native protocol clients.
-             required_data=[relations.StorageRelation()],
+             required_data=[relations.StorageRelation(),
+                            RequiresCommissionedNode()],
              provided_data=[relations.StorageRelation()],
              data_ready=[actions.preinstall,
                          actions.revert_unchangeable_config,
@@ -51,7 +52,9 @@ def get_service_definitions():
             helpers.ensure_database_directories,
             helpers.start_cassandra,
             helpers.emit_describe_cluster,
+            helpers.post_bootstrap,
             helpers.wait_for_agreed_schema,
+            helpers.wait_for_normality,
             helpers.emit_describe_cluster,
             helpers.reset_default_password,
             helpers.ensure_superuser,
@@ -60,18 +63,24 @@ def get_service_definitions():
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
-             required_data=[RequiresCassandra()],
+             required_data=[RequiresLiveNode()],
              data_ready=[actions.publish_database_relations,
                          actions.install_maintenance_crontab,
                          actions.reset_auth_keyspace_replication,
-                         actions.maybe_decommission_node,
                          actions.emit_describe_cluster,
                          actions.emit_auth_keyspace_status,
-                         actions.emit_netstats],
+                         actions.emit_netstats,
+                         actions.maybe_decommission_node],
              start=[], stop=[])]
 
 
-class RequiresCassandra:
+class RequiresCommissionedNode:
+    '''Once a node is decommissioned, don't try and start it again.'''
+    def __bool__(self):
+        return not hookenv.config().get('decommissioned', False)
+
+
+class RequiresLiveNode:
     def __bool__(self):
         if helpers.is_cassandra_running():
             try:

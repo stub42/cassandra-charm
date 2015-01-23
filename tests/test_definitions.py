@@ -11,6 +11,7 @@ import cassandra
 from tests.base import TestCaseBase
 
 import definitions
+import helpers
 
 
 patch = functools.partial(patch, autospec=True)
@@ -32,20 +33,28 @@ class TestDefinitions(TestCaseBase):
 
     @patch('helpers.connect')
     @patch('helpers.is_cassandra_running')
-    def test_requirescassandra(self, is_running, connect):
+    def test_requires_live_node(self, is_running, connect):
         # Is running and can authenticate
         is_running.return_value = True
         # connect().__enter__.return_value = sentinel.session
         # connect().__exit__.return_value = False
-        self.assertTrue(bool(definitions.RequiresCassandra()))
+        self.assertTrue(bool(definitions.RequiresLiveNode()))
 
         # Is running, but cannot authenticate
         connect().__enter__.side_effect = cassandra.AuthenticationFailed()
-        self.assertFalse(bool(definitions.RequiresCassandra()))
+        self.assertFalse(bool(definitions.RequiresLiveNode()))
 
         # Is not running
         is_running.return_value = False
-        self.assertFalse(bool(definitions.RequiresCassandra()))
+        self.assertFalse(bool(definitions.RequiresLiveNode()))
+
+    @patch('helpers.stop_cassandra')
+    @patch('subprocess.call')
+    def test_requires_commissioned_node(self, call, stop_cassandra):
+        call.return_value = 0
+        self.assertTrue(bool(definitions.RequiresCommissionedNode()))
+        helpers.decommission_node()
+        self.assertFalse(bool(definitions.RequiresCommissionedNode()))
 
 
 if __name__ == '__main__':

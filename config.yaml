@@ -268,12 +268,26 @@ options:
         default: 7199
         description: JMX management port
 
-##     endpoint_snitch:
-##         default: "org.apache.cassandra.locator.SimpleSnitch"
-##         type: string
-##         description:
-##             The cassandra endpoint snitch to use. Currently supported by the
-##             charm, SimpleSnitch and GossipingPropertyFileSnitch.
+    authorizer:
+        type: string
+        default: AllowAllAuthorizer
+        description: >
+            Authorization backend, implementing IAuthorizer; used to limit
+            access/provide permissions Out of the box, Cassandra provides
+            AllowAllAuthorizer & CassandraAuthorizer
+            - AllowAllAuthorizer allows any action to any user - set it to
+              disable authorization.
+            - CassandraAuthorizer stores permissions in
+              system_auth.permissions table.
+
+    _post_bootstrap_wait:
+        type: int
+        default: 120
+        description: |
+            Testing option - do not change. When adding multiple new
+            nodes to a cluster, you are supposed to wait two minutes
+            between nodes. I set this to zero to speed up test runs.
+              
 ##     authenticator:
 ##         type: string
 ##         default: AllowAllAuthenticator
@@ -294,17 +308,6 @@ options:
 ##               external authentication through Kerberos. Additional
 ##               configuration is required in dse.yaml
 
-    authorizer:
-        type: string
-        default: AllowAllAuthorizer
-        description: >
-            Authorization backend, implementing IAuthorizer; used to limit
-            access/provide permissions Out of the box, Cassandra provides
-            AllowAllAuthorizer & CassandraAuthorizer
-            - AllowAllAuthorizer allows any action to any user - set it to
-              disable authorization.
-            - CassandraAuthorizer stores permissions in
-              system_auth.permissions table.
 
     ##     compaction-throughput:
     ##         type: int
@@ -413,51 +416,9 @@ options:
     ##             -Dpasswd.properties=/etc/casssandra/passwd.properties \
     ##             -Daccess.properties=/etc/casssandra/access.properties
     ##             See http://www.datastax.com/docs/1.0/configuration/authentication
-    ##     auth-passwd64:
-    ##         type: string
-    ##         default: ""
-    ##         description: |
-    ##             base64 encoded content to be written to /etc/casssandra/passwd.properties
-    ##             created by e.g.:
-    ##                 juju set cassandra auth-passwd64="$(base64 ./passwd.props)"
-    ##     auth-access64:
-    ##         type: string
-    ##         default: ""
-    ##         description: |
-    ##             base64 encoded content to be written to /etc/casssandra/access.properties
-    ##             created by e.g.:
-    ##                 juju set cassandra auth-access64="$(base64 ./access.props)"
     ##     extra-jvm-opts:
     ##         type: string
     ##         default: ""
     ##         description: |
     ##             string to be appended to JVM_OPTS, e.g.:
     ##             -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
-    ## 
-    ##     units-to-update:
-    ##         type: string
-    ##         default: "all"
-    ##         description: >
-    ##             Comma separated list of unit numbers to update (i.e. modify
-    ##             /etc setup and trigger cassandra restart on config-change or
-    ##             upgrade-charm), or "all".
-
-##     endpoint_snitch:
-##         default: "org.apache.cassandra.locator.SimpleSnitch"
-##         type: string
-##         description:
-##             The cassandra endpoint snitch to use. Currently supported by the
-##             charm, SimpleSnitch and GossipingPropertyFileSnitch.
-##     prefer_local:
-##         default: False
-##         type: boolean
-##         description:
-##             Used with endpoint_snitch=GossipingPropertyFileSnitch to prefer the internal ip when
-##             possible, as the Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
-##     dc_suffix:
-##         default: 
-##         type: string
-##         default:
-##         description:
-##             Add a suffix to a datacenter name. Used by the Ec2Snitch and Ec2MultiRegionSnitch to 
-##             append a string to the EC2 region name. Used with cassandra >= 1.2.x

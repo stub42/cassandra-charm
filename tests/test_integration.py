@@ -27,7 +27,8 @@ class TestDeploymentBase(unittest.TestCase):
     deployment = None
 
     config = dict(max_heap_size='128M',
-                  heap_newsize='32M')
+                  heap_newsize='32M',
+                  _post_bootstrap_wait=0)
 
     @classmethod
     def setUpClass(cls):
@@ -124,7 +125,8 @@ class Test3UnitDeployment(TestDeploymentBase):
     rf = 3
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
-                  jvm='openjdk')
+                  jvm='openjdk',
+                  _post_bootstrap_wait=0)
 
     def test_database_basics(self):
         session = self.session()
@@ -191,7 +193,8 @@ class Test1UnitDeployment(Test3UnitDeployment):
     rf = 1
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
-                  jvm='openjdk')
+                  jvm='openjdk',
+                  _post_bootstrap_wait=0)
 
 
 class TestOracleJVMDeployment(Test3UnitDeployment):
@@ -204,7 +207,8 @@ class TestOracleJVMDeployment(Test3UnitDeployment):
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
                   edition='community',
-                  jvm='Oracle')
+                  jvm='Oracle',
+                  _post_bootstrap_wait=0)
 
 
 class TestDSEDeployment(Test3UnitDeployment):
@@ -225,7 +229,8 @@ class TestDSEDeployment(Test3UnitDeployment):
                   edition='DSE',  # Forces Oracle JVM
                   install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
                                                  'ppa:webupd8team/java']),
-                  install_keys=yaml.safe_dump([None, None]))
+                  install_keys=yaml.safe_dump([None, None]),
+                  _post_bootstrap_wait=0)
 
     @classmethod
     @unittest.skipIf('DSE_SOURCE' not in os.environ,

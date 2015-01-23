@@ -480,7 +480,8 @@ class TestHelpers(TestCaseBase):
     def test_get_cassandra_packages(self, accept_oracle_jvm_license):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools', 'ntp']))
+                            set(['cassandra', 'cassandra-tools',
+                                 'ntp', 'run-one']))
         self.assertFalse(accept_oracle_jvm_license.called)
 
     @patch('helpers.accept_oracle_jvm_license')
@@ -491,7 +492,7 @@ class TestHelpers(TestCaseBase):
         accept_oracle_jvm_license.return_value = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'cassandra-tools', 'ntp',
-                                 'oracle-java7-installer',
+                                 'run-one', 'oracle-java7-installer',
                                  'oracle-java7-set-default']))
         # It was called. We don't care that the mock did nothing, as
         # we explicitly set the magic config item just before.
@@ -506,7 +507,8 @@ class TestHelpers(TestCaseBase):
         accept_oracle_jvm_license.return_value = False
 
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools', 'ntp']))
+                            set(['cassandra', 'cassandra-tools',
+                                 'ntp', 'run-one']))
         self.assertTrue(accept_oracle_jvm_license.called)
 
     @patch('helpers.accept_oracle_jvm_license')
@@ -515,7 +517,7 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
         accept_oracle_jvm_license.return_value = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['dse-full', 'ntp',
+                            set(['dse-full', 'ntp', 'run-one',
                                  'oracle-java7-installer',
                                  'oracle-java7-set-default']))
         self.assertTrue(accept_oracle_jvm_license.called)
@@ -678,9 +680,10 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.RetryUntilRetryPolicy')
     @patch('cassandra.cluster.Cluster')
     @patch('cassandra.auth.PlainTextAuthProvider')
+    @patch('helpers.get_seeds')
     @patch('helpers.superuser_credentials')
     @patch('helpers.read_cassandra_yaml')
-    def test_connect(self, yaml, creds, auth_provider, cluster,
+    def test_connect(self, yaml, creds, get_seeds, auth_provider, cluster,
                      retry_policy, reconnection_policy):
         retry_policy.return_value = sentinel.retry_policy
         reconnection_policy.return_value = sentinel.reconnection_policy
@@ -698,11 +701,15 @@ class TestHelpers(TestCaseBase):
         cluster().connect.return_value = sentinel.session
         cluster.reset_mock()
 
+        # Connection may be to localhost or a seed. Other units may not
+        # yet be part of the cluster, so we don't use them.
+        get_seeds.return_value = ['5.6.7.8']
+
         with helpers.connect() as session:
             auth_provider.assert_called_once_with(username='un',
                                                   password='pw')
             cluster.assert_called_once_with(
-                ['1.2.3.4'], port=666, auth_provider=sentinel.ap,
+                ['1.2.3.4', '5.6.7.8'], port=666, auth_provider=sentinel.ap,
                 default_retry_policy=sentinel.retry_policy,
                 reconnection_policy=sentinel.reconnection_policy,
                 conviction_policy_factory=helpers.OptimisticConvictionPolicy)
@@ -1230,6 +1237,42 @@ class TestHelpers(TestCaseBase):
         check_call.assert_called_once_with(['nodetool', 'repair',
                                             'system_auth'])
 
+    @patch('helpers.stop_cassandra')
+    @patch('subprocess.call')
+    def test_decommission_node(self, call, stop_cassandra):
+        call.return_value = 0
+        helpers.decommission_node()
+        call.assert_called_once_with(['nodetool', 'decommission'],
+                                     stderr=subprocess.STDOUT)
+        stop_cassandra.assert_called_once_with()
+
+    def test_is_bootstrapped(self):
+        config = hookenv.config()
+        self.assertFalse(helpers.is_bootstrapped())
+        config['bootstrapped_into_cluster'] = True
+        self.assertTrue(helpers.is_bootstrapped())
+        config['bootstrapped_into_cluster'] = False
+        self.assertFalse(helpers.is_bootstrapped())
+
+    @patch('time.sleep')
+    @patch('helpers.num_nodes')
+    def test_post_bootstrap(self, num_nodes, sleep):
+        num_nodes.return_value = 3
+        self.assertFalse(helpers.is_bootstrapped())
+        helpers.post_bootstrap()
+        # Wait 2 minutes between nodes when initializing new nodes into
+        # the cluster.
+        sleep.assert_called_once_with(120)
+        self.assertTrue(helpers.is_bootstrapped())
+
+    @patch('helpers.num_nodes')
+    def test_post_bootstrap_alone(self, num_nodes):
+        num_nodes.return_value = 1  # Just us.
+        hookenv.config()['bootstrapped_into_cluster'] = True
+        self.assertTrue(helpers.is_bootstrapped())
+        helpers.post_bootstrap()
+        self.assertFalse(helpers.is_bootstrapped())
+
     @patch('helpers.get_seeds')
     @patch('subprocess.check_output')
     def test_is_schema_agreed(self, check_output, get_seeds):
@@ -1244,6 +1287,8 @@ class TestHelpers(TestCaseBase):
             \t\t15056434--0e7a98bbb067: [10.0.0.2, 10.20.0.1, 10.0.0.3]
             ''').encode('UTF-8')
         self.assertTrue(helpers.is_schema_agreed())
+        check_output.assert_called_once_with(['nodetool', 'describecluster'])
+
         check_output.return_value = dedent('''\
             Cluster Information:
             \tName: juju
@@ -1264,6 +1309,37 @@ class TestHelpers(TestCaseBase):
         sleep.assert_has_calls([call(2), call(4)])
         is_agreed.side_effect = iter([False, RuntimeError()])
         self.assertRaises(RuntimeError, helpers.wait_for_agreed_schema)
+
+    @patch('subprocess.check_output')
+    def is_all_normal(self, check_output):
+        check_output.return_value = dedent('''
+            Datacenter: juju
+            ================
+            Status=Up/Down
+            |/ State=Normal/Leaving/Joining/Moving
+            --  Address     Load       Tokens  Owns (eff)  Host ID   Rack
+            UN  10.0.3.179  131.72 KB  256     66.7%       bc1d-29   r1
+            UN  10.0.3.197  123.94 KB  256     69.3%       65b2-d8   r1
+            UN  10.0.3.236  109.75 KB  256     64.1%       e549-cf   r1
+            ''').encode('UTF-8')
+        self.assertTrue(helpers.is_all_normal())
+        check_output.assert_called_once_with(['nodetool', 'status',
+                                              'system_auth'])
+
+        check_output.return_value = b'UN  10.0.3.197 ...'
+        self.assertTrue(helpers.is_all_normal())
+
+        check_output.return_value = b'DN  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
+
+        check_output.return_value = b'UJ  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
+
+        check_output.return_value = b'UM  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
+
+        check_output.return_value = b'UL  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
 
     def test_week_spread(self):
         # The first seven units run midnight on different days.

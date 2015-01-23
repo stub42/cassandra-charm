@@ -369,6 +369,7 @@ def get_cassandra_packages():
         packages = set(['cassandra', 'cassandra-tools'])
 
     packages.add('ntp')
+    packages.add('run-one')
 
     jvm = get_jvm()
     if jvm == 'oracle':
@@ -464,7 +465,7 @@ CONNECT_TIMEOUT = 240
 @contextmanager
 def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
     cassandra_yaml = read_cassandra_yaml()
-    address = cassandra_yaml['rpc_address']
+    addresses = [cassandra_yaml['rpc_address']] + get_seeds()
     port = cassandra_yaml['native_transport_port']
 
     if username is None or password is None:
@@ -473,28 +474,37 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
     auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
                                                          password=password)
 
-    until = time.time() + timeout
+    # Although we specify a reconnection_policy, it does not apply to
+    # the initial connection so we retry in a loop.
+    until = time.time() + CONNECT_TIMEOUT
     while True:
         cluster = cassandra.cluster.Cluster(
-            [address], port=port, auth_provider=auth_provider,
+            addresses, port=port, auth_provider=auth_provider,
             default_retry_policy=RetryUntilRetryPolicy(until),
             reconnection_policy=ReconnectUntilReconnectionPolicy(until),
             conviction_policy_factory=OptimisticConvictionPolicy)
         try:
             session = cluster.connect()
             session.default_timeout = CONNECT_TIMEOUT
-            yield session
             break
         except cassandra.cluster.NoHostAvailable as x:
-            if address in x.errors:
-                actual = x.errors[address]
-                if isinstance(actual, cassandra.AuthenticationFailed):
-                    raise actual
+            cluster.shutdown()
+            # If every node failed auth, reraise one of the
+            # AuthenticationFailed exceptions. Unwrapping the exception
+            # means call sites don't have to sniff the exception bundle.
+            # We don't retry on auth fails; this method should not be
+            # called if the system_auth data is inconsistent.
+            auth_fails = [af for af in x.errors.values()
+                          if isinstance(af, cassandra.AuthenticationFailed)]
+            if len(auth_fails) == len(x.errors):
+                raise auth_fails[0]
             if time.time() > until:
                 raise
-        finally:
-            cluster.shutdown()
         time.sleep(1)
+    try:
+        yield session
+    finally:
+        cluster.shutdown()
 
 
 class OptimisticConvictionPolicy(cassandra.policies.ConvictionPolicy):
@@ -509,7 +519,7 @@ class ReconnectUntilReconnectionPolicy(cassandra.policies.ReconnectionPolicy):
     def __init__(self, until):
         self.until = until
 
-    def new_scheduled(self):
+    def new_schedule(self):
         return self
 
     def __next__(self):
@@ -831,43 +841,50 @@ def repair_auth_keyspace():
 
 @logged
 def decommission_node():
-    i = 1
-    while i < 8:
-        hookenv.log('Decommissioning Cassandra node. '
-                    'Attempt {}.'.format(i), WARNING)
-        rv = subprocess.call(['nodetool', 'decommission'],
-                             stderr=subprocess.STDOUT)
-        if rv == 0:
-            return
-        assert rv == 2, 'Unknown return value from nodetool decommission'
-        time.sleep(max(2 ** i, 120))
-        i += 1
-    hookenv.log('Unable to decommission Cassandra node.', ERROR)
+    '''Decommission this node.
+
+    Decommissioning will fail if:
+        - Another node is already decommissioning.
+        - The remaining nodes do not have enough space to contain this
+          node's data.
+
+    (Juju's service leadership feature should allow us to address the
+    first point, and the environment goal state feature should allow us
+    to tear down the entire service and only trigger the second point
+    when it is helpful)
+    '''
+    hookenv.log('Decommissioning Cassandra node.', WARNING)
+    rv = subprocess.call(['nodetool', 'decommission'],
+                         stderr=subprocess.STDOUT)
+    if rv != 0:
+        hookenv.log('Unable to decommission node. '
+                    'The cluster will need repair.', ERROR)
+    stop_cassandra()
+    hookenv.config()['decommissioned'] = True
 
 
-# def is_bootstrapped():
-#     '''Return True if the node has already bootstrapped into the cluster.'''
-#     return hookenv.config().get('bootstrapped_into_cluster', False)
+def is_bootstrapped():
+    '''Return True if the node has already bootstrapped into the cluster.'''
+    return hookenv.config().get('bootstrapped_into_cluster', False)
 
 
-# @logged
-# def post_bootstrap():
-#     '''Maintain state on if the node has bootstrapped into the cluster.
-#
-#     Wait 2 minutes if the unit has just bootstrapped, so ensure no other
-#     units bootstrap in this timeframe.
-#     '''
-#     config = hookenv.config()
-#     if num_nodes() == 1:
-#         # There is no cluster (just us), so we are not bootstrapped into
-#         # the cluster.
-#         config['bootstrapped_into_cluster'] = False
-#     else:
-#         config['bootstrapped_into_cluster'] = True
-#         if config.changed('bootstrapped_into_cluster'):
-#             hookenv.log('Bootstrapped into ring.')
-#
-#     wait_for_agreed_schema()
+@logged
+def post_bootstrap():
+    '''Maintain state on if the node has bootstrapped into the cluster.
+
+    Per documented procedure for adding new units to a cluster, wait 2
+    minutes if the unit has just bootstrapped to ensure no other.
+    '''
+    config = hookenv.config()
+    if num_nodes() == 1:
+        # There is no cluster (just us), so we are not bootstrapped into
+        # the cluster.
+        config['bootstrapped_into_cluster'] = False
+    else:
+        config['bootstrapped_into_cluster'] = True
+        if config.changed('bootstrapped_into_cluster'):
+            hookenv.log('Bootstrapped into the cluster. Waiting 2 minutes.')
+            time.sleep(config['_post_bootstrap_wait'])
 
 
 def is_schema_agreed():
@@ -898,6 +915,60 @@ def wait_for_agreed_schema():
         i += 1
         hookenv.log('Unit and seeds do not agree on schema, '
                     'check #{}'.format(i))
+        time.sleep(min(60, 2 ** i))
+
+
+def get_peer_ips():
+    ips = set()
+    relid = rollingrestart.get_peer_relation_id()
+    if relid is not None:
+        for unit in hookenv.related_units(relid):
+            ip = hookenv.relation_get('private-address', unit, relid)
+            ips.add(ip)
+    return ips
+
+
+def is_all_normal():
+    '''All nodes in the cluster report status Normal.
+
+    Returns false if a node is joining, leaving or moving in the ring.
+    '''
+    is_all_normal = True
+    raw = subprocess.check_output(['nodetool', 'status',
+                                   'system_auth']).decode('UTF-8')
+    peer_ips = get_peer_ips()
+    node_status_re = re.compile('^([UD])([NLJM])\s+([\d\.]+)\s')
+    for line in raw.splitlines():
+        match = node_status_re.search(line)
+        if match is not None:
+            updown, mode, address = match.groups()
+            if updown == 'D':
+                if address in peer_ips:
+                    hookenv.log('Node {} is down'.format(address))
+                    is_all_normal = False
+                else:
+                    hookenv.log('Node {} is down '
+                                '(ignoring - not a peer)'.format(address))
+            elif mode == 'L':
+                hookenv.log('Node {} is leaving the cluster'.format(address))
+                is_all_normal = False
+            elif mode == 'J':
+                hookenv.log('Node {} is joining the cluster'.format(address))
+                is_all_normal = False
+            elif mode == 'M':
+                hookenv.log('Node {} is moving ring position'.format(address))
+                is_all_normal = False
+    return is_all_normal
+
+
+@logged
+def wait_for_normality():
+    i = 0
+    while True:
+        if is_all_normal():
+            return
+        i += 1
+        hookenv.log('Cluster operations in progress, check #{}'.format(i))
         time.sleep(min(60, 2 ** i))
 
 
