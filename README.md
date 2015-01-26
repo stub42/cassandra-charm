@@ -58,6 +58,14 @@ Cassandra using Thrift or the native Cassandra protocol::
     juju deploy cs:service-that-needs-cassandra
     juju add-relation service-that-needs-cassandra cassandra:database
 
+
+Alternatively, if you require a superuser connection, use the
+`database-admin` relation instead of `database`::
+
+    juju deploy cs:admin-service
+    juju add-relation admin-service cassandra:database-admin
+
+
 Client charms need to provide nothing. The Cassandra service publishes the following connection settings and cluster information on the client's relation:
 
 `username` and `password`:

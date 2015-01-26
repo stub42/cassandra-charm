@@ -554,13 +554,19 @@ def query(session, statement, consistency_level, args=None):
     return session.execute(q, args)
 
 
-def ensure_user(username, password):
+def ensure_user(username, password, superuser=False):
     '''Create the DB user if it doesn't already exist & reset the password.'''
-    hookenv.log('Creating user {}'.format(username))
+    if superuser:
+        hookenv.log('Creating SUPERUSER {}'.format(username))
+        sup = ' SUPERUSER'
+    else:
+        hookenv.log('Creating user {}'.format(username))
+        sup = ' NOSUPERUSER'
     with connect() as session:
-        query(session, 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
+        query(session,
+              'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s {}'.format(sup),
               ConsistencyLevel.ALL, (username, password,))
-        query(session, 'ALTER USER %s WITH PASSWORD %s',
+        query(session, 'ALTER USER %s WITH PASSWORD %s {}'.format(sup),
               ConsistencyLevel.ALL, (username, password,))
 
 

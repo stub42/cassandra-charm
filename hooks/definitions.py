@@ -65,6 +65,7 @@ def get_service_definitions():
         dict(service='post',
              required_data=[RequiresLiveNode()],
              data_ready=[actions.publish_database_relations,
+                         actions.publish_database_admin_relations,
                          actions.install_maintenance_crontab,
                          actions.reset_auth_keyspace_replication,
                          actions.emit_describe_cluster,

@@ -338,8 +338,7 @@ def publish_cluster_relation():
                              {'public-address': hookenv.unit_public_ip()})
 
 
-@action
-def publish_database_relations():
+def _publish_daabase_relation(relid, superuser):
     # Due to Bug #1409763, this functionality is as action rather than a
     # provided_data item.
     #
@@ -357,46 +356,58 @@ def publish_database_relations():
     # remaining peers will use them), or the process starts again and
     # it will generate new credentials.
     node_list = list(rollingrestart.get_peers()) + [hookenv.local_unit()]
-    sorted_nodes = sorted(node_list,
-                          key=lambda unit: int(unit.split('/')[-1]))
+    sorted_nodes = sorted(node_list, key=lambda unit: int(unit.split('/')[-1]))
     first_node = sorted_nodes[0]
 
     config = hookenv.config()
 
+    relinfo = hookenv.relation_get(unit=first_node, rid=relid)
+    username = relinfo.get('username')
+    password = relinfo.get('password')
+    if hookenv.local_unit() == first_node:
+        # Lowest numbered unit, at least for now.
+        if 'username' not in relinfo:
+            # Credentials unset. Generate them.
+            username = 'juju_{}'.format(
+                relid.replace(':', '_').replace('-', '_'))
+            password = host.pwgen()
+            # Wake the other peers, if any.
+            hookenv.relation_set(rollingrestart.get_peer_relation_id(),
+                                    ping=rollingrestart.utcnow_str())
+        # Create the account if necessary, and reset the password.
+        # We need to reset the password as another unit may have
+        # rudely changed it thinking they were the lowest numbered
+        # unit. Fix this behavior once juju provides real
+        # leadership.
+        helpers.ensure_user(username, password, superuser)
+
+    # Publish the information the client needs on the relation where
+    # they can find it.
+    #  - authentication credentials
+    #  - address and port
+    #  - cluster_name, so clients can differentiate multiple clusters
+    #  - datacenter + rack, so clients know what names they can use
+    #    when altering keyspace replication settings.
+    hookenv.relation_set(relid,
+                         username=username, password=password,
+                         host=hookenv.unit_public_ip(),
+                         port=config['native_transport_port'],
+                         thrift_port=config['rpc_port'],
+                         cluster_name=config['cluster_name'],
+                         datacenter=config['datacenter'],
+                         rack=config['rack'])
+
+
+@action
+def publish_database_relations():
     for relid in hookenv.relation_ids('database'):
-        relinfo = hookenv.relation_get(unit=first_node, rid=relid)
-        username = relinfo.get('username')
-        password = relinfo.get('password')
-        if hookenv.local_unit() == first_node:
-            # Lowest numbered unit, at least for now.
-            if 'username' not in relinfo:
-                # Credentials unset. Generate them.
-                username = 'juju_{}'.format(relid.replace(':', '_'))
-                password = host.pwgen()
-                # Wake the other peers, if any.
-                hookenv.relation_set(rollingrestart.get_peer_relation_id(),
-                                     ping=rollingrestart.utcnow_str())
-            # Create the account if necessary, and reset the password.
-            # We need to reset the password as another unit may have
-            # rudely changed it thinking they were the lowest numbered
-            # unit. Fix this behavior once juju provides real
-            # leadership.
-            helpers.ensure_user(username, password)
-        # Publish the information the client needs on the relation where
-        # they can find it.
-        #  - authentication credentials
-        #  - address and port
-        #  - cluster_name, so clients can differentiate multiple clusters
-        #  - datacenter + rack, so clients know what names they can use
-        #    when altering keyspace replication settings.
-        hookenv.relation_set(relid,
-                             username=username, password=password,
-                             host=hookenv.unit_public_ip(),
-                             port=config['native_transport_port'],
-                             thrift_port=config['rpc_port'],
-                             cluster_name=config['cluster_name'],
-                             datacenter=config['datacenter'],
-                             rack=config['rack'])
+        _publish(relid, superuser=False)
+
+
+@action
+def publish_database_admin_relations():
+    for relid in hookenv.relation_ids('database-admin'):
+        _publish(relid, superuser=False)
 
 
 @action
