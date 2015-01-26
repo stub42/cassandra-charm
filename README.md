@@ -8,74 +8,126 @@ for replicating across multiple datacenters is best-in-class, providing lower
 latency for your users and the peace of mind of knowing that you can survive
 regional outages.
 
-Cassandra's ColumnFamily data model offers the convenience of column indexes
-with the performance of log-structured updates, strong support for materialized
-views, and powerful built-in caching.
-
 See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 
-# Usage
+
+# Deployment
 
 Cassandra deployments are relatively simple in that they consist of a set of
 Cassandra nodes which seed from each other to create a ring of servers:
     
-    juju deploy --repository . local:cassandra
-    juju add-unit -n 2 cassandra
+    juju deploy -n3 cs:trusty/cassandra
 
 The service units will deploy and will form a single ring.
 
-The API to Cassandra is supported through Apache Thrift; Thrift is a software
-framework for scalable cross-language services development.
+New nodes can be added to scale up:
 
-See [this documentation](http://wiki.apache.org/cassandra/ThriftInterface) for more details of how to use this API.
+    juju add-unit cassandra
 
-Cassandra recommend using one of the many client options - see
-[ClientOptions](http://wiki.apache.org/cassandra/ClientOptions) for more details.
+
+Nodes can be decommissioned to shrink the cluster:
+
+    juju remove-unit cassandra
+
+It is recommended to deploy at least 3 nodes and configure all your
+keyspaces to have a replication factor of at least three. Using fewer
+nodes or neglecting to set your keyspaces' replication settings means
+your data is at risk and availability lower, as a failed unit may take
+the only copy of data with it.
+
+Mounting external disk is done using the standard `storage` subordinate
+charm.
+
+    juju deploy --config storage.conf cs:storage
+    juju deploy --config storage.conf cs:storage
+    juju add-relation storage block-storage-broker
+    juju add-relation cassandra storage
+
+/!\ Unfortunately, per Bug #1334956, the storage and block-storage-broker
+    charms are not yet available in the charm store for trusty so
+    the above documentation does not work.
+
+
+## Planning
+
+- Do not attempt to store too much data per node. If you need more space,
+  add more nodes. Most workloads work best with a capacity under 500GB
+  per node.
+
+- You need to keep 50% of your disk space free for Cassandra maintenance
+  operations. If you expect your nodes to hold 500GB of data each, you
+  will need a 1TB partition.
+
+- Much more information can be found in the [Cassandra 2.1 documentation](http://www.datastax.com/documentation/cassandra/2.1/cassandra/planning/architecturePlanningAbout_c.html)
+
+
+# Usage
 
 To relate the Cassandra charm to a service that understands how to talk to
-Cassandra using thrift::
+Cassandra using Thrift or the native Cassandra protocol::
 
-    juju deploy --repository . local:service-that-needs-cassandra
-    juju add-relation service-that-needs-cassandra cassandra
+    juju deploy cs:service-that-needs-cassandra
+    juju add-relation service-that-needs-cassandra cassandra:database
+
+Client charms need to provide nothing. The Cassandra service publishes the following connection settings and cluster information on the client's relation:
+
+`username` and `password`:
+
+    Authentication credentials. The cluster is configured to use
+    the standard PasswordAuthenticator authentication provider, rather
+    than the insecure default. You can use different credentials
+    if you wish, using and account created through some other mechanism.
+    
+`host`:
+
+    IP address to connect to.
+
+`native_protocol_port`:
+
+    Port for drivers and tools using the newer native protocol.
+
+`rpc_port`:
+
+    Port for drivers and tools using the legacy Thrift protocol.
+
+`cluster_name`:
+
+    The cluster name. A client service may be related to several
+    Cassandra services, and this setting may be used to tell which
+    services belong to which cluster.
+
+`datacenter` and `rack`:
+
+    The datacenter and rack units in this service belong to. Required for
+    setting keyspace replication correctly.
+
+The cluster is configured to use the recommended 'snitch'
+(GossipingPropertyFileSnitch), so you will need to configure replication of
+your keyspaces using the NetworkTopologyStrategy replica placement strategy.
+For example, using the default datacenter named 'juju':
+
+    CREATE KEYSPACE IF NOT EXISTS mydata WITH REPLICATION =
+    { 'class': 'NetworkTopologyStrategy', 'juju': 3};
+
+
+Although authentication is configured using the standard
+PasswordAuthentication, by default no authorization is configured
+and the provided credentials will have access to all data on the cluster.
+For more granular permissions, you will need to set the authorizer
+in the service configuration to CassandraAuthorizer and manually grant
+permissions to the users.
+
 
 # Known Limitations and Issues
-
-Changing the configuration of a deployed Cassandra cluster is supported;
-however it will result in a restart of each Cassandra node as the changes
-are implemented which may result in outages.
-
-Adding persistent storage after a node has had no persistent storage and it has
-existing data on the "local" file system is not currently not supported.
 
 This is the 'trusty' charm. Upgrade from the 'precise' charm is not supported.
 
 The DataStax Enterprise variant of Cassandra cannot be tested by Juju's
 open automated test environment, due to DataStax's policy of requiring
 registration before downloading their software. While DSE hopefully works
-with this charm, it cannot be fully supported and using standard Apache
-Cassandra is recommended wherever possible.
+with this charm, it cannot be fully supported and using standard Open Source
+edition of Cassandra ('community') is recommended wherever possible.
 
-
-# Configuration
-
-Cassandra has a pretty good guess at configuring its Java memory settings to
-fit the machine that it has been deployed on.
-
-The charm does support manual configuration of Java memory settings - see the
-config.yaml file for more details::
-
-    cassandra:
-        auto-memory: false
-        heap-size: 8G
-        new-gen-size: 250M
-
-However be aware that its recommended that Cassandra always remains in 'real'
-memory and should never be swapped out to disk so keep this in mind when
-changing these options.
-
-Cassandra sets both its minimum and maximum heap size on startup so will
-pre-allocate all memory to avoid freezes during operation (this happens
-during normal operation as more memory is allocated to heap).
 
 # Contact Information
 
