@@ -558,10 +558,10 @@ def ensure_user(username, password, superuser=False):
     '''Create the DB user if it doesn't already exist & reset the password.'''
     if superuser:
         hookenv.log('Creating SUPERUSER {}'.format(username))
-        sup = ' SUPERUSER'
+        sup = 'SUPERUSER'
     else:
         hookenv.log('Creating user {}'.format(username))
-        sup = ' NOSUPERUSER'
+        sup = 'NOSUPERUSER'
     with connect() as session:
         query(session,
               'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s {}'.format(sup),
@@ -571,7 +571,7 @@ def ensure_user(username, password, superuser=False):
 
 
 @logged
-def ensure_superuser():
+def ensure_unit_superuser():
     '''If the unit's superuser account is not working, recreate it.'''
     try:
         with connect():
@@ -580,14 +580,14 @@ def ensure_superuser():
     except cassandra.AuthenticationFailed:
         pass
 
-    create_superuser()  # Doesn't exist or can't access, so create it.
+    create_unit_superuser()  # Doesn't exist or can't access, so create it.
 
     with connect():
         hookenv.log('Unit superuser password reset successful')
 
 
 @logged
-def create_superuser():
+def create_unit_superuser():
     '''Create or recreate the unit's superuser account.
 
     As there may be no known superuser credentials to use, we restart

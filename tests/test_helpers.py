@@ -784,47 +784,62 @@ class TestHelpers(TestCaseBase):
         helpers.ensure_user(sentinel.username, sentinel.password)
         query.assert_has_calls([
             call(sentinel.session,
-                 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s',
+                 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s NOSUPERUSER',
                  ConsistencyLevel.ALL,
                  (sentinel.username, sentinel.password)),
             call(sentinel.session,
-                 'ALTER USER %s WITH PASSWORD %s',
+                 'ALTER USER %s WITH PASSWORD %s NOSUPERUSER',
                  ConsistencyLevel.ALL,
                  (sentinel.username, sentinel.password))])
 
-    @patch('helpers.create_superuser')
+    @patch('helpers.query')
     @patch('helpers.connect')
-    def test_ensure_superuser(self, connect, create_superuser):
+    def test_ensure_user_superuser(self, connect, query):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        helpers.ensure_user(sentinel.username, sentinel.password, True)
+        query.assert_has_calls([
+            call(sentinel.session,
+                 'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s SUPERUSER',
+                 ConsistencyLevel.ALL,
+                 (sentinel.username, sentinel.password)),
+            call(sentinel.session,
+                 'ALTER USER %s WITH PASSWORD %s SUPERUSER',
+                 ConsistencyLevel.ALL,
+                 (sentinel.username, sentinel.password))])
+
+    @patch('helpers.create_unit_superuser')
+    @patch('helpers.connect')
+    def test_ensure_unit_superuser(self, connect, create_unit_superuser):
         connect().__enter__.side_effect = iter([AuthenticationFailed(),
                                                 sentinel.session])
         connect().__exit__.return_value = False
         connect.reset_mock()
 
-        helpers.ensure_superuser()
-        create_superuser.assert_called_once_with()  # Account created.
+        helpers.ensure_unit_superuser()
+        create_unit_superuser.assert_called_once_with()  # Account created.
 
-    @patch('helpers.create_superuser')
+    @patch('helpers.create_unit_superuser')
     @patch('helpers.connect')
-    def test_ensure_superuser_exists(self, connect, create_superuser):
+    def test_ensure_unit_superuser_exists(self, connect,
+                                          create_unit_superuser):
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
         connect.reset_mock()
 
         # If connect works, nothing happens
-        helpers.ensure_superuser()
+        helpers.ensure_unit_superuser()
         connect.assert_called_once_with()  # Superuser requested.
-        self.assertFalse(create_superuser.called)  # No need to create.
+        self.assertFalse(create_unit_superuser.called)  # No need to create.
 
-    # @patch('helpers.repair_auth_keyspace')
-    # @patch('helpers.reset_auth_keyspace_replication')
     @patch('helpers.query')
     @patch('bcrypt.gensalt')
     @patch('bcrypt.hashpw')
     @patch('helpers.reconfigure_and_restart_cassandra')
     @patch('helpers.connect')
     @patch('helpers.superuser_credentials')
-    def test_create_superuser(self, creds, connect, restart,
-                              bhash, bsalt, query):  # , reset_ks, repair_ks):
+    def test_create_unit_superuser(self, creds, connect, restart,
+                                   bhash, bsalt, query):
         creds.return_value = ('super', 'secret')
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
@@ -833,7 +848,7 @@ class TestHelpers(TestCaseBase):
         bsalt.return_value = sentinel.salt
         bhash.return_value = 'pwhash'
 
-        helpers.create_superuser()
+        helpers.create_unit_superuser()
 
         # Cassandra was restarted twice, first with authentication
         # disabled and again with the normal configuration.
@@ -844,10 +859,6 @@ class TestHelpers(TestCaseBase):
 
         # A connection was made as the superuser.
         connect.assert_called_once_with()
-
-        # The system_auth keyspace was fixed if necessary.
-        # reset_ks.assert_called_once_with(sentinel.session)
-        # repair_ks.assert_called_once_with()
 
         # Statements run to create or update the user.
         query.assert_has_calls([

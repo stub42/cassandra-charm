@@ -57,7 +57,7 @@ def get_service_definitions():
             helpers.wait_for_normality,
             helpers.emit_describe_cluster,
             helpers.reset_default_password,
-            helpers.ensure_superuser,
+            helpers.ensure_unit_superuser,
             helpers.reset_auth_keyspace_replication,
             helpers.emit_auth_keyspace_status]),
 

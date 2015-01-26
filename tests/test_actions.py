@@ -505,10 +505,10 @@ class TestsActions(TestCaseBase):
         actions.start_cassandra('ignored')
         helpers_start_cassandra.assert_called_once_with()
 
-    @patch('helpers.ensure_superuser')
-    def test_ensure_superuser(self, helpers_ensure_superuser):
-        actions.ensure_superuser('ignored')
-        helpers_ensure_superuser.assert_called_once_with()
+    @patch('helpers.ensure_unit_superuser')
+    def test_ensure_unit_superuser(self, helpers_ensure_unit_superuser):
+        actions.ensure_unit_superuser('ignored')
+        helpers_ensure_unit_superuser.assert_called_once_with()
 
     @patch('helpers.reset_all_io_schedulers')
     def test_reset_all_io_schedulers(self, helpers_reset_all_io_schedulers):
@@ -544,12 +544,23 @@ class TestsActions(TestCaseBase):
         actions.publish_cluster_relation('')  # Noop
         self.assertFalse(hookenv.relation_set.called)
 
+    @patch('actions._publish_database_relation')
+    def test_publish_database_relations(self, publish_db_rel):
+        actions.publish_database_relations('')
+        publish_db_rel.assert_called_once_with('database:1', superuser=False)
+
+    @patch('actions._publish_database_relation')
+    def test_publish_database_admin_relations(self, publish_db_rel):
+        actions.publish_database_admin_relations('')
+        publish_db_rel.assert_called_once_with('database-admin:1',
+                                               superuser=True)
+
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
-    def test_publish_database_relations_alone(self, get_peers, pwgen,
-                                              ensure_user, utcnow_str):
+    def test_publish_database_relation(self, get_peers, pwgen,
+                                       ensure_user, utcnow_str):
         get_peers.return_value = set()
         pwgen.side_effect = iter(['secret1', 'secret2'])
         hookenv.relation_get.return_value = {}
@@ -561,13 +572,14 @@ class TestsActions(TestCaseBase):
         config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
-        actions.publish_database_relations('')
+        actions._publish_database_relation('database:1', sentinel.superuser)
 
         # Checked this unit for existing data.
         hookenv.relation_get.assert_called_once_with(rid='database:1',
                                                      unit='service/1')
 
-        ensure_user.assert_called_once_with('juju_database_1', 'secret1')
+        ensure_user.assert_called_once_with('juju_database_1', 'secret1',
+                                            sentinel.superuser)
 
         hookenv.relation_set.assert_has_calls([
             call('cluster:1', ping='whenever'),
@@ -580,8 +592,8 @@ class TestsActions(TestCaseBase):
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('rollingrestart.get_peers')
-    def test_publish_database_relations_alone2(self, get_peers,
-                                               ensure_user, utcnow_str):
+    def test_publish_database_relation_alone2(self, get_peers,
+                                              ensure_user, utcnow_str):
         get_peers.return_value = set()
         # There are existing credentials on the relation.
         hookenv.relation_set(relation_id='database:1',
@@ -594,7 +606,7 @@ class TestsActions(TestCaseBase):
         config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
-        actions.publish_database_relations('')
+        actions._publish_database_relation('database:1', sentinel.superuser)
 
         # Checked this unit for existing data.
         hookenv.relation_get.assert_called_once_with(rid='database:1',
@@ -602,7 +614,7 @@ class TestsActions(TestCaseBase):
 
         # Even if the stored creds are unchanged, we ensure the password
         # is valid and reset it if necessary.
-        ensure_user.assert_called_once_with('un', 'pw')
+        ensure_user.assert_called_once_with('un', 'pw', sentinel.superuser)
 
         hookenv.relation_set.assert_has_calls([
             # Credentials unchanged, so no peer wakeup.
@@ -619,8 +631,8 @@ class TestsActions(TestCaseBase):
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
-    def test_publish_database_relations_leader(self, get_peers, pwgen,
-                                               ensure_user, utcnow_str):
+    def test_publish_database_relation_leader(self, get_peers, pwgen,
+                                              ensure_user, utcnow_str):
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         hookenv.relation_get.return_value = {}
@@ -632,13 +644,14 @@ class TestsActions(TestCaseBase):
         config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
-        actions.publish_database_relations('')
+        actions._publish_database_relation('database:1', sentinel.superuser)
 
         # Checked this unit for existing data.
         hookenv.relation_get.assert_called_once_with(rid='database:1',
                                                      unit='service/1')
 
-        ensure_user.assert_called_once_with('juju_database_1', 'secret1')
+        ensure_user.assert_called_once_with('juju_database_1', 'secret1',
+                                            sentinel.superuser)
 
         hookenv.relation_set.assert_has_calls([
             call('cluster:1', ping='whenever'),
@@ -651,8 +664,8 @@ class TestsActions(TestCaseBase):
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('rollingrestart.get_peers')
-    def test_publish_database_relations_leader2(self, get_peers,
-                                                ensure_user, utcnow_str):
+    def test_publish_database_relation_leader2(self, get_peers,
+                                               ensure_user, utcnow_str):
         get_peers.return_value = set()
         # There are existing credentials on the relation.
         hookenv.relation_set(relation_id='database:1',
@@ -665,7 +678,7 @@ class TestsActions(TestCaseBase):
         config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
-        actions.publish_database_relations('')
+        actions._publish_database_relation('database:1', sentinel.superuser)
 
         # Checked this unit for existing data.
         hookenv.relation_get.assert_called_once_with(rid='database:1',
@@ -673,7 +686,7 @@ class TestsActions(TestCaseBase):
 
         # Even if the stored creds are unchanged, we ensure the password
         # is valid and reset it if necessary.
-        ensure_user.assert_called_once_with('un', 'pw')
+        ensure_user.assert_called_once_with('un', 'pw', sentinel.superuser)
 
         hookenv.relation_set.assert_has_calls([
             # Credentials unchanged, so no peer wakeup.
@@ -690,8 +703,8 @@ class TestsActions(TestCaseBase):
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
-    def test_publish_database_relations_follow(self, get_peers, pwgen,
-                                               ensure_user, utcnow_str):
+    def test_publish_database_relation_follow(self, get_peers, pwgen,
+                                              ensure_user, utcnow_str):
         hookenv.local_unit.return_value = 'service/4'
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
@@ -703,7 +716,7 @@ class TestsActions(TestCaseBase):
         config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
-        actions.publish_database_relations('')
+        actions._publish_database_relation('database:1', sentinel.superuser)
 
         # Checked first unit for existing data.
         # There are no existing credentials on the relation.
@@ -728,8 +741,8 @@ class TestsActions(TestCaseBase):
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
     @patch('rollingrestart.get_peers')
-    def test_publish_database_relations_follow2(self, get_peers, pwgen,
-                                                ensure_user, utcnow_str):
+    def test_publish_database_relation_follow2(self, get_peers, pwgen,
+                                               ensure_user, utcnow_str):
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         # Existing credentials on the relation.
@@ -746,7 +759,7 @@ class TestsActions(TestCaseBase):
         config['rack'] = '01'
         utcnow_str.return_value = 'whenever'
 
-        actions.publish_database_relations('')
+        actions._publish_database_relation('database:1', sentinel.superuser)
 
         # Checked first unit for existing data.
         hookenv.relation_get.assert_called_once_with(rid='database:1',

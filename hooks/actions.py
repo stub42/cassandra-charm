@@ -319,8 +319,8 @@ def start_cassandra():
 
 
 @action
-def ensure_superuser():
-    helpers.ensure_superuser()
+def ensure_unit_superuser():
+    helpers.ensure_unit_superuser()
 
 
 @action
@@ -338,7 +338,7 @@ def publish_cluster_relation():
                              {'public-address': hookenv.unit_public_ip()})
 
 
-def _publish_daabase_relation(relid, superuser):
+def _publish_database_relation(relid, superuser):
     # Due to Bug #1409763, this functionality is as action rather than a
     # provided_data item.
     #
@@ -373,7 +373,7 @@ def _publish_daabase_relation(relid, superuser):
             password = host.pwgen()
             # Wake the other peers, if any.
             hookenv.relation_set(rollingrestart.get_peer_relation_id(),
-                                    ping=rollingrestart.utcnow_str())
+                                 ping=rollingrestart.utcnow_str())
         # Create the account if necessary, and reset the password.
         # We need to reset the password as another unit may have
         # rudely changed it thinking they were the lowest numbered
@@ -401,13 +401,13 @@ def _publish_daabase_relation(relid, superuser):
 @action
 def publish_database_relations():
     for relid in hookenv.relation_ids('database'):
-        _publish(relid, superuser=False)
+        _publish_database_relation(relid, superuser=False)
 
 
 @action
 def publish_database_admin_relations():
     for relid in hookenv.relation_ids('database-admin'):
-        _publish(relid, superuser=False)
+        _publish_database_relation(relid, superuser=True)
 
 
 @action
@@ -424,14 +424,17 @@ def install_maintenance_crontab():
 
 @action
 def emit_describe_cluster():
+    '''Spam 'nodetool describecluster' into the logs.'''
     helpers.emit_describe_cluster()
 
 
 @action
 def emit_auth_keyspace_status():
+    '''Spam 'nodetool status system_auth' into the logs.'''
     helpers.emit_auth_keyspace_status()
 
 
 @action
 def emit_netstats():
+    '''Spam 'nodetool netstats' into the logs.'''
     helpers.emit_netstats()
