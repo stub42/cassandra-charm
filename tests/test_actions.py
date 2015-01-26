@@ -554,8 +554,8 @@ class TestsActions(TestCaseBase):
         pwgen.side_effect = iter(['secret1', 'secret2'])
         hookenv.relation_get.return_value = {}
         config = hookenv.config()
-        config['native_client_port'] = 666
-        config['thrift_client_port'] = 777
+        config['native_transport_port'] = 666
+        config['rpc_port'] = 777
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
@@ -587,8 +587,8 @@ class TestsActions(TestCaseBase):
         hookenv.relation_set(relation_id='database:1',
                              username='un', password='pw')
         config = hookenv.config()
-        config['native_client_port'] = 666
-        config['thrift_client_port'] = 777
+        config['native_transport_port'] = 666
+        config['rpc_port'] = 777
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
@@ -625,8 +625,8 @@ class TestsActions(TestCaseBase):
         pwgen.side_effect = iter(['secret1', 'secret2'])
         hookenv.relation_get.return_value = {}
         config = hookenv.config()
-        config['native_client_port'] = 666
-        config['thrift_client_port'] = 777
+        config['native_transport_port'] = 666
+        config['rpc_port'] = 777
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
@@ -658,8 +658,8 @@ class TestsActions(TestCaseBase):
         hookenv.relation_set(relation_id='database:1',
                              username='un', password='pw')
         config = hookenv.config()
-        config['native_client_port'] = 666
-        config['thrift_client_port'] = 777
+        config['native_transport_port'] = 666
+        config['rpc_port'] = 777
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
@@ -696,8 +696,8 @@ class TestsActions(TestCaseBase):
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         config = hookenv.config()
-        config['native_client_port'] = 666
-        config['thrift_client_port'] = 777
+        config['native_transport_port'] = 666
+        config['rpc_port'] = 777
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
@@ -739,8 +739,8 @@ class TestsActions(TestCaseBase):
         hookenv.local_unit.return_value = 'service/4'
         hookenv.relation_get.reset_mock()
         config = hookenv.config()
-        config['native_client_port'] = 666
-        config['thrift_client_port'] = 777
+        config['native_transport_port'] = 666
+        config['rpc_port'] = 777
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'

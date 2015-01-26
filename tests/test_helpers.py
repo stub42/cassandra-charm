@@ -881,7 +881,7 @@ class TestHelpers(TestCaseBase):
             get_cqlshrc_path.return_value = cqlshrc_file.name
             get_username.return_value = 'foo'
             pwgen.return_value = 'secret'
-            hookenv.config()['native_client_port'] = 666
+            hookenv.config()['native_transport_port'] = 666
 
             # First time generates username & password.
             username, password = helpers.superuser_credentials()
@@ -983,6 +983,10 @@ class TestHelpers(TestCaseBase):
                     - /var/lib/cassandra/data
                 commitlog_directory: /var/lib/cassandra/commitlog
                 saved_caches_directory: /var/lib/cassandra/saved_caches
+                compaction_throughput_mb_per_sec: 16
+                stream_throughput_outbound_megabits_per_sec: 200
+                tombstone_warn_threshold: 1000
+                tombstone_failure_threshold: 100000
                 ''')
             self.maxDiff = None
             self.assertEqual(yaml.safe_load(new_config),

@@ -28,10 +28,10 @@ RESTART_REQUIRED_KEYS = set([
     'data_file_directories',
     'commitlog_directory',
     'saved_caches_directory',
-    'cluster_port',
-    'cluster_ssl_port',
-    'thrift_client_port',
-    'native_client_port',
+    'storage_port',
+    'ssl_storage_port',
+    'rpc_port',
+    'native_transport_port',
     'jmx_port',
     'partitioner',
     'num_tokens',
@@ -39,6 +39,10 @@ RESTART_REQUIRED_KEYS = set([
     'max_heap_size',
     'heap_newsize',
     'authorizer',
+    'compaction_throughput_mb_per_sec',
+    'stream_throughput_outbound_megabits_per_sec',
+    'tombstone_warn_threshold',
+    'tombstone_failure_threshold',
     'edition',  # TODO: Is it possible to switch edition?
     'jvm'])
 
@@ -387,8 +391,8 @@ def publish_database_relations():
         hookenv.relation_set(relid,
                              username=username, password=password,
                              host=hookenv.unit_public_ip(),
-                             port=config['native_client_port'],
-                             thrift_port=config['thrift_client_port'],
+                             port=config['native_transport_port'],
+                             thrift_port=config['rpc_port'],
                              cluster_name=config['cluster_name'],
                              datacenter=config['datacenter'],
                              rack=config['rack'])

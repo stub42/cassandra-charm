@@ -52,6 +52,7 @@ options:
             'oracle'. Choosing 'oracle' constitutes acceptance of the
             Oracle Java Standard Edition license per
             http://www.oracle.com/technetwork/java/javase/terms/license/.
+            
     # Storage configuration
     wait_for_storage_broker:
         type: boolean
@@ -92,14 +93,6 @@ options:
             Set kernel io scheduler for persistent storage.
             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
  
-    # private_dse_url:
-    #     type: string
-    #     default: ""
-    #     description: >
-    #         URL for the private dse tar file. Tar file of all the dse deb packages.
-    #         Used when external apt repositories are not allowed or available.
-    #
-    #
 ##     units-to-update:
 ##         type: string
 ##         default: "all"
@@ -107,7 +100,6 @@ options:
 ##             Comma separated list of unit numbers to update (i.e. modify
 ##             /etc setup and trigger cassandra restart on config-change or
 ##             upgrade-charm), or "all".
-##             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
 
     # nrpe-external-master relation related options
     nagios_context:
@@ -163,38 +155,6 @@ options:
             go with 100M per physical CPU core. Default is automatically
             tuned.
 
-##     new-gen-size:
-##         type: string
-##         default: 100M
-##         description: >
-##             Size of Java new generation memory, for example 100M.  Only used
-##             if auto-memory = false.
-##     extra-jvm-opts:
-##         type: string
-##         default: ""
-##         description: |
-##             string to be appended to JVM_OPTS, e.g.:
-##             -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
-
-
-##     # cassandra-rackdc.properties for GossipingPropertyFileSnitch related
-##     # options
-##     prefer_local:
-##         default: False
-##         type: boolean
-##         description:
-##             Used with endpoint_snitch=GossipingPropertyFileSnitch to
-##             prefer the internal ip when possible, as the
-##             Ec2MultiRegionSnitch does. Used with cassandra >= 1.2.x
-##     dc_suffix:
-##         type: string
-##         default: ""
-##         description:
-##             Add a suffix to a datacenter name. Used by the Ec2Snitch
-##             and Ec2MultiRegionSnitch to append a string to the EC2
-##             region name. Used with cassandra >= 1.2.x
-
-
     # Cassandra.yaml related options
     cluster_name:
         type: string
@@ -240,22 +200,23 @@ options:
             data in different racks whenever possible.
             
     # Networking options.
-    cluster_port:
+    storage_port:
         type: int
         default: 7000
         description: Cluster communication port
-    cluster_ssl_port:
+    ssl_storage_port:
         type: int
         default: 7001
-        description: Cluster secure communication port
-    thrift_client_port:
+        description: >
+            Cluster secure communication port. TODO: Unused. configure SSL.
+    rpc_port:
         type: int
         default: 9160
-        description: Thrift protocol clients' port
-    native_client_port:
+        description: Thrift protocol port for legacy clients.
+    native_transport_port:
         type: int
         default: 9042
-        description: Native protocol clients' port
+        description: Native protocol port for native protocol clients.
     jmx_port:
         type: int
         default: 7199
@@ -273,76 +234,55 @@ options:
             - CassandraAuthorizer stores permissions in
               system_auth.permissions table.
 
-    _post_bootstrap_wait:
+   
+    # Tuning options.
+    compaction_throughput_mb_per_sec:
         type: int
-        default: 120
+        default: 16
         description: >
-            Testing option - do not change. When adding multiple new
-            nodes to a cluster, you are supposed to wait two minutes
-            between nodes. I set this to zero to speed up test runs.
-              
-    ##     compaction-throughput:
-    ##         type: int
-    ##         default: 16
-    ##         description: >
-    ##             Throttles compaction to the given total throughput (in MB/sec)
-    ##             across the entire system. The faster you insert data, the faster
-    ##             you need to compact in order to keep the sstable count down,
-    ##             but in general, setting this to 16 to 32 times the rate you
-    ##             are inserting data is more than sufficient.  Setting this to
-    ##             0 disables throttling. Note that this account for all types
-    ##             of compaction, including validation compaction.
-    ##     stream-throughput:
-    ##         type: int
-    ##         default: 200
-    ##         description: >
-    ##            Throttles all outbound streaming file transfers on nodes to the
-    ##            given total throughput in Mbps. This is necessary because Cassandra
-    ##            does mostly sequential IO when streaming data during bootstrap or 
-    ##            repair, which can lead to saturating the network connection and 
-    ##            degrading rpc performance. When unset, the default is 200 Mbps or 25
-    ##            MB/s. 0 to disable throttling.
-    ##     commit_failure_policy: 
-    ##         type: string
-    ##         default: stop 
-    ##         description: >
-    ##              policy for commit disk failures. stop, stop_commit, ignore
-    ##              stop: shut down gossip and Thrift, leaving the node effectively
-    ##                    dead, but can still be inspected via JMX.
-    ##              stop_commit: shutdown the commit log, letting writes collect but 
-    ##                           continuing to service reads, as in pre-2.0.5
-    ##                           Cassandra
-    ##              ignore: ignore fatal errors and let the batches fail
-    ##     tombstone_warn_threshold:
-    ##         type: int
-    ##         default: 1000
-    ##         description: >
-    ##             When executing a scan, within or across a partition, we
-    ##             need to keep the tombstones seen in memory so we can return
-    ##             them to the coordinator, which will use them to make sure
-    ##             other replicas also know about the deleted rows. With
-    ##             workloads that generate a lot of tombstones, this can cause
-    ##             performance problems and even exaust the server heap. Adjust
-    ##             the thresholds here if you understand the dangers and want
-    ##             to scan more tombstones anyway.
-    ##     tombstone_failure_threshold:
-    ##         type: int
-    ##         default: 100000
-    ##         description: >
-    ##             When executing a scan, within or across a partition, we need
-    ##             to keep the tombstones seen in memory so we can return them
-    ##             to the coordinator, which will use them to make sure other
-    ##             replicas also know about the deleted rows. With workloads
-    ##             that generate a lot of tombstones, this can cause
-    ##             performance problems and even exaust the server heap. Adjust
-    ##             the thresholds here if you understand the dangers and want
-    ##             to scan more tombstones anyway.
-    ##     batch_size_warn_threshold_in_kb:
-    ##         type: int
-    ##         default: 5
-    ##         description:
-    ##             Log WARN on any batch size exceeding this value. 5kb per batch by
-    ##             default.
+            Throttles compaction to the given total throughput (in MB/sec)
+            across the entire system. The faster you insert data, the faster
+            you need to compact in order to keep the sstable count down,
+            but in general, setting this to 16 to 32 times the rate you
+            are inserting data is more than sufficient.  Setting this to
+            0 disables throttling. Note that this account for all types
+            of compaction, including validation compaction.
+    stream_throughput_outbound_megabits_per_sec:
+        type: int
+        default: 200
+        description: >
+            Throttles all outbound streaming file transfers on nodes to the
+            given total throughput in Mbps. This is necessary because Cassandra
+            does mostly sequential IO when streaming data during bootstrap or 
+            repair, which can lead to saturating the network connection and 
+            degrading rpc performance. When unset, the default is 200 Mbps
+            or 25 MB/s. 0 to disable throttling.
+
+    tombstone_warn_threshold:
+        type: int
+        default: 1000
+        description: >
+            When executing a scan, within or across a partition, we
+            need to keep the tombstones seen in memory so we can return
+            them to the coordinator, which will use them to make sure
+            other replicas also know about the deleted rows. With
+            workloads that generate a lot of tombstones, this can cause
+            performance problems and even exaust the server heap. Adjust
+            the thresholds here if you understand the dangers and want
+            to scan more tombstones anyway.
+    tombstone_failure_threshold:
+        type: int
+        default: 100000
+        description: >
+            When executing a scan, within or across a partition, we need
+            to keep the tombstones seen in memory so we can return them
+            to the coordinator, which will use them to make sure other
+            replicas also know about the deleted rows. With workloads
+            that generate a lot of tombstones, this can cause
+            performance problems and even exaust the server heap. Adjust
+            the thresholds here if you understand the dangers and want
+            to scan more tombstones anyway.
+            
     ##     cas_contention_timeout_in_ms:
     ##         type: int
     ##         default: 1000
@@ -355,42 +295,11 @@ options:
     ##          description: >
     ##              Enable or disable kernel page cache preheating from
     ##              contents of the key cache after compaction.
-    ## 
-    ##     force-seed-nodes:
-    ##         type: string
-    ##         default: ""
-    ##         description: >
-    ##             A comma separated list of seed nodes. This is useful if the cluster
-    ##             being created in this juju environment is part of a larger cluser
-    ##             and the seed nodes are remote.
-    ##     token-map-by-unitname:
-    ##         type: string
-    ##         default: ""
-    ##         description: >
-    ##             YAML map as e.g. "{ cassandra/0: 107950406921370402326527496543482482275, cassandra/1: 150485702786487710259449322472453508707 }".
-    ##             Set initial_token according to the unit name using this map. Cannot be used  if token-map-by-volid is also set. If persistent storage
-    ##             is being used then use token-map-by-volid instead.
-    ##             Useful when rebalancing a ring by hand
-    ##     token-map-by-volid:
-    ##         type: string
-    ##         default: ""
-    ##         description: >
-    ##             YAML map as e.g. "{ vol-00000012: 107950406921370402326527496543482482275, vol-00000013: 150485702786487710259449322472453508707 }".
-    ##             Set initial_token according to the name of the attached volume using this map. Can only be used when using persistent storage
-    ##             and cannot be used if token-map-by-unitname is also set. 
-    ##             Useful when rebalancing a ring by hand
-    ##     use-simpleauth:
-    ##         type: boolean
-    ##         default: false
-    ##         description: |
-    ##             If True, it will use passwd-prop64 and access-prop64 configs
-    ##             (base64 encoded) to setup simple authentication by adding to JVM_OPTS:
-    ##             -Dpasswd.properties=/etc/casssandra/passwd.properties \
-    ##             -Daccess.properties=/etc/casssandra/access.properties
-    ##             See http://www.datastax.com/docs/1.0/configuration/authentication
-    ##     extra-jvm-opts:
-    ##         type: string
-    ##         default: ""
-    ##         description: |
-    ##             string to be appended to JVM_OPTS, e.g.:
-    ##             -javaagent:$CASSANDRA_HOME/lib/jamm-0.2.5.jar
+
+    _post_bootstrap_wait:
+        type: int
+        default: 120
+        description: >
+            Testing option - do not change. When adding multiple new
+            nodes to a cluster, you are supposed to wait two minutes
+            between nodes. I set this to zero to speed up test runs.

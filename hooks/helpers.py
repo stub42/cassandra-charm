@@ -652,7 +652,7 @@ def superuser_credentials():
     cqlshrc['authentication']['password'] = password
     cqlshrc.setdefault('connection', {})
     cqlshrc['connection']['hostname'] = hookenv.unit_public_ip()
-    cqlshrc['connection']['port'] = str(config['native_client_port'])
+    cqlshrc['connection']['port'] = str(config['native_transport_port'])
 
     ini = io.StringIO()
     cqlshrc.write(ini)
@@ -687,31 +687,36 @@ def configure_cassandra_yaml(overrides={}):
 
     cassandra_yaml = read_cassandra_yaml()
 
-    cassandra_yaml['cluster_name'] = config['cluster_name']
+    # Most options just copy from config.yaml keys with the same name.
+    # Using the same name is preferred to match the actual Cassandra
+    # documentation.
+    simple_config_keys = ['cluster_name', 'num_tokens',
+                          'partitioner', 'authorizer',
+                          'compaction_throughput_mb_per_sec',
+                          'stream_throughput_outbound_megabits_per_sec',
+                          'tombstone_warn_threshold',
+                          'tombstone_failure_threshold',
+                          'native_transport_port', 'rpc_port',
+                          'storage_port', 'ssl_storage_port']
+    cassandra_yaml.update((k, config[k]) for k in simple_config_keys)
 
     seeds = ','.join(get_seeds())  # Don't include whitespace!
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
-    cassandra_yaml['num_tokens'] = int(config['num_tokens'])
-
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
     cassandra_yaml['rpc_address'] = hookenv.unit_public_ip()
-
-    cassandra_yaml['native_transport_port'] = config['native_client_port']
-    cassandra_yaml['rpc_port'] = config['thrift_client_port']
-
-    cassandra_yaml['storage_port'] = config['cluster_port']
-    cassandra_yaml['ssl_storage_port'] = config['cluster_ssl_port']
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)
 
-    cassandra_yaml['partitioner'] = (config['partitioner']
-                                     or 'Murmur3Partitioner')
-
+    # The charm only supports password authentication. In the future we
+    # may also support AllowAllAuthenticator. I'm not sure if others
+    # such as Kerboros can be supported or are useful.
     cassandra_yaml['authenticator'] = 'PasswordAuthenticator'
-    cassandra_yaml['authorizer'] = config['authorizer']
 
+    # GossipingPropertyFileSnitch is the only snitch recommended for
+    # production. It we allow others, we need to consider how to deal
+    # with the system_auth keyspace replication settings.
     cassandra_yaml['endpoint_snitch'] = 'GossipingPropertyFileSnitch'
 
     cassandra_yaml.update(overrides)

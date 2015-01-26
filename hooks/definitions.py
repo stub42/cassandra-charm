@@ -21,8 +21,8 @@ def get_service_definitions():
     return [
         # Actions done before or while the Cassandra service is running.
         dict(service=helpers.get_cassandra_service(),
-             ports=[config['thrift_client_port'],   # Thrift clients.
-                    config['native_client_port']],  # Native protocol clients.
+             ports=[config['rpc_port'],   # Thrift clients.
+                    config['native_transport_port']],  # Native clients.
              required_data=[relations.StorageRelation(),
                             RequiresCommissionedNode()],
              provided_data=[relations.StorageRelation()],
