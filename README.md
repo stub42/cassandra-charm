@@ -79,7 +79,7 @@ Client charms need to provide nothing. The Cassandra service publishes the follo
 
     IP address to connect to.
 
-`native_protocol_port`:
+`native_transport_port`:
 
     Port for drivers and tools using the newer native protocol.
 

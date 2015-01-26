@@ -391,8 +391,8 @@ def _publish_database_relation(relid, superuser):
     hookenv.relation_set(relid,
                          username=username, password=password,
                          host=hookenv.unit_public_ip(),
-                         port=config['native_transport_port'],
-                         thrift_port=config['rpc_port'],
+                         native_transport_port=config['native_transport_port'],
+                         rpc_port=config['rpc_port'],
                          cluster_name=config['cluster_name'],
                          datacenter=config['datacenter'],
                          rack=config['rack'])
