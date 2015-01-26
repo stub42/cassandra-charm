@@ -265,7 +265,8 @@ def maybe_decommission_node():
     peer relation-broken hooks fail.
     '''
     peer_relname = rollingrestart.get_peer_relation_name()
-    if hookenv.hook_name() == '{}-relation-broken'.format(peer_relname):
+    if (hookenv.hook_name() == '{}-relation-broken'.format(peer_relname)
+            and helpers.num_nodes() > 1):
         helpers.wait_for_normality()
         helpers.decommission_node()
         # Node is dead, so restart will fail.
