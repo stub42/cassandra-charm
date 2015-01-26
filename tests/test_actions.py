@@ -585,7 +585,7 @@ class TestsActions(TestCaseBase):
             call('cluster:1', ping='whenever'),
             call('database:1',
                  username='juju_database_1', password='secret1',
-                 host='10.30.0.1', port=666, thrift_port=777,
+                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
@@ -623,7 +623,7 @@ class TestsActions(TestCaseBase):
             # relation_set still called, despite no credentials being
             # changed, in case the other details have changed.
             call('database:1', username='un', password='pw',
-                 host='10.30.0.1', port=666, thrift_port=777,
+                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
@@ -657,7 +657,7 @@ class TestsActions(TestCaseBase):
             call('cluster:1', ping='whenever'),
             call('database:1',
                  username='juju_database_1', password='secret1',
-                 host='10.30.0.1', port=666, thrift_port=777,
+                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
@@ -695,7 +695,7 @@ class TestsActions(TestCaseBase):
             # relation_set still called, despite no credentials being
             # changed, in case the ports have changed.
             call('database:1', username='un', password='pw',
-                 host='10.30.0.1', port=666, thrift_port=777,
+                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
@@ -733,7 +733,7 @@ class TestsActions(TestCaseBase):
                  # Still publish details, despite no creds, in case we
                  # are not using password authentication.
                  username=None, password=None,
-                 host='10.30.0.4', port=666, thrift_port=777,
+                 host='10.30.0.4', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
@@ -773,7 +773,7 @@ class TestsActions(TestCaseBase):
             # call('cluster:1', ping='whenever'),
             call('database:1',
                  username='un', password='pw',
-                 host='10.30.0.4', port=666, thrift_port=777,
+                 host='10.30.0.4', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
