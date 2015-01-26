@@ -3,18 +3,18 @@ options:
     extra_packages:
         type: string
         default: ""
-        description: |
+        description: >
                 Extra packages to install. A space delimited list of packages.
     package_status:
         default: "install"
         type: string
-        description: |
+        description: >
             The status of service-affecting packages will be set to this
             value in the dpkg database. Useful valid values are "install"
             and "hold".
     install_sources:
         type: string
-        description: |
+        description: >
             charm-helpers standard listing of package install sources.
             If you are using Datastax Enterprise, you will need to
             override one defaults with your own username and password.
@@ -26,7 +26,7 @@ options:
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
     install_keys:
         type: string
-        description: |
+        description: >
             charm-helpers standard listing of package install source
             signing keys, corresponding to install_sources.
         default: |
@@ -36,9 +36,9 @@ options:
     edition:
         type: string
         default: community
-        description: |
-            One of 'community' or 'dse'. 'community' specifies the
-            Cassandra community edition. 'dse' is for DataStax
+        description: >
+            One of 'community' or 'dse'. 'community' uses the
+            Apache Cassandra packages. 'dse' is for DataStax
             Enterprise. Selecting 'dse' overrides the jvm setting
             constitutes acceptance of the Oracle Java Standard
             Edition license per
@@ -47,7 +47,7 @@ options:
     jvm:
         type: string
         default: openjdk
-        description: |
+        description: >
             Which Java runtime environment to use. May be 'openjdk' or
             'oracle'. Choosing 'oracle' constitutes acceptance of the
             Oracle Java Standard Edition license per
@@ -56,7 +56,7 @@ options:
     wait_for_storage_broker:
         type: boolean
         default: False
-        description: |
+        description: >
             Do not start the service before external storage has been
             mounted using the block storage broker relation. If you do
             not set this and you relate the service to the storage
@@ -66,7 +66,7 @@ options:
     data_file_directories:
          type: string
          default: data
-         description: |
+         description: >
             Space delimited data directories. Use multiple data
             directories to split data over multiple physical hardware
             drive partitions. Paths are relative to /var/lib/cassandra
@@ -74,21 +74,21 @@ options:
     commitlog_directory:
          type: string
          default: commitlog
-         description: |
+         description: >
              Commit log directory. The path is relative to
              /var/lib/cassandra or the block storage broker external
              mount point.
     saved_caches_directory:
          type: string
          default: saved_caches
-         description: |
+         description: >
              Saved caches directory. The path is relative to
              /var/lib/cassandra or the block storage broker external
              mount point.
     io_scheduler:
         type: string
         default: "noop"
-        description: |
+        description: >
             Set kernel io scheduler for persistent storage.
             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
  
@@ -108,13 +108,6 @@ options:
 ##             /etc setup and trigger cassandra restart on config-change or
 ##             upgrade-charm), or "all".
 ##             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
-##     allow-single-node:
-##         type: boolean
-##         default: False
-##         description: Allow cassandra to start in a single-node configuration.
-##             When deploying a new service with more than one initial unit (i.e.
-##             juju deploy -n 2), this should be set to false.
-## 
 
     # nrpe-external-master relation related options
     nagios_context:
@@ -130,41 +123,41 @@ options:
     nagios_servicegroups:
       default: ""
       type: string
-      description: |
+      description: >
         A comma-separated list of nagios servicegroups.
         If left empty, the nagios_context will be used as the servicegroup
     nagios_heapchk_warn_pct:
         default: 80
         type: int
-        description: |
+        description: >
             The pct of heap used to trigger a nagios warning
     nagios_heapchk_crit_pct:
         default: 90
         type: int
-        description: |
+        description: >
             The pct of heap used to trigger a nagios critcal alert
     nagios_disk_warn_pct:
         default: 50 
         type: int
-        description: |
+        description: >
             The pct of data disk used to trigger a nagios warning
     nagios_disk_crit_pct:
         default: 25 
         type: int
-        description: |
+        description: >
             The pct of data disk used to trigger a nagios critcal alert
 
     # cassandra-env.sh related options
     max_heap_size:
         type: string
         default: ''
-        description: |
+        description: >
             Total size of Java memory heap, for example 1G or 512M.
             If you set this, you should also set heap_newsize.
     heap_newsize:
         type: string
         default: ''
-        description: |
+        description: >
             The size of the JVM's young generation in the heap. If you
             set this, you should also set max_heap_size. If in doubt,
             go with 100M per physical CPU core. Default is automatically
@@ -215,7 +208,7 @@ options:
     partitioner:
         default: Murmur3Partitioner
         type: string
-        description: |
+        description: >
             The cassandra partitioner to use. Use Murmur3Partitioner,
             unless another is required for backwards compatibility.
     num_tokens:
@@ -225,7 +218,7 @@ options:
     force_seed_nodes:
         type: string
         default: ""
-        description: |
+        description: >
             A comma separated list of seed node ip addresses. This is
             useful if the cluster being created in this juju environment
             is part of a larger cluser and the seed nodes are remote.
@@ -234,17 +227,17 @@ options:
     datacenter:
         type: string
         default: "juju"
-        description: |
+        description: >
             The node's datacenter used by the endpoint_snitch. e.g. "DC1".
             It cannot be changed after service deployment.
     rack: 
         type: string
         default: ""
-        description: |
+        description: >
             The rack used by the endpoint_snitch for all units in this
             service. e.g. "Rack1". This cannot be changed after deployment.
             It defaults to the service name. Cassandra will store replicated
-            data in different racks whenever possible to improve 
+            data in different racks whenever possible.
             
     # Networking options.
     cluster_port:
@@ -283,32 +276,11 @@ options:
     _post_bootstrap_wait:
         type: int
         default: 120
-        description: |
+        description: >
             Testing option - do not change. When adding multiple new
             nodes to a cluster, you are supposed to wait two minutes
             between nodes. I set this to zero to speed up test runs.
               
-##     authenticator:
-##         type: string
-##         default: AllowAllAuthenticator
-##         description: >
-##             Authentication backend, implementing IAuthenticator; used to
-##             identify users Out of the box, Cassandra provides
-##             org.apache.cassandra.auth.{AllowAllAuthenticator,
-##             PasswordAuthenticator}. DSE also provides a Kerberos
-##             authenticator for external authentication.
-##             - AllowAllAuthenticator performs no checks - set it to disable
-##             authentication.
-##             - PasswordAuthenticator relies on username/password pairs to
-##               authenticate users. It keeps usernames and hashed passwords
-##               in system_auth.credentials table. Please increase
-##               system_auth keyspace replication factor if you use this
-##               authenticator.
-##             - com.datastax.bdp.cassandra.auth.KerberosAuthenticator For
-##               external authentication through Kerberos. Additional
-##               configuration is required in dse.yaml
-
-
     ##     compaction-throughput:
     ##         type: int
     ##         default: 16
