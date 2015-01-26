@@ -1,5 +1,9 @@
 = Persistent storage =
 
+/!\ Unfortunately, per Bug #1334956, the storage and block-storage-broker
+    charms are not yet available in the charm store for trusty so
+    this documentation does not work as written.
+
 The cassandra charm takes advantage of the storage subordinate charm
 and the block-storage-broker charm. With these two charms cassandra can
 either request new volumes are created or use existing volumes.

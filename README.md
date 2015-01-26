@@ -35,17 +35,6 @@ nodes or neglecting to set your keyspaces' replication settings means
 your data is at risk and availability lower, as a failed unit may take
 the only copy of data with it.
 
-Mounting external disk is done using the standard `storage` subordinate
-charm.
-
-    juju deploy --config storage.conf cs:storage
-    juju deploy --config storage.conf cs:storage
-    juju add-relation storage block-storage-broker
-    juju add-relation cassandra storage
-
-/!\ Unfortunately, per Bug #1334956, the storage and block-storage-broker
-    charms are not yet available in the charm store for trusty so
-    the above documentation does not work.
 
 
 ## Planning
