@@ -8,8 +8,6 @@ tags: ["databases"]
 provides:
   database:
     interface: cassandra
-  jmx:
-    interface: cassandra
   nrpe-external-master:
     interface: nrpe-external-master
     scope: container
