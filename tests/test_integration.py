@@ -42,6 +42,15 @@ class TestDeploymentBase(unittest.TestCase):
         # No official trusty branch of the storage charm, yet.
         deployment.add('storage', 'lp:~stub/charms/trusty/storage/trunk')
         deployment.configure('storage', dict(provider='local'))
+
+        # A stub client charm.
+        empty_path = os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                                  os.pardir, 'lib',
+                                                  'testcharms', 'empty'))
+        deployment.add('client', empty_path)
+        deployment.relate('cassandra:database', 'client:database')
+        deployment.relate('cassandra:database-admin', 'client:database-admin')
+
         deployment.deploy()
 
     @classmethod
@@ -119,17 +128,56 @@ class TestDeploymentBase(unittest.TestCase):
         self.addCleanup(session.shutdown)
         return session
 
+    def client_session(self, relname):
+        '''A session using the client's credentials.
 
-class Test3UnitDeployment(TestDeploymentBase):
-    """Tests run on both a 3 node cluster and a single node cluster."""
-    rf = 3
+        We currently just steal the client's credentials and use
+        them from the local machine, but we could tunnel through the
+        client with a little more effort.
+        '''
+        relinfo = self.get_client_relinfo(relname)
+        self.assertIn('host', relinfo.keys())
+        ips = [relinfo['host']]
+        port = int(relinfo['native_transport_port'])
+        auth_provider = PlainTextAuthProvider(username=relinfo['username'],
+                                              password=relinfo['password'])
+        cluster = Cluster(ips, auth_provider=auth_provider, port=port)
+        self.addCleanup(cluster.shutdown)
+        session = cluster.connect('test')
+        self.addCleanup(session.shutdown)
+        return session
+
+    def get_client_relinfo(self, relname):
+        # We only need one unit, even if rf > 1
+        s = self.deployment.sentry['cassandra/0']
+        relinfo = s.relation(relname, 'client:{}'.format(relname))
+        return relinfo
+
+
+class Test1UnitDeployment(TestDeploymentBase):
+    """Tests run on both a single node cluster and a 3 node cluster."""
+    rf = 1
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
                   jvm='openjdk',
                   _post_bootstrap_wait=0)
 
-    def test_database_basics(self):
+    def test_basics_unit_superuser(self):
+        # Basic tests using unit superuser credentials
         session = self.session()
+        self._test_database_basics(session)
+
+    def test_basics_client_relation(self):
+        # Basic tests using standard client relation credentials.
+        session = self.client_session('database')
+        self._test_database_basics(session)
+
+    def test_basics_client_admin_relation(self):
+        # Basic tests using administrative client relation credentials.
+        session = self.client_session('database-admin')
+        self._test_database_basics(session)
+
+    def _test_database_basics(self, session):
         session.execute('CREATE TABLE Foo (x varchar PRIMARY KEY)')
 
         # Insert some data, ensuring that it has been stored on
@@ -174,10 +222,11 @@ class Test3UnitDeployment(TestDeploymentBase):
             unit = 'cassandra/{}'.format(unit_num)
             with self.subTest(unit=unit):
                 while True:
-                    s = self.deployment.sentry['cassandra/0']
+                    s = self.deployment.sentry[unit]
                     try:
                         contents = s.directory_contents(
-                            '/srv/cassandra_0/cassandra/data')
+                            '/srv/cassandra_{}/cassandra/data'.format(
+                                unit_num))
                         self.assertSetEqual(set(contents['directories']),
                                             set(['system_traces', 'test',
                                                  'system', 'system_auth']))
@@ -188,9 +237,9 @@ class Test3UnitDeployment(TestDeploymentBase):
                         time.sleep(5)
 
 
-class Test1UnitDeployment(Test3UnitDeployment):
-    """Tests run on a single node cluster."""
-    rf = 1
+class Test3UnitDeployment(Test3UnitDeployment):
+    """Tests run on a three node cluster."""
+    rf = 3
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
                   jvm='openjdk',
