@@ -662,7 +662,7 @@ def superuser_credentials():
 
     ini = io.StringIO()
     cqlshrc.write(ini)
-    host.mkdir(os.path.dirname(cqlshrc_path), perms=0o500)
+    host.mkdir(os.path.dirname(cqlshrc_path), perms=0o700)
     host.write_file(cqlshrc_path, ini.getvalue().encode('UTF-8'), perms=0o400)
 
     return username, password

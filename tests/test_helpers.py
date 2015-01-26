@@ -888,8 +888,9 @@ class TestHelpers(TestCaseBase):
     @patch('charmhelpers.core.host.pwgen')
     def test_superuser_credentials(self, pwgen,
                                    get_cqlshrc_path, get_username):
-        with tempfile.NamedTemporaryFile() as cqlshrc_file:
-            get_cqlshrc_path.return_value = cqlshrc_file.name
+        with tempfile.TemporaryDirectory() as dotcassandra_dir:
+            cqlshrc_path = os.path.join(dotcassandra_dir, 'cqlshrc')
+            get_cqlshrc_path.return_value = cqlshrc_path
             get_username.return_value = 'foo'
             pwgen.return_value = 'secret'
             hookenv.config()['native_transport_port'] = 666
@@ -909,7 +910,7 @@ class TestHelpers(TestCaseBase):
                                       hostname = 10.30.0.1
                                       port = 666
                                       ''').strip()
-            with open(cqlshrc_file.name, 'r') as f:
+            with open(cqlshrc_path, 'r') as f:
                 self.assertEqual(f.read().strip(), expected_cqlshrc)
 
             # If the credentials have been stored, they are not
@@ -919,7 +920,7 @@ class TestHelpers(TestCaseBase):
             username, password = helpers.superuser_credentials()
             self.assertEqual(username, 'foo')
             self.assertEqual(password, 'secret')
-            with open(cqlshrc_file.name, 'r') as f:
+            with open(cqlshrc_path, 'r') as f:
                 self.assertEqual(f.read().strip(), expected_cqlshrc)
 
     @patch('rollingrestart.get_peers')
