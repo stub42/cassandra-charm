@@ -296,7 +296,7 @@ options:
     ##              Enable or disable kernel page cache preheating from
     ##              contents of the key cache after compaction.
 
-    _post_bootstrap_wait:
+    post_bootstrap_delay:
         type: int
         default: 120
         description: >

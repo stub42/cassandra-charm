@@ -28,7 +28,7 @@ class TestDeploymentBase(unittest.TestCase):
 
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
-                  _post_bootstrap_wait=0)
+                  post_bootstrap_delay=0)
 
     @classmethod
     def setUpClass(cls):
@@ -160,7 +160,7 @@ class Test1UnitDeployment(TestDeploymentBase):
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
                   jvm='openjdk',
-                  _post_bootstrap_wait=0)
+                  post_bootstrap_delay=0)
 
     def test_basics_unit_superuser(self):
         # Basic tests using unit superuser credentials
@@ -237,13 +237,13 @@ class Test1UnitDeployment(TestDeploymentBase):
                         time.sleep(5)
 
 
-class Test3UnitDeployment(Test3UnitDeployment):
+class Test3UnitDeployment(Test1UnitDeployment):
     """Tests run on a three node cluster."""
     rf = 3
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
                   jvm='openjdk',
-                  _post_bootstrap_wait=0)
+                  post_bootstrap_delay=0)
 
 
 class TestOracleJVMDeployment(Test3UnitDeployment):
@@ -257,7 +257,7 @@ class TestOracleJVMDeployment(Test3UnitDeployment):
                   heap_newsize='32M',
                   edition='community',
                   jvm='Oracle',
-                  _post_bootstrap_wait=0)
+                  post_bootstrap_delay=0)
 
 
 class TestDSEDeployment(Test3UnitDeployment):
@@ -279,7 +279,7 @@ class TestDSEDeployment(Test3UnitDeployment):
                   install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
                                                  'ppa:webupd8team/java']),
                   install_keys=yaml.safe_dump([None, None]),
-                  _post_bootstrap_wait=0)
+                  post_bootstrap_delay=0)
 
     @classmethod
     @unittest.skipIf('DSE_SOURCE' not in os.environ,

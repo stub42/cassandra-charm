@@ -894,8 +894,9 @@ def post_bootstrap():
     else:
         config['bootstrapped_into_cluster'] = True
         if config.changed('bootstrapped_into_cluster'):
-            hookenv.log('Bootstrapped into the cluster. Waiting 2 minutes.')
-            time.sleep(config['_post_bootstrap_wait'])
+            hookenv.log('Bootstrapped into the cluster. Waiting {}s.'.format(
+                config['post_bootstrap_delay']))
+            time.sleep(config['post_bootstrap_delay'])
 
 
 def is_schema_agreed():

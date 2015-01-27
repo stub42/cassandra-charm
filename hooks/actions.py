@@ -62,7 +62,7 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'nagios_heapchk_crit_pct',
     'nagios_disk_warn_pct',
     'nagios_disk_crit_pct',
-    '_post_bootstrap_wait'])
+    'post_bootstrap_delay'])
 
 
 def action(func):
