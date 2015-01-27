@@ -45,6 +45,8 @@ RESTART_REQUIRED_KEYS = set([
     'edition',  # TODO: Is it possible to switch edition?
     'jvm'])
 
+ALL_CONFIG_KEYS = UNCHANGEABLE_KEYS.union(RESTART_REQUIRED_KEYS)
+
 
 # All other config items. By maintaining both lists, we can detect if
 # someone forgot to update these lists when they added a new config item.

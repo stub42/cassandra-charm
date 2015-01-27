@@ -73,7 +73,8 @@ packages: .stamp-packages
 	# via pip.
 	sudo apt-get install -y \
 	    python3 python3-pip python3-apt python3-dev python-virtualenv \
-	    charm-tools build-essential libev4 libev-dev libffi-dev
+	    charm-tools build-essential libev4 libev-dev libffi-dev \
+	    netcat
 	touch .stamp-packages
 
 venv3: packages .stamp-venv3
@@ -99,9 +100,7 @@ venv3: packages .stamp-venv3
 venv2: packages .stamp-venv2
 .stamp-venv2:
 	virtualenv -p python2.7 --system-site-packages .venv2
-	.venv2/bin/pip install -q bundletester \
- 	    --allow-external lazr.authentication \
-	    --allow-unverified lazr.authentication
+	.venv2/bin/pip install -q bundletester
 	touch .stamp-venv2
  
 bundletest: venv2

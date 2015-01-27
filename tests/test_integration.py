@@ -26,9 +26,11 @@ class TestDeploymentBase(unittest.TestCase):
     rf = 1
     deployment = None
 
-    config = dict(max_heap_size='128M',
-                  heap_newsize='32M',
-                  post_bootstrap_delay=0)
+    common_config = dict(max_heap_size='128M',
+                         heap_newsize='32M',
+                         open_client_ports=True,
+                         post_bootstrap_delay=0)
+    test_config = dict()
 
     @classmethod
     def setUpClass(cls):
@@ -37,7 +39,10 @@ class TestDeploymentBase(unittest.TestCase):
         cls.deployment = deployment
 
         deployment.add('cassandra', units=cls.rf)
-        deployment.configure('cassandra', cls.config)
+        config = dict()
+        config.update(cls.common_config)
+        config.update(cls.test_config)  # Test subclass overrides
+        deployment.configure('cassandra', config)
 
         # No official trusty branch of the storage charm, yet.
         deployment.add('storage', 'lp:~stub/charms/trusty/storage/trunk')
@@ -59,6 +64,8 @@ class TestDeploymentBase(unittest.TestCase):
         cls.deployment = None
 
     def setUp(self):
+        self.reconfigure_cassandra()  # Reset cassandra configuration.
+
         session = self.cluster().connect()
         try:
             session.execute('DROP KEYSPACE test')
@@ -153,14 +160,26 @@ class TestDeploymentBase(unittest.TestCase):
         relinfo = s.relation(relname, 'client:{}'.format(relname))
         return relinfo
 
+    def is_port_open(self, port):
+        status = self.juju_status()
+        detail = list(status['services']['cassandra']['units'].values())[0]
+        address = detail['public-address']
+        rc = subprocess.call(['nc', '-z', address, str(port)])
+        return rc == 0
+
+    def reconfigure_cassandra(self, **overrides):
+        config = dict()
+        config.update(self.common_config)
+        config.update(self.test_config)
+        config.update(overrides)
+        self.deployment.configure('cassandra', config)
+        self.deployment.sentry.wait()
+
 
 class Test1UnitDeployment(TestDeploymentBase):
     """Tests run on both a single node cluster and a 3 node cluster."""
     rf = 1
-    config = dict(max_heap_size='128M',
-                  heap_newsize='32M',
-                  jvm='openjdk',
-                  post_bootstrap_delay=0)
+    test_config = dict(jvm='openjdk')
 
     def test_basics_unit_superuser(self):
         # Basic tests using unit superuser credentials
@@ -236,12 +255,33 @@ class Test1UnitDeployment(TestDeploymentBase):
                             raise
                         time.sleep(5)
 
+    def test_ports_closed(self):
+        # By default, our tests have open_client_ports set to True
+        # making the database accessible. Other tests rely on this.
+        self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
+        self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
+
+        # These tests all fail with the local provider, per Bug #1414890
+        #
+        # # The internal Cassandra ports are always closed, except to
+        # # peers. Opening the JMX or replication ports to the Internet
+        # # would be a very bad idea - even if we added authentication,
+        # # it would still be a DOS target.
+        # self.assertFalse(self.is_port_open(7000), 'Storage port open')
+        # self.assertFalse(self.is_port_open(7001), 'SSL Storage port open')
+        # self.assertFalse(self.is_port_open(7199), 'JMX port open')
+
+        # # self.reconfigure_cassandra(open_client_ports=False)
+        # # self.assertFalse(self.is_port_open(9042), 'Native trans port open')
+        # # self.assertFalse(self.is_port_open(9160), 'Thrift RPC port open')
+
 
 class Test3UnitDeployment(Test1UnitDeployment):
     """Tests run on a three node cluster."""
     rf = 3
     config = dict(max_heap_size='128M',
                   heap_newsize='32M',
+                  open_client_ports=True,
                   jvm='openjdk',
                   post_bootstrap_delay=0)
 
@@ -253,11 +293,7 @@ class TestOracleJVMDeployment(Test3UnitDeployment):
     deliberately uncachable.
     """
     rf = 1
-    config = dict(max_heap_size='128M',
-                  heap_newsize='32M',
-                  edition='community',
-                  jvm='Oracle',
-                  post_bootstrap_delay=0)
+    test_config = dict(jvm='Oracle', edition='community')
 
 
 class TestDSEDeployment(Test3UnitDeployment):
@@ -273,13 +309,11 @@ class TestDSEDeployment(Test3UnitDeployment):
     support in this charm to break on occasions.
     """
     rf = 1
-    config = dict(max_heap_size='128M',
-                  heap_newsize='32M',
-                  edition='DSE',  # Forces Oracle JVM
-                  install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
-                                                 'ppa:webupd8team/java']),
-                  install_keys=yaml.safe_dump([None, None]),
-                  post_bootstrap_delay=0)
+    test_config = dict(
+        edition='DSE',  # Forces Oracle JVM
+        install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
+                                        'ppa:webupd8team/java']),
+        install_keys=yaml.safe_dump([None, None]))
 
     @classmethod
     @unittest.skipIf('DSE_SOURCE' not in os.environ,
