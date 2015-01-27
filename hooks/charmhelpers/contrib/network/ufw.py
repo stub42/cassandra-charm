@@ -211,9 +211,11 @@ def service(name, action):
     :param action: `open` or `close`
     """
     if action == 'open':
-        subprocess.check_output(['ufw', 'allow', str(name)])
+        subprocess.check_output(['ufw', 'allow', str(name)],
+                                universal_newlines=True)
     elif action == 'close':
-        subprocess.check_output(['ufw', 'delete', 'allow', str(name)])
+        subprocess.check_output(['ufw', 'delete', 'allow', str(name)],
+                                universal_newlines=True)
     else:
         raise Exception(("'{}' not supported, use 'allow' "
                          "or 'delete'").format(action))
