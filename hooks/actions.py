@@ -487,23 +487,22 @@ def configure_firewall():
 
     for relinfo in hookenv.relations_of_type('cluster'):
         for port in peer_ports:
-            desired_rules.add(dict(src=relinfo['private-address'], port=port))
+            desired_rules.add((relinfo['private-address'], 'any', port))
 
     for relname in ['database', 'database-admin']:
-        for relinfo in hookenv.relations_of_type('cluster'):
+        for relinfo in hookenv.relations_of_type(relname):
             for port in client_ports:
-                desired_rules.add(dict(src=relinfo['private-address'],
-                                       port=port))
+                desired_rules.add((relinfo['private-address'], 'any', port))
 
     previous_rules = set(config.get('ufw_rules', []))
 
     # Close any rules previously opened that are no longer desired.
-    for rule in previous_rules - desired_rules:
-        ufw.revoke_access(**rule)
+    for rule in sorted(list(previous_rules - desired_rules)):
+        ufw.revoke_access(*rule)
 
     # Open all the desired rules.
-    for rule in desired_rules:
-        ufw.grant_access(**rule)
+    for rule in sorted(list(desired_rules)):
+        ufw.grant_access(*rule)
 
     # Store our rules for next time. Note that this is inherantly racy -
     # this value is only persisted if the hook exits cleanly. If the
