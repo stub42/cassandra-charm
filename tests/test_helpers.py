@@ -1285,6 +1285,17 @@ class TestHelpers(TestCaseBase):
                                      stderr=subprocess.STDOUT)
         stop_cassandra.assert_called_once_with()
 
+    @patch('helpers.stop_cassandra')
+    @patch('subprocess.call')
+    def test_decommission_node_failed(self, call, stop_cassandra):
+        # If decommissioning failed, we log an error.
+        call.return_value = 1
+        helpers.decommission_node()
+        call.assert_called_once_with(['nodetool', 'decommission'],
+                                     stderr=subprocess.STDOUT)
+        stop_cassandra.assert_called_once_with()
+        hookenv.log.assert_called_with(ANY, hookenv.ERROR)
+
     def test_is_bootstrapped(self):
         config = hookenv.config()
         self.assertFalse(helpers.is_bootstrapped())
