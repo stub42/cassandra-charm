@@ -261,19 +261,17 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
         self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
 
-        # These tests all fail with the local provider, per Bug #1414890
-        #
-        # # The internal Cassandra ports are always closed, except to
-        # # peers. Opening the JMX or replication ports to the Internet
-        # # would be a very bad idea - even if we added authentication,
-        # # it would still be a DOS target.
-        # self.assertFalse(self.is_port_open(7000), 'Storage port open')
-        # self.assertFalse(self.is_port_open(7001), 'SSL Storage port open')
-        # self.assertFalse(self.is_port_open(7199), 'JMX port open')
+        # The internal Cassandra ports are always closed, except to
+        # peers. Opening the JMX or replication ports to the Internet
+        # would be a very bad idea - even if we added authentication,
+        # it would still be a DOS target.
+        self.assertFalse(self.is_port_open(7000), 'Storage port open')
+        self.assertFalse(self.is_port_open(7001), 'SSL Storage port open')
+        self.assertFalse(self.is_port_open(7199), 'JMX port open')
 
-        # # self.reconfigure_cassandra(open_client_ports=False)
-        # # self.assertFalse(self.is_port_open(9042), 'Native trans port open')
-        # # self.assertFalse(self.is_port_open(9160), 'Thrift RPC port open')
+        self.reconfigure_cassandra(open_client_ports=False)
+        self.assertFalse(self.is_port_open(9042), 'Native trans port open')
+        self.assertFalse(self.is_port_open(9160), 'Thrift RPC port open')
 
 
 class Test3UnitDeployment(Test1UnitDeployment):

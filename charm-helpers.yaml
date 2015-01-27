@@ -8,3 +8,4 @@ include:
     - contrib.charmsupport
     - contrib.templating.jinja
     - contrib.peerstorage
+    - contrib.network.ufw

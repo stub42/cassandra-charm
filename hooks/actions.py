@@ -10,6 +10,7 @@ from textwrap import dedent
 
 from charmhelpers import fetch
 from charmhelpers.contrib.templating import jinja
+from charmhelpers.contrib.network import ufw
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
 from charmhelpers.core.hookenv import ERROR, WARNING
@@ -442,3 +443,73 @@ def emit_auth_keyspace_status():
 def emit_netstats():
     '''Spam 'nodetool netstats' into the logs.'''
     helpers.emit_netstats()
+
+
+@action
+def configure_firewall():
+    '''Configure firewall rules using ufw.
+
+    This is primarily to block access to the replication and JMX ports,
+    as juju's default port access controls are not strict enough and
+    allow access to the entire environment.
+    '''
+    config = hookenv.config()
+    ufw.enable()
+
+    # Enable SSH from anywhere, relying on Juju and external firewalls
+    # to control access.
+    ufw.service('ssh', 'open')
+
+    # Clients need client access. These protocols are configured to
+    # require authentication.
+    client_keys = ['native_transport_port', 'rpc_port']
+    client_ports = [config[key] for key in client_keys]
+
+    # Peers need replication and JMX access. These protocols do not
+    # require authentication.
+    peer_ports = [config['storage_port'], config['ssl_storage_port'],
+                  config['native_transport_port'], config['rpc_port'],
+                  7199]  # JMX default.
+
+    # Enable client access from anywhere, if explicitly enabled. Juju and
+    # external firewalls can still restrict this further of course.
+    for key in client_keys:
+        if config.changed(key) and config.previous(key) is not None:
+            # First close old ports. We use this order in the unlikely case
+            # someone is trying to swap the native and Thrift ports.
+            ufw.service(config.previous(key), 'close')
+    cmd = 'open' if config['open_client_ports'] else 'close'
+    for port in client_ports:
+        # Then open or close the configured ports.
+        ufw.service(port, cmd)
+
+    desired_rules = set()  # ufw.grant_access/remove_access commands.
+
+    for relinfo in hookenv.relations_of_type('cluster'):
+        for port in peer_ports:
+            desired_rules.add(dict(src=relinfo['private-address'], port=port))
+
+    for relname in ['database', 'database-admin']:
+        for relinfo in hookenv.relations_of_type('cluster'):
+            for port in client_ports:
+                desired_rules.add(dict(src=relinfo['private-address'],
+                                       port=port))
+
+    previous_rules = set(config.get('ufw_rules', []))
+
+    # Close any rules previously opened that are no longer desired.
+    for rule in previous_rules - desired_rules:
+        ufw.revoke_access(**rule)
+
+    # Open all the desired rules.
+    for rule in desired_rules:
+        ufw.grant_access(**rule)
+
+    # Store our rules for next time. Note that this is inherantly racy -
+    # this value is only persisted if the hook exits cleanly. If the
+    # hook fails, then someone changes port configuration or IP
+    # addresses change, then the failed hook retried, we can lose track
+    # of previously granted rules and they will never be revoked. It is
+    # impossible to remove this race entirely, so we stick with this
+    # simple approach.
+    config['ufw_rules'] = list(desired_rules)  # A list because JSON.
