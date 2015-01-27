@@ -763,6 +763,29 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(cluster().connect.call_count, 1)
         self.assertEqual(cluster().shutdown.call_count, 1)
 
+    @patch('time.sleep')
+    @patch('time.time')
+    @patch('cassandra.cluster.Cluster')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.read_cassandra_yaml')
+    def test_connect_timeout(self, yaml, creds, cluster, time, sleep):
+        yaml.return_value = dict(rpc_address='1.2.3.4',
+                                 native_transport_port=666)
+        time.side_effect = [0, 10, 20, 30, 40, 99999]
+
+        creds.return_value = ('un', 'pw')
+
+        x = NoHostAvailable('whoops', {'1.2.3.4': sentinel.exception})
+        cluster().connect.side_effect = x
+
+        self.assertRaises(NoHostAvailable, helpers.connect().__enter__)
+
+        # Authentication failures fail immediately, unlike other
+        # connection errors which are retried.
+        self.assertEqual(cluster().connect.call_count, 5)
+        self.assertEqual(cluster().shutdown.call_count, 5)
+        self.assertEqual(sleep.call_count, 4)
+
     @patch('cassandra.query.SimpleStatement')
     def test_query(self, simple_statement):
         simple_statement.return_value = sentinel.s_statement
