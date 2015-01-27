@@ -4,6 +4,7 @@ import functools
 import unittest
 from unittest.mock import patch
 
+from charmhelpers.core import hookenv
 from charmhelpers.core.services import ServiceManager
 
 import cassandra
@@ -18,7 +19,7 @@ patch = functools.partial(patch, autospec=True)
 
 
 class TestDefinitions(TestCaseBase):
-    def test_get_service_definitions(self, *args):
+    def test_get_service_definitions(self):
         # We can't really test this in unit tests, but at least we can
         # ensure the basic data structure is returned and accepted.
         defs = definitions.get_service_definitions()
@@ -27,7 +28,20 @@ class TestDefinitions(TestCaseBase):
             with self.subTest(d=d):
                 self.assertIsInstance(d, dict)
 
-    def test_get_service_manager(self, *args):
+    def test_get_service_definitions_closed_ports(self):
+        # By default, all ports are closed.
+        defs = definitions.get_service_definitions()
+        self.assertListEqual(defs[0]['ports'], [])
+
+    def test_get_service_definitions_open_ports(self):
+        # Ports are only if explicitly requested in the config.
+        config = hookenv.config()
+        config['open_client_ports'] = True
+        defs = definitions.get_service_definitions()
+        expected_ports = [config['rpc_port'], config['native_transport_port']]
+        self.assertSetEqual(set(defs[0]['ports']), set(expected_ports))
+
+    def test_get_service_manager(self):
         self.assertIsInstance(definitions.get_service_manager(),
                               ServiceManager)
 
