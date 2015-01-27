@@ -842,5 +842,21 @@ class TestsActions(TestCaseBase):
                     b'nodetool repair -pr')
         self.assertIn(expected, contents)
 
+    @patch('helpers.emit_describe_cluster')
+    def test_emit_describe_cluster(self, helpers_emit):
+        actions.emit_describe_cluster('')
+        helpers_emit.assert_called_once_with()
+
+    @patch('helpers.emit_auth_keyspace_status')
+    def test_emit_auth_keyspace_status(self, helpers_emit):
+        actions.emit_auth_keyspace_status('')
+        helpers_emit.assert_called_once_with()
+
+    @patch('helpers.emit_netstats')
+    def test_emit_netstats(self, helpers_emit):
+        actions.emit_netstats('')
+        helpers_emit.assert_called_once_with()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
