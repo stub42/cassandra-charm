@@ -18,11 +18,20 @@ def get_service_definitions():
     # until we have constructed enough of a mock context and perform
     # basic tests.
     config = hookenv.config()
+
+    # Opening ports by default is never a good idea, so the operator
+    # must explicitly choose to open database access to outside of the
+    # juju environment.
+    if config['open_client_ports']:
+        ports = [config['rpc_port'],               # Thrift clients.
+                 config['native_transport_port']]  # Native protocol clients.
+    else:
+        ports = []
+
     return [
         # Actions done before or while the Cassandra service is running.
         dict(service=helpers.get_cassandra_service(),
-             ports=[config['rpc_port'],   # Thrift clients.
-                    config['native_transport_port']],  # Native clients.
+             ports=ports,
              required_data=[relations.StorageRelation(),
                             RequiresCommissionedNode()],
              provided_data=[relations.StorageRelation()],

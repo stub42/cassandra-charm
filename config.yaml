@@ -198,8 +198,25 @@ options:
             service. e.g. "Rack1". This cannot be changed after deployment.
             It defaults to the service name. Cassandra will store replicated
             data in different racks whenever possible.
+
             
     # Networking options.
+    open_client_ports:
+        type: boolean
+        default: False
+        description: >
+            By default (False), client connections are only accepted from
+            related units. When set to True, the native_transport_port
+            and rpc_port ports are opened and client connections accepted
+            from anywhere.
+    native_transport_port:
+        type: int
+        default: 9042
+        description: Native protocol port for native protocol clients.
+    rpc_port:
+        type: int
+        default: 9160
+        description: Thrift protocol port for legacy clients.
     storage_port:
         type: int
         default: 7000
@@ -209,18 +226,6 @@ options:
         default: 7001
         description: >
             Cluster secure communication port. TODO: Unused. configure SSL.
-    rpc_port:
-        type: int
-        default: 9160
-        description: Thrift protocol port for legacy clients.
-    native_transport_port:
-        type: int
-        default: 9042
-        description: Native protocol port for native protocol clients.
-    jmx_port:
-        type: int
-        default: 7199
-        description: JMX management port
 
     authorizer:
         type: string

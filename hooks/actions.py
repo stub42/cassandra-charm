@@ -32,7 +32,6 @@ RESTART_REQUIRED_KEYS = set([
     'ssl_storage_port',
     'rpc_port',
     'native_transport_port',
-    'jmx_port',
     'partitioner',
     'num_tokens',
     'force_seed_nodes',
@@ -54,6 +53,7 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'package_status',
     'install_sources',
     'install_keys',
+    'open_client_ports',
     'wait_for_storage_broker',
     'io_scheduler',
     'nagios_context',
@@ -210,7 +210,9 @@ def configure_cassandra_env():
     overrides = [
         ('max_heap_size', re.compile(r'^#?(MAX_HEAP_SIZE)=(.*)$', re.M)),
         ('heap_newsize', re.compile(r'^#?(HEAP_NEWSIZE)=(.*)$', re.M)),
-        ('jmx_port', re.compile(r'^#?(JMX_PORT)=(.*)$', re.M)),
+        # We don't allow this to be overridden to ensure that tools
+        # will find JMX using the default port.
+        # ('jmx_port', re.compile(r'^#?(JMX_PORT)=(.*)$', re.M)),
     ]
 
     with open(cassandra_env_path, 'r') as f:

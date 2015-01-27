@@ -297,8 +297,7 @@ class TestsActions(TestCaseBase):
 
             overrides = dict(
                 max_heap_size=re.compile('^MAX_HEAP_SIZE=(.*)$', re.M),
-                heap_newsize=re.compile('^HEAP_NEWSIZE=(.*)$', re.M),
-                jmx_port=re.compile('^JMX_PORT=(.*)$', re.M))
+                heap_newsize=re.compile('^HEAP_NEWSIZE=(.*)$', re.M))
 
             for key in overrides:
                 hookenv.config()[key] = ''
