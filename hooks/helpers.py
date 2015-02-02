@@ -26,6 +26,9 @@ from charmhelpers import fetch
 
 import relations
 import rollingrestart
+from policies import (OptimisticConvictionPolicy,
+                      ReconnectUntilReconnectionPolicy,
+                      RetryUntilRetryPolicy)
 
 
 RESTART_TIMEOUT = 300
@@ -507,47 +510,6 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
         cluster.shutdown()
 
 
-class OptimisticConvictionPolicy(cassandra.policies.ConvictionPolicy):
-    def add_failure(self, connection_exc):
-        return False
-
-    def reset(self):
-        return
-
-
-class ReconnectUntilReconnectionPolicy(cassandra.policies.ReconnectionPolicy):
-    def __init__(self, until):
-        self.until = until
-
-    def new_schedule(self):
-        return self
-
-    def __next__(self):
-        if time.time() > self.until:
-            raise StopIteration
-        return 2
-
-
-class RetryUntilRetryPolicy(cassandra.policies.RetryPolicy):
-    def __init__(self, until):
-        self.until = until
-
-    def on_read_timeout(self, query, consistency, *args, **kw):
-        if time.time() > self.until:
-            return (cassandra.policies.RetryPolicy.RETHROW, None)
-        return (cassandra.policies.RetryPolicy.RETRY, consistency)
-
-    def on_write_timeout(self, query, consistency, *args, **kw):
-        if time.time() > self.until:
-            return (cassandra.policies.RetryPolicy.RETHROW, None)
-        return (cassandra.policies.RetryPolicy.RETRY, consistency)
-
-    def on_unavailable(self, query, consistency, *args, **kw):
-        if time.time() > self.until:
-            return (cassandra.policies.RetryPolicy.RETHROW, None)
-        return (cassandra.policies.RetryPolicy.RETRY, consistency)
-
-
 def query(session, statement, consistency_level, args=None):
     q = cassandra.query.SimpleStatement(statement,
                                         consistency_level=consistency_level)
@@ -563,11 +525,20 @@ def ensure_user(username, password, superuser=False):
         hookenv.log('Creating user {}'.format(username))
         sup = 'NOSUPERUSER'
     with connect() as session:
-        query(session,
-              'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s {}'.format(sup),
-              ConsistencyLevel.ALL, (username, password,))
-        query(session, 'ALTER USER %s WITH PASSWORD %s {}'.format(sup),
-              ConsistencyLevel.ALL, (username, password,))
+        # We do this in a loop, as there is a race condition between the
+        # CREATE USER IF EXISTS and the ALTER USER. It should be nearly
+        # impossible to hit it, but hit it I have.
+        while True:
+            try:
+                query(session,
+                      'CREATE USER IF NOT EXISTS %s '
+                      'WITH PASSWORD %s {}'.format(sup),
+                      ConsistencyLevel.ALL, (username, password,))
+                query(session, 'ALTER USER %s WITH PASSWORD %s {}'.format(sup),
+                      ConsistencyLevel.ALL, (username, password,))
+                break
+            except cassandra.InvalidRequest:
+                pass
 
 
 @logged
@@ -598,8 +569,10 @@ def create_unit_superuser():
     hookenv.log('Creating unit superuser {}'.format(username))
 
     # Restart cassandra without authentication & listening on localhost.
+    wait_for_normality()
     reconfigure_and_restart_cassandra(
         dict(authenticator='AllowAllAuthenticator', rpc_address='127.0.0.1'))
+    wait_for_normality()
 
     with connect() as session:
         pwhash = bcrypt.hashpw(password, bcrypt.gensalt())  # Cassandra 2.1
@@ -615,7 +588,12 @@ def create_unit_superuser():
         query(session, statement, ConsistencyLevel.ALL, (username, pwhash))
 
     # Restart Cassandra with regular config.
+    wait_for_normality()
     reconfigure_and_restart_cassandra()
+    wait_for_normality()
+
+    # Ensure auth details replicated to where they need to be.
+    repair_auth_keyspace()
 
 
 def get_cqlshrc_path():
@@ -900,10 +878,11 @@ def post_bootstrap():
 
 
 def is_schema_agreed():
-    raw = subprocess.check_output(['nodetool', 'describecluster'])
+    raw = subprocess.check_output(['nodetool', 'describecluster'],
+                                  universal_newlines=True)
     # The output of nodetool describe cluster is almost yaml,
     # so we use that tool once we fix the tabs.
-    description = yaml.load(raw.replace(b'\t', b' '))
+    description = yaml.load(raw.replace('\t', ' '))
     versions = description['Cluster Information']['Schema versions'] or {}
 
     required_ips = set(get_seeds() + [hookenv.unit_private_ip()])
@@ -947,7 +926,7 @@ def is_all_normal():
     '''
     is_all_normal = True
     raw = subprocess.check_output(['nodetool', 'status',
-                                   'system_auth']).decode('UTF-8')
+                                   'system_auth'], universal_newlines=True)
     peer_ips = get_peer_ips()
     node_status_re = re.compile('^([UD])([NLJM])\s+([\d\.]+)\s')
     for line in raw.splitlines():

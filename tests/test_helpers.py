@@ -855,6 +855,8 @@ class TestHelpers(TestCaseBase):
         connect.assert_called_once_with()  # Superuser requested.
         self.assertFalse(create_unit_superuser.called)  # No need to create.
 
+    @patch('helpers.wait_for_normality')
+    @patch('helpers.repair_auth_keyspace')
     @patch('helpers.query')
     @patch('bcrypt.gensalt')
     @patch('bcrypt.hashpw')
@@ -862,7 +864,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.connect')
     @patch('helpers.superuser_credentials')
     def test_create_unit_superuser(self, creds, connect, restart,
-                                   bhash, bsalt, query):
+                                   bhash, bsalt, query, repair, normwait):
         creds.return_value = ('super', 'secret')
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
@@ -879,6 +881,17 @@ class TestHelpers(TestCaseBase):
             call(dict(authenticator='AllowAllAuthenticator',
                       rpc_address='127.0.0.1')),
             call()])
+
+        # The system_auth keyspace was repaired. This may not be
+        # required, but I'm trying to track down an intermitted
+        # authentication failure where the superuser is created but
+        # cannot be connected to after the node is restarted with the
+        # correct authenticator.
+        repair.assert_called_once_with()
+
+        # We also waited several times, guarding the necessary node
+        # restarts.
+        self.assertTrue(normwait.called)
 
         # A connection was made as the superuser.
         connect.assert_called_once_with()
@@ -1336,9 +1349,10 @@ class TestHelpers(TestCaseBase):
             \tPartitioner: org.apache.cassandra.dht.Murmur3Partitioner
             \tSchema versions:
             \t\t15056434--0e7a98bbb067: [10.0.0.2, 10.20.0.1, 10.0.0.3]
-            ''').encode('UTF-8')
+            ''')
         self.assertTrue(helpers.is_schema_agreed())
-        check_output.assert_called_once_with(['nodetool', 'describecluster'])
+        check_output.assert_called_once_with(['nodetool', 'describecluster'],
+                                             universal_newlines=True)
 
         check_output.return_value = dedent('''\
             Cluster Information:
@@ -1348,7 +1362,7 @@ class TestHelpers(TestCaseBase):
             \tSchema versions:
             \t\t15056434--0e7a98bbb067: [10.0.0.3, 10.20.0.1]
             \t\t98735432--234567890111: [10.0.0.2]
-            ''').encode('UTF-8')
+            ''')
         self.assertFalse(helpers.is_schema_agreed())
 
     @patch('time.sleep')
@@ -1372,25 +1386,36 @@ class TestHelpers(TestCaseBase):
             UN  10.0.3.179  131.72 KB  256     66.7%       bc1d-29   r1
             UN  10.0.3.197  123.94 KB  256     69.3%       65b2-d8   r1
             UN  10.0.3.236  109.75 KB  256     64.1%       e549-cf   r1
-            ''').encode('UTF-8')
+            ''')
         self.assertTrue(helpers.is_all_normal())
         check_output.assert_called_once_with(['nodetool', 'status',
-                                              'system_auth'])
+                                              'system_auth'],
+                                             universal_newlines=True)
 
-        check_output.return_value = b'UN  10.0.3.197 ...'
+        check_output.return_value = 'UN  10.0.3.197 ...'
         self.assertTrue(helpers.is_all_normal())
 
-        check_output.return_value = b'DN  10.0.3.197 ...'
+        check_output.return_value = 'DN  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
-        check_output.return_value = b'UJ  10.0.3.197 ...'
+        check_output.return_value = 'UJ  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
-        check_output.return_value = b'UM  10.0.3.197 ...'
+        check_output.return_value = 'UM  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
-        check_output.return_value = b'UL  10.0.3.197 ...'
+        check_output.return_value = 'UL  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
+
+    @patch('time.sleep')
+    @patch('helpers.is_all_normal')
+    def test_wait_for_normality(self, is_all_normal, sleep):
+        is_all_normal.side_effect = iter([False, False, True, RuntimeError()])
+        helpers.wait_for_normality()
+        self.assertEqual(sleep.call_count, 2)
+        sleep.assert_has_calls([call(2), call(4)])
+        is_all_normal.side_effect = iter([False, RuntimeError()])
+        self.assertRaises(RuntimeError, helpers.wait_for_normality)
 
     @patch('subprocess.call')
     def test_emit_describe_cluster(self, call):

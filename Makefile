@@ -27,6 +27,7 @@ unittest: lint
 	    tests.test_helpers        --cover-package=helpers \
 	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    tests.test_definitions    --cover-package=definitions \
+	    --cover-package=policies \
 	    --with-coverage --cover-branches
 
 test: unittest
@@ -58,6 +59,7 @@ coverage: lint
 	    tests.test_helpers        --cover-package=helpers \
 	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    tests.test_definitions    --cover-package=definitions \
+	    --cover-package=policies \
 	    --with-coverage --cover-branches \
 	    --cover-html --cover-html-dir=coverage \
 	    --cover-min-percentage=100 || \

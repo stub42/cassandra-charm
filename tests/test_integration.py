@@ -5,6 +5,7 @@ import os
 import subprocess
 import time
 import unittest
+import uuid
 import warnings
 
 warnings.filterwarnings('ignore', 'The blist library is not available')
@@ -283,6 +284,41 @@ class Test3UnitDeployment(Test1UnitDeployment):
                   open_client_ports=True,
                   jvm='openjdk',
                   post_bootstrap_delay=0)
+
+    def test_add_and_drop_node(self):
+        # We need to be able to add a node correctly into the ring,
+        # without an operator needing to repair keyspaces to ensure data
+        # is located on the expected nodes.
+        # To test this, first create a keyspace with rf==1 and enough
+        # data too it so each node should have some.
+        s = self.session()
+        s.execute('''
+                  CREATE KEYSPACE addndrop WITH REPLICATION = {
+                  'class': 'SimpleStrategy', 'replication_factor': 1}
+                  ''')
+        s.set_keyspace('addndrop')
+        s.execute('CREATE TABLE dat (x varchar PRIMARY KEY)')
+
+        def count():
+            return s.execute('SELECT COUNT(*) FROM dat')[0][0]
+
+        total = 300
+        for _ in range(0, total):
+            s.execute('INSERT INTO dat (x) VALUES (%s)', (str(uuid.uuid1()),))
+
+        self.assertEqual(count(), total)
+
+        self.deployment.add_unit()
+        self.deployment.wait()
+        self.assertEqual(count(), total)
+
+        # When a node is dropped, it needs to decommission itself and
+        # move its data to the remaining nodes so no data is lost.
+        status = self.juju_status()
+        unit = list(status['services']['cassandra']['units'].keys())[0]
+        self.deployment.remove_unit(unit)
+        self.deployment.wait()
+        self.assertEqual(count(), total)
 
 
 class TestOracleJVMDeployment(Test3UnitDeployment):
