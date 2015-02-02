@@ -1,4 +1,20 @@
 #!.venv3/bin/python3
+#
+# Copyright 2015 Canonical Ltd.
+#
+# This file is part of the Cassandra Charm for Juju.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 3, as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranties of
+# MERCHANTABILITY, SATISFACTORY QUALITY, or FITNESS FOR A PARTICULAR
+# PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import configparser
 import logging
@@ -315,7 +331,7 @@ class Test3UnitDeployment(Test1UnitDeployment):
 
         self.assertEqual(count(), total)
 
-        self.deployment.add_unit('cassandra', units='1')  # Bug #1417097
+        self.deployment.add_unit('cassandra')
         self.deployment.wait()
         self.assertEqual(count(), total)
 
@@ -362,6 +378,20 @@ class TestDSEDeployment(Test3UnitDeployment):
                      'DSE_SOURCE environment variable not configured')
     def setUpClass(cls):
         super(TestDSEDeployment, cls).setUpClass()
+
+
+# Bug #1417097 means we need to monkey patch Amulet for now.
+from functools import wraps
+import amulet.helpers
+real_juju = amulet.helpers.juju
+
+
+@wraps(real_juju)
+def patched_juju(args, env=None):
+    args = [str(a) for a in args]
+    return real_juju(args, env)
+
+amulet.helpers.juju = patched_juju
 
 
 if __name__ == '__main__':
