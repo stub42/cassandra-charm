@@ -878,6 +878,10 @@ def post_bootstrap():
 
 
 def is_schema_agreed():
+    '''Return True if all the nodes that are up agree on a schema.'''
+    up_ips = set(up_node_ips())
+    # Always include ourself since we may be joining just now.
+    up_ips.add(hookenv.unit_private_ip())
     raw = subprocess.check_output(['nodetool', 'describecluster'],
                                   universal_newlines=True)
     # The output of nodetool describe cluster is almost yaml,
@@ -885,16 +889,33 @@ def is_schema_agreed():
     description = yaml.load(raw.replace('\t', ' '))
     versions = description['Cluster Information']['Schema versions'] or {}
 
-    required_ips = set(get_seeds() + [hookenv.unit_private_ip()])
-
     for schema, schema_ips in versions.items():
         schema_ips = set(schema_ips)
-        if required_ips.issubset(schema_ips):
-            hookenv.log('{!r} agree on schema'.format(required_ips), DEBUG)
+        if up_ips.issubset(schema_ips):
+            hookenv.log('{!r} agree on schema'.format(up_ips), DEBUG)
             return True
-    hookenv.log('{!r} do not agree on schema'.format(required_ips),
-                DEBUG)
+    hookenv.log('{!r} do not agree on schema'.format(up_ips), DEBUG)
     return False
+
+
+def up_node_ips():
+    '''IP addresses of nodes that are up.'''
+    raw = subprocess.check_output(['nodetool', 'status'],
+                                  universal_newlines=True)
+    for line in raw.splitlines():
+        if line.startswith('U'):  # Up
+            ip = line.split()[1]
+            yield ip
+
+
+# def down_node_ips():
+#     '''IP addresses of nodes that are down.'''
+#     raw = subprocess.check_output(['nodetool', 'status'],
+#                                   universal_newlines=True)
+#     for line in raw.splitlines():
+#         if line.startswith('DN'):  # Down/Normal
+#             ip = line.split()[1]
+#             yield ip
 
 
 @logged
@@ -927,20 +948,19 @@ def is_all_normal():
     is_all_normal = True
     raw = subprocess.check_output(['nodetool', 'status',
                                    'system_auth'], universal_newlines=True)
-    peer_ips = get_peer_ips()
     node_status_re = re.compile('^([UD])([NLJM])\s+([\d\.]+)\s')
     for line in raw.splitlines():
         match = node_status_re.search(line)
         if match is not None:
             updown, mode, address = match.groups()
+            # updown is purely informative. It would be nice if we could
+            # block until down nodes come back up, but unfortunately
+            # there are Juju race conditions where a unit can depart
+            # completely, yet this unit thinks it is still a peer.
             if updown == 'D':
-                if address in peer_ips:
-                    hookenv.log('Node {} is down'.format(address))
-                    is_all_normal = False
-                else:
-                    hookenv.log('Node {} is down '
-                                '(ignoring - not a peer)'.format(address))
-            elif mode == 'L':
+                hookenv.log('Node {} is down'.format(address))
+
+            if mode == 'L':
                 hookenv.log('Node {} is leaving the cluster'.format(address))
                 is_all_normal = False
             elif mode == 'J':

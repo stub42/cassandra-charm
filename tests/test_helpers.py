@@ -1337,11 +1337,11 @@ class TestHelpers(TestCaseBase):
         helpers.post_bootstrap()
         self.assertFalse(helpers.is_bootstrapped())
 
-    @patch('helpers.get_seeds')
+    @patch('helpers.up_node_ips')
     @patch('subprocess.check_output')
-    def test_is_schema_agreed(self, check_output, get_seeds):
+    def test_is_schema_agreed(self, check_output, up_node_ips):
+        up_node_ips.return_value = ['10.0.0.2', '10.0.0.3']
         self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
-        get_seeds.return_value = ['10.0.0.2', '10.0.0.3']
         check_output.return_value = dedent('''\
             Cluster Information:
             \tName: juju
@@ -1400,11 +1400,17 @@ class TestHelpers(TestCaseBase):
 
         check_output.return_value = 'UJ  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
+        check_output.return_value = 'DJ  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
 
         check_output.return_value = 'UM  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
+        check_output.return_value = 'DM  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
 
         check_output.return_value = 'UL  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
+        check_output.return_value = 'DL  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
     @patch('time.sleep')

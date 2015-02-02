@@ -386,7 +386,15 @@ def _publish_database_relation(relid, superuser):
 
     config = hookenv.config()
 
-    relinfo = hookenv.relation_get(unit=first_node, rid=relid)
+    try:
+        relinfo = hookenv.relation_get(unit=first_node, rid=relid)
+    except subprocess.CalledProcessError:
+        if first_node == hookenv.local_unit():
+            raise
+        # relation-get may fail if the specified unit has not yet joined
+        # the peer relation, or has just departed. Try again later.
+        return
+
     username = relinfo.get('username')
     password = relinfo.get('password')
     if hookenv.local_unit() == first_node:

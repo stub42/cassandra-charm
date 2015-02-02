@@ -1,6 +1,7 @@
 #!.venv3/bin/python3
 
 import configparser
+import logging
 import os
 import subprocess
 import time
@@ -58,6 +59,11 @@ class TestDeploymentBase(unittest.TestCase):
         deployment.relate('cassandra:database-admin', 'client:database-admin')
 
         deployment.deploy()
+
+        # Silence noise - we are testing the charm, not the Cassandra
+        # driver.
+        cassandra_log = logging.getLogger('cassandra')
+        cassandra_log.setLevel(logging.CRITICAL)
 
     @classmethod
     def tearDownClass(cls):
@@ -247,9 +253,10 @@ class Test1UnitDeployment(TestDeploymentBase):
                         contents = s.directory_contents(
                             '/srv/cassandra_{}/cassandra/data'.format(
                                 unit_num))
-                        self.assertSetEqual(set(contents['directories']),
-                                            set(['system_traces', 'test',
-                                                 'system', 'system_auth']))
+                        expected = set(['system_traces', 'test',
+                                        'system', 'system_auth'])
+                        found = set(contents['directories'])
+                        self.assertTrue(expected <= found)
                         break
                     except Exception:
                         if time.time() > timeout:
@@ -308,7 +315,7 @@ class Test3UnitDeployment(Test1UnitDeployment):
 
         self.assertEqual(count(), total)
 
-        self.deployment.add_unit()
+        self.deployment.add_unit('cassandra', units='1')  # Bug #1417097
         self.deployment.wait()
         self.assertEqual(count(), total)
 
@@ -321,7 +328,7 @@ class Test3UnitDeployment(Test1UnitDeployment):
         self.assertEqual(count(), total)
 
 
-class TestOracleJVMDeployment(Test3UnitDeployment):
+class TestOracleJVMDeployment(Test1UnitDeployment):
     """Basic test with the Oracle JVM.
 
     This test is slow, as downloads of the Oracle JVM have been made
