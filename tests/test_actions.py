@@ -224,6 +224,11 @@ class TestsActions(TestCaseBase):
             ['install', '-CD', tarball_paths[0], tarball_paths[1],
              '/var/cache/oracle-jdk7-installer'])
 
+    @patch('subprocess.check_call')
+    def test_cache_oracle_jdk_noop(self, check_call):
+        actions.cache_oracle_jdk('')
+        self.assertFalse(check_call.called)
+
     @patch('charmhelpers.core.host.write_file')
     @patch('subprocess.check_call')
     def test_reset_sysctl(self, check_call, write_file):
