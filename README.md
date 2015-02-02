@@ -36,7 +36,6 @@ your data is at risk and availability lower, as a failed unit may take
 the only copy of data with it.
 
 
-
 ## Planning
 
 - Do not attempt to store too much data per node. If you need more space,
@@ -48,6 +47,33 @@ the only copy of data with it.
   will need a 1TB partition.
 
 - Much more information can be found in the [Cassandra 2.1 documentation](http://www.datastax.com/documentation/cassandra/2.1/cassandra/planning/architecturePlanningAbout_c.html)
+
+
+## Network Access
+
+The default Cassandra packages are installed from the apache.org
+archive. To avoid this download, place a copy of the packages in a local
+archive and specify its location in the `install_sources` configuration
+option. The signing key is automatically added.
+
+When using the Oracle JDK, by default each unit downloads it from
+[oracle.com](http://www.oracle.com/technetwork/java/javase/downloads/jdk7-downloads-1880260.html).
+To avoid the unit making this download, either:
+- Place a copy of the latest Oracle 7 JDK tarball on the machine or image
+  in the `/var/cache/oracle-jdk7-installer` directory (you will need to
+  create this directory).
+- Make a local copy of this charm, and place a copy of the latest Oracle
+  7 JDK tarball in the `./lib` directory.
+
+When using DataStax Enterprise, you need to specify the archive location
+containing the DataStax Enterprise .deb packages in the
+`install_sources` configuration item, and the signing key in the
+`install_keys` configuration item. Place the DataStax packages in a
+local archive to avoid downloading from datastax.com.
+
+TODO: Provide a way to specify a pip proxy
+The Cassandra Python driver and some dependencies are installed using
+`pip(1)`. This cannot be avoided yet.
 
 
 # Usage
