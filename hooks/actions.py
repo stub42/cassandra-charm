@@ -167,6 +167,17 @@ def add_implicit_package_signing_keys():
 
 
 @action
+def cache_oracle_jdk():
+    src_files = glob.glob(os.path.join(hookenv.charm_dir(),
+                                       'lib', 'jdk-7u*.tar.gz'))
+    if src_files:
+        dest_dir = '/var/cache/oracle-jdk7-installer'
+        hookenv.log('Mirroring Oracle Java tarballs {} to {}'.format(
+            ','.join(src_files), dest_dir))
+        subprocess.check_call(['install', '-CD'] + src_files + [dest_dir])
+
+
+@action
 def reset_sysctl():
     '''Configure sysctl settings for Cassandra'''
     if helpers.is_lxc():
@@ -494,7 +505,7 @@ def configure_firewall():
             for port in client_ports:
                 desired_rules.add((relinfo['private-address'], 'any', port))
 
-    previous_rules = set(config.get('ufw_rules', []))
+    previous_rules = set(tuple(rule) for rule in config.get('ufw_rules', []))
 
     # Close any rules previously opened that are no longer desired.
     for rule in sorted(list(previous_rules - desired_rules)):

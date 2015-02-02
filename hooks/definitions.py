@@ -38,6 +38,7 @@ def get_service_definitions():
              data_ready=[actions.preinstall,
                          actions.revert_unchangeable_config,
                          actions.configure_firewall,
+                         actions.cache_oracle_jdk,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
                          actions.publish_cluster_relation,

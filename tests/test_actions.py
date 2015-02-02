@@ -209,6 +209,21 @@ class TestsActions(TestCaseBase):
                 check_call.assert_any_call(['apt-key', 'add', path],
                                            stdin=subprocess.DEVNULL)
 
+    @patch('subprocess.check_call')
+    def test_cache_oracle_jdk(self, check_call):
+        tarball_paths = [os.path.join(hookenv.charm_dir(),
+                                      'lib', 'jdk-7u1.tar.gz'),
+                         os.path.join(hookenv.charm_dir(),
+                                      'lib', 'jdk-7u2.tar.gz')]
+        os.mkdir(os.path.join(hookenv.charm_dir(), 'lib'))
+        for path in tarball_paths:
+            with open(path, 'w') as f:
+                f.write('fake')
+        actions.cache_oracle_jdk('')
+        check_call.assert_called_once_with(
+            ['install', '-CD', tarball_paths[0], tarball_paths[1],
+             '/var/cache/oracle-jdk7-installer'])
+
     @patch('charmhelpers.core.host.write_file')
     @patch('subprocess.check_call')
     def test_reset_sysctl(self, check_call, write_file):
