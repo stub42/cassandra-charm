@@ -168,6 +168,15 @@ def add_implicit_package_signing_keys():
 
 @action
 def cache_oracle_jdk():
+    '''Put Oracle JDK tarballs included in this charm into the right location.
+
+    Operators use this feature to avoid the Oracle JDK tarball download
+    by branching this charm and placing a copy of the tarball in the
+    lib directory. Deploying from the local charm, the tarball gets
+    pushed to the remove unit along with the rest of the charm and
+    this action copies it to the location that the webupd8 packages
+    expect to find it.
+    '''
     src_files = glob.glob(os.path.join(hookenv.charm_dir(),
                                        'lib', 'jdk-7u*.tar.gz'))
     if src_files:
