@@ -1392,6 +1392,21 @@ class TestHelpers(TestCaseBase):
         check_output.return_value = b'UL  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
+    @patch('subprocess.call')
+    def test_emit_describe_cluster(self, call):
+        helpers.emit_describe_cluster()
+        call.assert_called_once_with(['nodetool', 'describecluster'])
+
+    @patch('subprocess.call')
+    def test_emit_auth_keyspace_status(self, call):
+        helpers.emit_auth_keyspace_status()
+        call.assert_called_once_with(['nodetool', 'status', 'system_auth'])
+
+    @patch('subprocess.call')
+    def test_emit_netstats(self, call):
+        helpers.emit_netstats()
+        call.assert_called_once_with(['nodetool', 'netstats'])
+
     def test_week_spread(self):
         # The first seven units run midnight on different days.
         for i in range(0, 7):  # There is no unit 0
