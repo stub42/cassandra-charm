@@ -164,7 +164,7 @@ class TestDeploymentBase(unittest.TestCase):
         status = self.juju_status()
         detail = list(status['services']['cassandra']['units'].values())[0]
         address = detail['public-address']
-        rc = subprocess.call(['nc', '-z', address, str(port)])
+        rc = subprocess.call(['nc', '-z', '-w', '2', address, str(port)])
         return rc == 0
 
     def reconfigure_cassandra(self, **overrides):
@@ -256,11 +256,6 @@ class Test1UnitDeployment(TestDeploymentBase):
                         time.sleep(5)
 
     def test_ports_closed(self):
-        # By default, our tests have open_client_ports set to True
-        # making the database accessible. Other tests rely on this.
-        self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
-        self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
-
         # The internal Cassandra ports are always closed, except to
         # peers. Opening the JMX or replication ports to the Internet
         # would be a very bad idea - even if we added authentication,
@@ -272,6 +267,12 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.reconfigure_cassandra(open_client_ports=False)
         self.assertFalse(self.is_port_open(9042), 'Native trans port open')
         self.assertFalse(self.is_port_open(9160), 'Thrift RPC port open')
+
+    def test_ports_open(self):
+        # By default, our tests have open_client_ports set to True
+        # making the database accessible. Other tests rely on this.
+        self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
+        self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
 
 
 class Test3UnitDeployment(Test1UnitDeployment):
