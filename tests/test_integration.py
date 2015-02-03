@@ -327,15 +327,18 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertEqual(count(), total)
 
         self.deployment.add_unit('cassandra')
-        self.wait()
-        self.assertEqual(count(), total)
+        try:
+            self.wait()
+            self.assertEqual(count(), total)
 
-        # When a node is dropped, it needs to decommission itself and
-        # move its data to the remaining nodes so no data is lost.
-        status = self.juju_status()
-        unit = list(status['services']['cassandra']['units'].keys())[-1]
-        self.deployment.remove_unit(unit)
-        self.wait()
+            # When a node is dropped, it needs to decommission itself and
+            # move its data to the remaining nodes so no data is lost.
+            status = self.juju_status()
+            unit = list(status['services']['cassandra']['units'].keys())[-1]
+        finally:
+            self.deployment.remove_unit(unit)
+            self.wait()
+
         self.assertEqual(count(), total)
 
 

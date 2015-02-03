@@ -956,16 +956,6 @@ def up_node_ips():
             yield ip
 
 
-# def down_node_ips():
-#     '''IP addresses of nodes that are down.'''
-#     raw = subprocess.check_output(['nodetool', 'status'],
-#                                   universal_newlines=True)
-#     for line in raw.splitlines():
-#         if line.startswith('DN'):  # Down/Normal
-#             ip = line.split()[1]
-#             yield ip
-
-
 @logged
 def wait_for_agreed_schema():
     i = 0

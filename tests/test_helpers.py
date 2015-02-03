@@ -1370,6 +1370,18 @@ class TestHelpers(TestCaseBase):
         helpers.post_bootstrap()
         self.assertFalse(helpers.is_bootstrapped())
 
+    @patch('subprocess.check_output')
+    def test_up_node_ips(self, check_output):
+        check_output.return_value = dedent('''\
+                UN 10.0.0.1 whatever
+                ?N 10.0.0.2 whatever
+                UL 10.0.0.3 whatever
+                ''')
+        self.assertSetEqual(set(helpers.up_node_ips()), set(['10.0.0.1',
+                                                             '10.0.0.3']))
+        check_output.assert_called_once_with(['nodetool', 'status'],
+                                             universal_newlines=True)
+
     @patch('helpers.up_node_ips')
     @patch('subprocess.check_output')
     def test_is_schema_agreed(self, check_output, up_node_ips):
