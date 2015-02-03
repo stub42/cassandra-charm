@@ -430,6 +430,8 @@ def wait_for_seeds():
     '''Wait for at least one of our seeds to be contactable.
 
     Does nothing if we are locally seeded (the only seed is this unit).
+    We primarily need to wait until the seeds peer relation-changed hook
+    has been run and the seed's firewall rules updated.
     '''
     seed_ips = set(get_seeds())
     seed_ips.discard(hookenv.unit_private_ip())

@@ -303,6 +303,11 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
         self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
 
+
+class Test3UnitDeployment(Test1UnitDeployment):
+    """Tests run on a three node cluster."""
+    rf = 3
+
     def test_add_and_drop_node(self):
         # We need to be able to add a node correctly into the ring,
         # without an operator needing to repair keyspaces to ensure data
@@ -327,24 +332,19 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertEqual(count(), total)
 
         self.deployment.add_unit('cassandra')
+        self.wait()
+        status = self.juju_status()
+        unit = list(status['services']['cassandra']['units'].keys())[-1]
         try:
-            self.wait()
             self.assertEqual(count(), total)
 
+        finally:
             # When a node is dropped, it needs to decommission itself and
             # move its data to the remaining nodes so no data is lost.
-            status = self.juju_status()
-            unit = list(status['services']['cassandra']['units'].keys())[-1]
-        finally:
             self.deployment.remove_unit(unit)
             self.wait()
 
         self.assertEqual(count(), total)
-
-
-class Test3UnitDeployment(Test1UnitDeployment):
-    """Tests run on a three node cluster."""
-    rf = 3
 
 
 class TestOracleJVMDeployment(Test1UnitDeployment):
