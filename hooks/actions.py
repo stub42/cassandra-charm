@@ -72,6 +72,7 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'package_status',
     'install_sources',
     'install_keys',
+    'http_proxy',
     'open_client_ports',
     'wait_for_storage_broker',
     'io_scheduler',
@@ -96,6 +97,14 @@ def action(func):
                                                  func.__name__))
         return func(*args, **kw)
     return wrapper
+
+
+@action
+def set_proxy():
+    config = hookenv.config()
+    if config['http_proxy']:
+        os.environ['http_proxy'] = config['http_proxy']
+        os.environ['https_proxy'] = config['http_proxy']
 
 
 @action
@@ -556,3 +565,48 @@ def configure_firewall():
     # impossible to remove this race entirely, so we stick with this
     # simple approach.
     config['ufw_rules'] = list(desired_rules)  # A list because JSON.
+
+
+@action
+def nrpe_external_master_relation():
+    ''' Configure the nrpe-external-master relation '''
+
+    local_plugins = '/usr/local/lib/nagios/plugins'
+    if os.path.exists(local_plugins):
+        src = os.path.join(hookenv.charm_dir(),
+                           "files", "check_cassandra_heap.sh")
+        with open(src, 'rb') as f:
+            host.write_file(os.path.join(local_plugins,
+                                         'check_cassandra_heap.sh'),
+                            f.read(), perms=0o555)
+
+    nrpe_compat = nrpe.NRPE()
+    conf = nrpe_compat.config
+
+    cassandra_heap_warn = conf.get('nagios_heapchk_warn_pct')
+    cassandra_heap_crit = conf.get('nagios_heapchk_crit_pct')
+    if cassandra_heap_warn and cassandra_heap_crit:
+        nrpe_compat.add_check(
+            shortname="cassandra_heap",
+            description="Check Cassandra Heap",
+            check_cmd="check_cassandra_heap.sh {} {} {}"
+                      "".format(hookenv.unit_private_ip(), cassandra_heap_warn,
+                                cassandra_heap_crit)
+        )
+
+    cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
+    cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
+    for disk in conf.get('data_file_directories').split(' '):
+        check_name = re.sub('/', '_', disk)
+        if cassandra_disk_warn and cassandra_disk_crit:
+            nrpe_compat.add_check(
+                shortname="cassandra_disk{}".format(check_name),
+                description="Check Cassandra Disk {}".format(disk),
+                check_cmd="check_disk -u GB -w {}% -c {}% -K 5% -p {}"
+                          "".format(cassandra_disk_warn, cassandra_disk_crit,
+                                    disk)
+            )
+
+    nrpe_compat.write()
+
+

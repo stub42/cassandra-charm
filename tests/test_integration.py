@@ -39,6 +39,8 @@ from testing.amuletfixture import AmuletFixture
 
 SERIES = os.environ.get('SERIES', 'trusty')
 
+WAIT_TIMEOUT = 600
+
 
 class TestDeploymentBase(unittest.TestCase):
     rf = 1
@@ -177,6 +179,9 @@ class TestDeploymentBase(unittest.TestCase):
         self.addCleanup(session.shutdown)
         return session
 
+    def wait(self):
+        self.deployment.sentry.wait(timeout=WAIT_TIMEOUT)
+
     def get_client_relinfo(self, relname):
         # We only need one unit, even if rf > 1
         s = self.deployment.sentry['cassandra/0']
@@ -196,7 +201,7 @@ class TestDeploymentBase(unittest.TestCase):
         config.update(self.test_config)
         config.update(overrides)
         self.deployment.configure('cassandra', config)
-        self.deployment.sentry.wait()
+        self.wait()
 
 
 class Test1UnitDeployment(TestDeploymentBase):
@@ -254,7 +259,7 @@ class Test1UnitDeployment(TestDeploymentBase):
         # cluster-relation-changed hook once the unit has determined
         # that it is its turn to restart.
         self.deployment.relate('cassandra:data', 'storage:data')
-        self.deployment.sentry.wait()
+        self.wait()
         # Per Bug #1254766 and Bug #1254766, the sentry.wait() above
         # will return before the hooks have actually finished running
         # and data migrated. Instead, keep checking until our condition
@@ -332,15 +337,15 @@ class Test3UnitDeployment(Test1UnitDeployment):
         self.assertEqual(count(), total)
 
         self.deployment.add_unit('cassandra')
-        self.deployment.wait()
+        self.wait()
         self.assertEqual(count(), total)
 
         # When a node is dropped, it needs to decommission itself and
         # move its data to the remaining nodes so no data is lost.
         status = self.juju_status()
-        unit = list(status['services']['cassandra']['units'].keys())[0]
+        unit = list(status['services']['cassandra']['units'].keys())[-1]
         self.deployment.remove_unit(unit)
-        self.deployment.wait()
+        self.wait()
         self.assertEqual(count(), total)
 
 
@@ -383,6 +388,7 @@ class TestDSEDeployment(Test3UnitDeployment):
 # Bug #1417097 means we need to monkey patch Amulet for now.
 from functools import wraps
 import amulet.helpers
+import amulet.deployer
 real_juju = amulet.helpers.juju
 
 
@@ -392,6 +398,7 @@ def patched_juju(args, env=None):
     return real_juju(args, env)
 
 amulet.helpers.juju = patched_juju
+amulet.deployer.juju = patched_juju
 
 
 if __name__ == '__main__':

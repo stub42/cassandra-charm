@@ -71,9 +71,9 @@ containing the DataStax Enterprise .deb packages in the
 `install_keys` configuration item. Place the DataStax packages in a
 local archive to avoid downloading from datastax.com.
 
-TODO: Provide a way to specify a pip proxy
 The Cassandra Python driver and some dependencies are installed using
-`pip(1)`. This cannot be avoided yet.
+`pip(1)`. Set the `http_proxy` config item to direct its downloads via
+a proxy server, such as squid or devpi.
 
 
 # Usage

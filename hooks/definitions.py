@@ -51,7 +51,8 @@ def get_service_definitions():
              required_data=[relations.StorageRelation(),
                             RequiresCommissionedNode()],
              provided_data=[relations.StorageRelation()],
-             data_ready=[actions.preinstall,
+             data_ready=[actions.set_proxy,
+                         actions.preinstall,
                          actions.revert_unchangeable_config,
                          actions.configure_firewall,
                          actions.cache_oracle_jdk,
@@ -66,6 +67,7 @@ def get_service_definitions():
                          actions.configure_cassandra_env,
                          actions.configure_cassandra_rackdc,
                          actions.reset_all_io_schedulers,
+                         actions.nrpe_external_master_relation,
                          actions.maybe_schedule_restart],
              stop=[actions.stop_cassandra], start=[]),
 

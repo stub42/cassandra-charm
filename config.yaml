@@ -49,6 +49,13 @@ options:
             - null  # PPA keys securly added via Launchpad.
             - null  # Apache package signing key added automatically.
             # - null  # DataStack package signing key added automatically.
+    http_proxy:
+        type: string
+        description: >
+            Value for the http_proxy and https_proxy environment variables.
+            This causes pip(1) and other tools to perform downloads via
+            the proxy server. eg. http://squid.dc1.lan:8080
+        default: ""
     edition:
         type: string
         default: community
@@ -304,19 +311,6 @@ options:
             the thresholds here if you understand the dangers and want
             to scan more tombstones anyway.
             
-    ##     cas_contention_timeout_in_ms:
-    ##         type: int
-    ##         default: 1000
-    ##         description: >
-    ##             How long a coordinator should continue to retry a CAS operation
-    ##             that contends with other proposals for the same row
-    ##     preheat_kernel_page_cache:
-    ##          type: string
-    ##          default: "false"
-    ##          description: >
-    ##              Enable or disable kernel page cache preheating from
-    ##              contents of the key cache after compaction.
-
     post_bootstrap_delay:
         type: int
         default: 120

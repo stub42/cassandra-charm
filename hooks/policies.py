@@ -43,6 +43,7 @@ class ReconnectUntilReconnectionPolicy(cassandra.policies.ReconnectionPolicy):
             hookenv.log('Reconnect timeout', DEBUG)
             raise StopIteration
         hookenv.log('Reconnect triggered', DEBUG)
+        time.sleep(1)
         return 2
 
 
@@ -55,6 +56,7 @@ class RetryUntilRetryPolicy(cassandra.policies.RetryPolicy):
             hookenv.log('Read timeout, abort', DEBUG)
             return (cassandra.policies.RetryPolicy.RETHROW, None)
         hookenv.log('Read timeout, retry', DEBUG)
+        time.sleep(1)
         return (cassandra.policies.RetryPolicy.RETRY, consistency)
 
     def on_write_timeout(self, query, consistency, *args, **kw):
@@ -62,11 +64,13 @@ class RetryUntilRetryPolicy(cassandra.policies.RetryPolicy):
             hookenv.log('Write timeout, abort', DEBUG)
             return (cassandra.policies.RetryPolicy.RETHROW, None)
         hookenv.log('Write timeout, retry', DEBUG)
+        time.sleep(1)
         return (cassandra.policies.RetryPolicy.RETRY, consistency)
 
     def on_unavailable(self, query, consistency, *args, **kw):
         if time.time() > self.until:
             hookenv.log('Unavailable, abort', DEBUG)
             return (cassandra.policies.RetryPolicy.RETHROW, None)
-        hookenv.log('Unavailable, retru', DEBUG)
+        hookenv.log('Unavailable, retry', DEBUG)
+        time.sleep(1)
         return (cassandra.policies.RetryPolicy.RETRY, consistency)

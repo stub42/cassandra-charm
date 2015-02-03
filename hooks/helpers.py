@@ -42,9 +42,7 @@ from charmhelpers import fetch
 
 import relations
 import rollingrestart
-from policies import (OptimisticConvictionPolicy,
-                      ReconnectUntilReconnectionPolicy,
-                      RetryUntilRetryPolicy)
+from policies import ReconnectUntilReconnectionPolicy, RetryUntilRetryPolicy
 
 
 RESTART_TIMEOUT = 300
@@ -146,7 +144,6 @@ def get_seeds():
              sorted(list(peers) + [hookenv.local_unit()],
                     key=lambda x: int(x.split('/')[-1]))[:3]
              if seed != hookenv.local_unit()]
-    hookenv.log('Seeds == [{}]'.format(','.join(seeds)))
     relid = rollingrestart.get_peer_relation_id()
     return [hookenv.relation_get('private-address', seed, relid)
             for seed in seeds]
@@ -477,6 +474,7 @@ def reset_default_password():
 
 
 CONNECT_TIMEOUT = 240
+AUTH_TIMEOUT = 15
 
 
 @contextmanager
@@ -493,19 +491,22 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
 
     # Although we specify a reconnection_policy, it does not apply to
     # the initial connection so we retry in a loop.
-    until = time.time() + CONNECT_TIMEOUT
+    start = time.time()
+    until = start + CONNECT_TIMEOUT
+    auth_until = start + AUTH_TIMEOUT
     while True:
         cluster = cassandra.cluster.Cluster(
             addresses, port=port, auth_provider=auth_provider,
             default_retry_policy=RetryUntilRetryPolicy(until),
-            reconnection_policy=ReconnectUntilReconnectionPolicy(until),
-            conviction_policy_factory=OptimisticConvictionPolicy)
+            reconnection_policy=ReconnectUntilReconnectionPolicy(until))
+        # conviction_policy_factory=OptimisticConvictionPolicy)
         try:
             session = cluster.connect()
             session.default_timeout = CONNECT_TIMEOUT
             break
         except cassandra.cluster.NoHostAvailable as x:
             cluster.shutdown()
+            now = time.time()
             # If every node failed auth, reraise one of the
             # AuthenticationFailed exceptions. Unwrapping the exception
             # means call sites don't have to sniff the exception bundle.
@@ -514,8 +515,9 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
             auth_fails = [af for af in x.errors.values()
                           if isinstance(af, cassandra.AuthenticationFailed)]
             if len(auth_fails) == len(x.errors):
-                raise auth_fails[0]
-            if time.time() > until:
+                if now > auth_until:
+                    raise auth_fails[0]
+            if now > until:
                 raise
         time.sleep(1)
     try:
@@ -527,7 +529,14 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
 def query(session, statement, consistency_level, args=None):
     q = cassandra.query.SimpleStatement(statement,
                                         consistency_level=consistency_level)
-    return session.execute(q, args)
+
+    until = time.time() + 60
+    while True:
+        try:
+            return session.execute(q, args)
+        except Exception:
+            if time.time() > until:
+                raise
 
 
 def ensure_user(username, password, superuser=False):

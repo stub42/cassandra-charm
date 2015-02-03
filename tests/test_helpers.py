@@ -727,8 +727,7 @@ class TestHelpers(TestCaseBase):
             cluster.assert_called_once_with(
                 ['1.2.3.4', '5.6.7.8'], port=666, auth_provider=sentinel.ap,
                 default_retry_policy=sentinel.retry_policy,
-                reconnection_policy=sentinel.reconnection_policy,
-                conviction_policy_factory=helpers.OptimisticConvictionPolicy)
+                reconnection_policy=sentinel.reconnection_policy)
             self.assertIs(session, sentinel.session)
             self.assertFalse(cluster().shutdown.called)
 
@@ -774,10 +773,11 @@ class TestHelpers(TestCaseBase):
 
         self.assertRaises(AuthenticationFailed, helpers.connect().__enter__)
 
-        # Authentication failures fail immediately, unlike other
-        # connection errors which are retried.
-        self.assertEqual(cluster().connect.call_count, 1)
-        self.assertEqual(cluster().shutdown.call_count, 1)
+        # Authentication failures are retried, but for a shorter time
+        # than other connection errors which are retried for a few
+        # minutes.
+        self.assertEqual(cluster().connect.call_count, 2)
+        self.assertEqual(cluster().shutdown.call_count, 2)
 
     @patch('time.sleep')
     @patch('time.time')

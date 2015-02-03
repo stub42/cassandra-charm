@@ -94,6 +94,18 @@ class TestsActions(TestCaseBase):
         actions.revert_unchangeable_config('')
         self.assertEqual(config['datacenter'], 'orbital_1')
 
+    def test_set_proxy(self):
+        # NB. Environment is already mocked.
+        os.environ['http_proxy'] = ''
+        os.environ['https_proxy'] = ''
+        actions.set_proxy('')
+        self.assertEqual(os.environ['http_proxy'], '')
+        self.assertEqual(os.environ['https_proxy'], '')
+        hookenv.config()['http_proxy'] = 'foo'
+        actions.set_proxy('')
+        self.assertEqual(os.environ['http_proxy'], 'foo')
+        self.assertEqual(os.environ['https_proxy'], 'foo')
+
     @patch('subprocess.check_call')
     def test_preinstall(self, check_call):
         # Noop if there are no preinstall hooks found running the
