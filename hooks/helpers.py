@@ -412,6 +412,10 @@ def start_cassandra():
     if is_cassandra_running():
         return
 
+    if not is_bootstrapped():
+        wait_for_seeds()
+
+    hookenv.log('Starting Cassandra with seeds {!r}'.format(get_seeds()))
     host.service_start(get_cassandra_service())
 
     # Wait for Cassandra to actually start, or abort.
@@ -422,6 +426,29 @@ def start_cassandra():
         time.sleep(1)
     hookenv.log('Cassandra failed to start.', ERROR)
     raise SystemExit(1)
+
+
+@logged
+def wait_for_seeds():
+    '''Wait for at least one of our seeds to be contactable.
+
+    Does nothing if we are locally seeded (the only seed is this unit).
+    '''
+    seed_ips = set(get_seeds())
+    seed_ips.discard(hookenv.unit_private_ip())
+    if not seed_ips:
+        return
+    i = 0
+    while True:
+        for ip in seed_ips:
+            try:
+                subprocess.check_output(['nodetool', '--host', ip, 'status'])
+                hookenv.log('Seed {} is responding'.format(ip))
+                return
+            except subprocess.CalledProcessError:
+                hookenv.log('Seed {} is not responding'.format(ip))
+        i += 1
+        time.sleep(max(2**i, 60))
 
 
 @logged
@@ -816,7 +843,7 @@ def reset_auth_keyspace_replication():
     # data. Authentication information will remain available on the
     # local node, even in the face of all the other nodes having gone
     # away due to an in progress 'juju destroy-service'.
-    n = num_nodes()
+    n = min(num_nodes(), 5)  # Cap at 5 replicas.
     datacenter = hookenv.config()['datacenter']
     with connect() as session:
         strategy_opts = get_auth_keyspace_replication(session)

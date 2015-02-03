@@ -39,7 +39,7 @@ from testing.amuletfixture import AmuletFixture
 
 SERIES = os.environ.get('SERIES', 'trusty')
 
-WAIT_TIMEOUT = 600
+WAIT_TIMEOUT = 1200
 
 
 class TestDeploymentBase(unittest.TestCase):
@@ -49,7 +49,7 @@ class TestDeploymentBase(unittest.TestCase):
     common_config = dict(max_heap_size='128M',
                          heap_newsize='32M',
                          open_client_ports=True,
-                         post_bootstrap_delay=0)
+                         post_bootstrap_delay=120)
     test_config = dict()
 
     @classmethod
@@ -303,16 +303,6 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
         self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
 
-
-class Test3UnitDeployment(Test1UnitDeployment):
-    """Tests run on a three node cluster."""
-    rf = 3
-    config = dict(max_heap_size='128M',
-                  heap_newsize='32M',
-                  open_client_ports=True,
-                  jvm='openjdk',
-                  post_bootstrap_delay=0)
-
     def test_add_and_drop_node(self):
         # We need to be able to add a node correctly into the ring,
         # without an operator needing to repair keyspaces to ensure data
@@ -330,7 +320,7 @@ class Test3UnitDeployment(Test1UnitDeployment):
         def count():
             return s.execute('SELECT COUNT(*) FROM dat')[0][0]
 
-        total = 300
+        total = self.rf * 100
         for _ in range(0, total):
             s.execute('INSERT INTO dat (x) VALUES (%s)', (str(uuid.uuid1()),))
 
@@ -347,6 +337,11 @@ class Test3UnitDeployment(Test1UnitDeployment):
         self.deployment.remove_unit(unit)
         self.wait()
         self.assertEqual(count(), total)
+
+
+class Test3UnitDeployment(Test1UnitDeployment):
+    """Tests run on a three node cluster."""
+    rf = 3
 
 
 class TestOracleJVMDeployment(Test1UnitDeployment):

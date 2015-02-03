@@ -25,6 +25,7 @@ import subprocess
 from textwrap import dedent
 
 from charmhelpers import fetch
+from charmhelpers.contrib.charmsupport import nrpe
 from charmhelpers.contrib.templating import jinja
 from charmhelpers.contrib.network import ufw
 from charmhelpers.core import hookenv, host
@@ -608,5 +609,3 @@ def nrpe_external_master_relation():
             )
 
     nrpe_compat.write()
-
-
