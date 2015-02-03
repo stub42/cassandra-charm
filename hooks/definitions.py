@@ -79,6 +79,7 @@ def get_service_definitions():
             helpers.stop_cassandra,
             helpers.remount_cassandra,
             helpers.ensure_database_directories,
+            helpers.wait_for_seeds,
             helpers.start_cassandra,
             helpers.emit_describe_cluster,
             helpers.post_bootstrap,

@@ -412,9 +412,6 @@ def start_cassandra():
     if is_cassandra_running():
         return
 
-    if not is_bootstrapped():
-        wait_for_seeds()
-
     hookenv.log('Starting Cassandra with seeds {!r}'.format(get_seeds()))
     host.service_start(get_cassandra_service())
 
@@ -437,6 +434,7 @@ def wait_for_seeds():
     seed_ips = set(get_seeds())
     seed_ips.discard(hookenv.unit_private_ip())
     if not seed_ips:
+        hookenv.log('Self-seeded')
         return
     i = 0
     while True:

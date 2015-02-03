@@ -1259,8 +1259,25 @@ class TestHelpers(TestCaseBase):
         helpers.reset_auth_keyspace_replication()
         set_rep.assert_called_once_with(sentinel.session,
                                         {'class': 'NetworkTopologyStrategy',
-                                         'juju': 8})
+                                         'juju': 5})  # Capped rf==5
         repair.assert_called_once_with()
+
+    @patch('helpers.repair_auth_keyspace')
+    @patch('helpers.set_auth_keyspace_replication')
+    @patch('helpers.get_auth_keyspace_replication')
+    @patch('helpers.connect')
+    @patch('helpers.num_nodes')
+    def test_reset_auth_keyspace_replication_cap(self, num_nodes, connect,
+                                                 get_rep, set_rep, repair):
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        num_nodes.return_value = 8
+        get_rep.return_value = {'class': 'NetworkTopologyStrategy',
+                                'juju': 8,
+                                'other_dc': 2}
+        helpers.reset_auth_keyspace_replication()
+        self.assertTrue(set_rep.called)  # Reset to our cap of rf==5
+        self.assertTrue(repair.called)
 
     @patch('helpers.repair_auth_keyspace')
     @patch('helpers.set_auth_keyspace_replication')
@@ -1273,10 +1290,10 @@ class TestHelpers(TestCaseBase):
         connect().__exit__.return_value = False
         num_nodes.return_value = 8
         get_rep.return_value = {'class': 'NetworkTopologyStrategy',
-                                'juju': 8,
+                                'juju': 5,
                                 'other_dc': 2}
         helpers.reset_auth_keyspace_replication()
-        self.assertFalse(set_rep.called)
+        self.assertFalse(set_rep.called)  # Already at our cap of rf==5
         self.assertFalse(repair.called)
 
     @patch('helpers.query')

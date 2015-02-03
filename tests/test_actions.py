@@ -671,11 +671,32 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
+    @patch('rollingrestart.get_peers')
+    def test_publish_database_relation_fail(self, get_peers):
+        # If we fail to retrieve details from the first unit, don't
+        # fail. This could just be an edge case where the first unit
+        # hasn't joined the relation yet, causing relation-get to barf
+        # unpredictably.
+        get_peers.return_value = ['service/1', 'service/2']
+        hookenv.local_unit.return_value = 'service/99'
+        hookenv.relation_get.side_effect = subprocess.CalledProcessError(1, '')
+        actions._publish_database_relation('database:1', sentinel.superuser)
+        self.assertFalse(hookenv.relation_set.called)
+
+        # If we fail to retrieve details from the first unit, and it is
+        # us, something is very wrong and the exception propagated.
+        get_peers.return_value = ['service/1', 'service/2']
+        hookenv.local_unit.return_value = 'service/0'
+        hookenv.relation_get.side_effect = subprocess.CalledProcessError(1, '')
+        self.assertRaises(subprocess.CalledProcessError,
+                          actions._publish_database_relation,
+                          'database:1', sentinel.superuser)
+
     @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('rollingrestart.get_peers')
-    def test_publish_database_relation_alone2(self, get_peers,
-                                              ensure_user, utcnow_str):
+    def test_publish_database_relation_alone(self, get_peers,
+                                             ensure_user, utcnow_str):
         get_peers.return_value = set()
         # There are existing credentials on the relation.
         hookenv.relation_set(relation_id='database:1',
