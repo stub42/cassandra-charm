@@ -401,8 +401,12 @@ def get_cassandra_packages():
 
 
 @logged
-def stop_cassandra():
+def stop_cassandra(immediate=False):
     if is_cassandra_running():
+        if not immediate:
+            # If there are cluster operations in progress, wait until
+            # they are complete before restarting. This might take days.
+            wait_for_normality()
         host.service_stop(get_cassandra_service())
     assert not is_cassandra_running()
 
@@ -696,7 +700,50 @@ def superuser_credentials():
     return username, password
 
 
+def nodetool(*cmd):
+    cmd = ['nodetool'] + [str(i) for i in cmd]
+    i = 0
+    while True:
+        try:
+            return subprocess.check_output(cmd, universal_newlines=True)
+        except subprocess.CalledProcessError as x:
+            hookenv.log(str(x))
+        i += 1
+        time.sleep(min(60, 2**i))
+
+
+def node_ips():
+    '''IP addresses of all nodes in the Cassandra cluster.'''
+    raw = nodetool('status')
+    ips = set()
+    for line in raw.splitlines():
+        match = re.search(r'^(\w)([NLJM])\s+([\d\.]+)\s', line)
+        if match is not None and match.group(2) != 'L':  # Node is not leaving
+            ips.add(match.group(3))
+    return ips
+
+
+def up_node_ips():
+    '''IP addresses of nodes that are up.'''
+    raw = nodetool('status')
+    ips = set()
+    for line in raw.splitlines():
+        match = re.search(r'^(\w)([NLJM])\s+([\d\.]+)\s', line)
+        if match is not None and match.group(1) == 'U':  # Up
+            ips.add(match.group(3))
+    return ips
+
+
 def num_nodes():
+    '''Number of nodes in the Cassandra cluster.
+
+    This is not necessarily the same as the number of peers, as nodes
+    may be decommissioned.
+    '''
+    return len(node_ips())
+
+
+def num_peers():
     return len(rollingrestart.get_peers()) + 1
 
 
@@ -837,13 +884,7 @@ def reset_all_io_schedulers():
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
     # the system_auth keyspace, to ensure availability and redundancy.
-    # The charm can't control how many or which units might get dropped,
-    # so for authentication to work we set the replication factor
-    # on the system_auth keyspace so that every node contains all of the
-    # data. Authentication information will remain available on the
-    # local node, even in the face of all the other nodes having gone
-    # away due to an in progress 'juju destroy-service'.
-    n = min(num_nodes(), 5)  # Cap at 5 replicas.
+    n = min(num_nodes(), 5)  # Cap at 5 replicas. More is silly.
     datacenter = hookenv.config()['datacenter']
     with connect() as session:
         strategy_opts = get_auth_keyspace_replication(session)
@@ -878,53 +919,29 @@ def repair_auth_keyspace():
     subprocess.check_call(['nodetool', 'repair', 'system_auth'])
 
 
-@logged
-def decommission_node():
-    '''Decommission this node.
-
-    Decommissioning will fail if:
-        - Another node is already decommissioning.
-        - The remaining nodes do not have enough space to contain this
-          node's data.
-
-    (Juju's service leadership feature should allow us to address the
-    first point, and the environment goal state feature should allow us
-    to tear down the entire service and only trigger the second point
-    when it is helpful)
-    '''
-    hookenv.log('Decommissioning Cassandra node.', WARNING)
-    rv = subprocess.call(['nodetool', 'decommission'],
-                         stderr=subprocess.STDOUT)
-    if rv != 0:
-        hookenv.log('Unable to decommission node. '
-                    'The cluster will need repair.', ERROR)
-    stop_cassandra()
-    hookenv.config()['decommissioned'] = True
-
-
-def is_bootstrapped():
-    '''Return True if the node has already bootstrapped into the cluster.'''
-    return hookenv.config().get('bootstrapped_into_cluster', False)
-
-
-@logged
-def post_bootstrap():
-    '''Maintain state on if the node has bootstrapped into the cluster.
-
-    Per documented procedure for adding new units to a cluster, wait 2
-    minutes if the unit has just bootstrapped to ensure no other.
-    '''
-    config = hookenv.config()
-    if num_nodes() == 1:
-        # There is no cluster (just us), so we are not bootstrapped into
-        # the cluster.
-        config['bootstrapped_into_cluster'] = False
-    else:
-        config['bootstrapped_into_cluster'] = True
-        if config.changed('bootstrapped_into_cluster'):
-            hookenv.log('Bootstrapped into the cluster. Waiting {}s.'.format(
-                config['post_bootstrap_delay']))
-            time.sleep(config['post_bootstrap_delay'])
+# def is_bootstrapped():
+#     '''Return True if the node has already bootstrapped into the cluster.'''
+#     return hookenv.config().get('bootstrapped_into_cluster', False)
+#
+#
+# @logged
+# def post_bootstrap():
+#     '''Maintain state on if the node has bootstrapped into the cluster.
+#
+#     Per documented procedure for adding new units to a cluster, wait 2
+#     minutes if the unit has just bootstrapped to ensure no other.
+#     '''
+#     config = hookenv.config()
+#     if num_peers() == 1:
+#         # There is no cluster (just us), so we are not bootstrapped into
+#         # the cluster.
+#         config['bootstrapped_into_cluster'] = False
+#     else:
+#         config['bootstrapped_into_cluster'] = True
+#         if config.changed('bootstrapped_into_cluster'):
+#             hookenv.log('Bootstrapped into the cluster. Waiting {}s.'.format(
+#                 config['post_bootstrap_delay']))
+#             time.sleep(config['post_bootstrap_delay'])
 
 
 def is_schema_agreed():
@@ -946,16 +963,6 @@ def is_schema_agreed():
             return True
     hookenv.log('{!r} do not agree on schema'.format(up_ips), DEBUG)
     return False
-
-
-def up_node_ips():
-    '''IP addresses of nodes that are up.'''
-    raw = subprocess.check_output(['nodetool', 'status'],
-                                  universal_newlines=True)
-    for line in raw.splitlines():
-        if line.startswith('U'):  # Up
-            ip = line.split()[1]
-            yield ip
 
 
 @logged
@@ -986,17 +993,15 @@ def is_all_normal():
     Returns false if a node is joining, leaving or moving in the ring.
     '''
     is_all_normal = True
-    raw = subprocess.check_output(['nodetool', 'status',
-                                   'system_auth'], universal_newlines=True)
-    node_status_re = re.compile('^([UD])([NLJM])\s+([\d\.]+)\s')
+    raw = nodetool('status')
+    node_status_re = re.compile('^(\w)([NLJM])\s+([\d\.]+)\s')
     for line in raw.splitlines():
         match = node_status_re.search(line)
         if match is not None:
             updown, mode, address = match.groups()
-            # updown is purely informative. It would be nice if we could
-            # block until down nodes come back up, but unfortunately
-            # there are Juju race conditions where a unit can depart
-            # completely, yet this unit thinks it is still a peer.
+            # Up/Down is just informative. During service teardown,
+            # nodes will disappear without decommissioning leaving these
+            # entries.
             if updown == 'D':
                 hookenv.log('Node {} is down'.format(address))
 

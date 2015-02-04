@@ -293,40 +293,23 @@ def configure_cassandra_rackdc():
 
 @action
 def reset_auth_keyspace_replication():
-    # This action only resets the system_auth keyspace replication
-    # values in the peer relation-broken hook, to lower the
-    # replication factor as the nodes leave. The replication settings are
-    # also updated during rolling restart, which takes care of when new
+    # This action only lowers the system_auth keyspace replication
+    # values when a node has been decommissioned. The replication settings
+    # are also updated during rolling restart, which takes care of when new
     # nodes are added.
-    relname = rollingrestart.get_peer_relation_name()
-    if hookenv.hook_name() == '{}-relation-broken'.format(relname):
-        helpers.reset_auth_keyspace_replication()
-
-
-@action
-def maybe_decommission_node():
-    '''If the unit is leaving, decommission.
-
-    This will fail when we are destroying a service where the entire
-    dataset cannot fit on a single node - each unit will decommission,
-    draining their data to other units, and eventually one will fail.
-    We can't fix this until juju provides a way to determine between
-    removing a few units or destroying the service. This failure is not
-    fatal, as juju will continue destroying the service even if the
-    peer relation-broken hooks fail.
-    '''
-    peer_relname = rollingrestart.get_peer_relation_name()
-    if (hookenv.hook_name() == '{}-relation-broken'.format(peer_relname)
-            and helpers.num_nodes() > 1):
-        helpers.wait_for_normality()
-        helpers.decommission_node()
-        # Node is dead, so restart will fail.
-        rollingrestart.cancel_restart()
+    helpers.reset_auth_keyspace_replication()
 
 
 @action
 def maybe_schedule_restart():
     '''Prepare for and schedule a rolling restart if necessary.'''
+    if not helpers.is_cassandra_running():
+        # Short circuit if Cassandra is not running. One of the later
+        # checks invokes nodetool, which fails and retries indefinitely
+        # when Cassandra isn't running.
+        rollingrestart.request_restart()
+        return
+
     # If any of these config items changed, a restart is required.
     config = hookenv.config()
     restart = False
@@ -343,11 +326,14 @@ def maybe_schedule_restart():
         hookenv.log('Mountpoint changed. Restart and migration required.')
         restart = True
 
-    # If the seedlist has changed, we need to restart.
+    # If the seedlist has changed, we may need to restart.
     config['configured_seeds'] = helpers.get_seeds()
     if config.changed('configured_seeds'):
-        hookenv.log('Seed list changed. Restart required.')
-        restart = True
+        seeds = set(config['configured_seeds'])
+        nodes = helpers.node_ips()
+        if not seeds.issubset(nodes):
+            hookenv.log('Uncontacted seeds. Restart required.')
+            restart = True
 
     # If our IP address has changed, we need to restart.
     config['unit_private_ip'] = hookenv.unit_private_ip()

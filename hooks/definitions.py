@@ -48,8 +48,7 @@ def get_service_definitions():
         # Actions done before or while the Cassandra service is running.
         dict(service=helpers.get_cassandra_service(),
              ports=ports,
-             required_data=[relations.StorageRelation(),
-                            RequiresCommissionedNode()],
+             required_data=[relations.StorageRelation()],
              provided_data=[relations.StorageRelation()],
              data_ready=[actions.set_proxy,
                          actions.preinstall,
@@ -75,40 +74,31 @@ def get_service_definitions():
         # it is this units turn to restart. This is also where we do
         # actions done while Cassandra is not running, and where we do
         # actions that should only be done by one node at a time.
-        rollingrestart.make_service([
-            helpers.stop_cassandra,
-            helpers.remount_cassandra,
-            helpers.ensure_database_directories,
-            helpers.wait_for_seeds,
-            helpers.start_cassandra,
-            helpers.emit_describe_cluster,
-            helpers.post_bootstrap,
-            helpers.wait_for_agreed_schema,
-            helpers.wait_for_normality,
-            helpers.emit_describe_cluster,
-            helpers.reset_default_password,
-            helpers.ensure_unit_superuser,
-            helpers.reset_auth_keyspace_replication,
-            helpers.emit_auth_keyspace_status]),
+        rollingrestart.make_service([helpers.stop_cassandra,
+                                     helpers.remount_cassandra,
+                                     helpers.ensure_database_directories,
+                                     # helpers.wait_for_seeds,
+                                     helpers.start_cassandra,
+                                     helpers.emit_describe_cluster,
+                                     # helpers.post_bootstrap,
+                                     helpers.wait_for_agreed_schema,
+                                     helpers.wait_for_normality,
+                                     helpers.emit_describe_cluster,
+                                     helpers.reset_default_password,
+                                     helpers.ensure_unit_superuser,
+                                     helpers.reset_auth_keyspace_replication]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresLiveNode()],
-             data_ready=[actions.publish_database_relations,
+             data_ready=[actions.reset_auth_keyspace_replication,
+                         actions.publish_database_relations,
                          actions.publish_database_admin_relations,
                          actions.install_maintenance_crontab,
-                         actions.reset_auth_keyspace_replication,
                          actions.emit_describe_cluster,
                          actions.emit_auth_keyspace_status,
-                         actions.emit_netstats,
-                         actions.maybe_decommission_node],
+                         actions.emit_netstats],
              start=[], stop=[])]
-
-
-class RequiresCommissionedNode:
-    '''Once a node is decommissioned, don't try and start it again.'''
-    def __bool__(self):
-        return not hookenv.config().get('decommissioned', False)
 
 
 class RequiresLiveNode:

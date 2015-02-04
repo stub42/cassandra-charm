@@ -25,9 +25,10 @@ New nodes can be added to scale up:
     juju add-unit cassandra
 
 
-Nodes can be decommissioned to shrink the cluster:
+/!\ Nodes must be manually decommissioned before dropping a unit.
 
-    juju remove-unit cassandra
+    juju run --unit cassandra/1 "nodetool decommission"
+    juju remove-unit cassandra/1
 
 It is recommended to deploy at least 3 nodes and configure all your
 keyspaces to have a replication factor of at least three. Using fewer

@@ -28,7 +28,6 @@ import cassandra
 from tests.base import TestCaseBase
 
 import definitions
-import helpers
 
 
 patch = functools.partial(patch, autospec=True)
@@ -77,14 +76,6 @@ class TestDefinitions(TestCaseBase):
         # Is not running
         is_running.return_value = False
         self.assertFalse(bool(definitions.RequiresLiveNode()))
-
-    @patch('helpers.stop_cassandra')
-    @patch('subprocess.call')
-    def test_requires_commissioned_node(self, call, stop_cassandra):
-        call.return_value = 0
-        self.assertTrue(bool(definitions.RequiresCommissionedNode()))
-        helpers.decommission_node()
-        self.assertFalse(bool(definitions.RequiresCommissionedNode()))
 
 
 if __name__ == '__main__':

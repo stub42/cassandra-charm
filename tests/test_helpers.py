@@ -538,15 +538,29 @@ class TestHelpers(TestCaseBase):
                                  'oracle-java7-set-default']))
         self.assertTrue(accept_oracle_jvm_license.called)
 
+    @patch('helpers.wait_for_normality')
     @patch('helpers.get_cassandra_service')
     @patch('charmhelpers.core.host.service_stop')
     @patch('helpers.is_cassandra_running')
-    def test_stop_cassandra(self, is_cassandra_running,
-                            service_stop, get_service):
+    def test_stop_cassandra(self, is_cassandra_running, service_stop,
+                            get_service, wait_for_normality):
         get_service.return_value = sentinel.service_name
         is_cassandra_running.side_effect = iter([True, False])
         helpers.stop_cassandra()
         service_stop.assert_called_once_with(sentinel.service_name)
+        wait_for_normality.assert_called_once_with()
+
+    @patch('helpers.wait_for_normality')
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_stop')
+    @patch('helpers.is_cassandra_running')
+    def test_stop_cassandra_immediate(self, is_cassandra_running, service_stop,
+                                      get_service, wait_for_normality):
+        get_service.return_value = sentinel.service_name
+        is_cassandra_running.side_effect = iter([True, False])
+        helpers.stop_cassandra(immediate=True)
+        service_stop.assert_called_once_with(sentinel.service_name)
+        self.assertFalse(wait_for_normality.called)
 
     @patch('helpers.get_cassandra_service')
     @patch('charmhelpers.core.host.service_stop')
@@ -565,7 +579,8 @@ class TestHelpers(TestCaseBase):
                                     service_stop, get_service):
         get_service.return_value = sentinel.service_name
         is_cassandra_running.side_effect = iter([True, True])
-        self.assertRaises(AssertionError, helpers.stop_cassandra)
+        self.assertRaises(AssertionError,
+                          helpers.stop_cassandra, immediate=True)
         service_stop.assert_called_once_with(sentinel.service_name)
 
     @patch('time.sleep')
@@ -752,11 +767,12 @@ class TestHelpers(TestCaseBase):
             auth_provider.assert_called_once_with(username='explicit',
                                                   password='boo')
 
+    @patch('time.sleep')
     @patch('time.time')
     @patch('cassandra.cluster.Cluster')
     @patch('helpers.superuser_credentials')
     @patch('helpers.read_cassandra_yaml')
-    def test_connect_badauth(self, yaml, creds, cluster, time):
+    def test_connect_badauth(self, yaml, creds, cluster, time, sleep):
         # host and port are pulled from the current active
         # cassandra.yaml file, rather than configuration, as
         # configuration may not match reality (if for no other reason
@@ -975,10 +991,15 @@ class TestHelpers(TestCaseBase):
             with open(cqlshrc_path, 'r') as f:
                 self.assertEqual(f.read().strip(), expected_cqlshrc)
 
+    @patch('helpers.node_ips')
+    def test_num_nodes(self, node_ips):
+        node_ips.return_value = ['10.0.0.1', '10.0.0.2']
+        self.assertEqual(helpers.num_nodes(), 2)
+
     @patch('rollingrestart.get_peers')
-    def test_num_nodes(self, get_peers):
+    def test_num_peers(self, get_peers):
         get_peers.return_value = ['a', 'b']
-        self.assertEqual(helpers.num_nodes(), 3)
+        self.assertEqual(helpers.num_peers(), 3)
 
     @patch('helpers.get_cassandra_yaml_file')
     def test_read_cassandra_yaml(self, get_cassandra_yaml_file):
@@ -1322,53 +1343,33 @@ class TestHelpers(TestCaseBase):
         check_call.assert_called_once_with(['nodetool', 'repair',
                                             'system_auth'])
 
-    @patch('helpers.stop_cassandra')
-    @patch('subprocess.call')
-    def test_decommission_node(self, call, stop_cassandra):
-        call.return_value = 0
-        helpers.decommission_node()
-        call.assert_called_once_with(['nodetool', 'decommission'],
-                                     stderr=subprocess.STDOUT)
-        stop_cassandra.assert_called_once_with()
+#     def test_is_bootstrapped(self):
+#         config = hookenv.config()
+#         self.assertFalse(helpers.is_bootstrapped())
+#         config['bootstrapped_into_cluster'] = True
+#         self.assertTrue(helpers.is_bootstrapped())
+#         config['bootstrapped_into_cluster'] = False
+#         self.assertFalse(helpers.is_bootstrapped())
 
-    @patch('helpers.stop_cassandra')
-    @patch('subprocess.call')
-    def test_decommission_node_failed(self, call, stop_cassandra):
-        # If decommissioning failed, we log an error.
-        call.return_value = 1
-        helpers.decommission_node()
-        call.assert_called_once_with(['nodetool', 'decommission'],
-                                     stderr=subprocess.STDOUT)
-        stop_cassandra.assert_called_once_with()
-        hookenv.log.assert_called_with(ANY, hookenv.ERROR)
-
-    def test_is_bootstrapped(self):
-        config = hookenv.config()
-        self.assertFalse(helpers.is_bootstrapped())
-        config['bootstrapped_into_cluster'] = True
-        self.assertTrue(helpers.is_bootstrapped())
-        config['bootstrapped_into_cluster'] = False
-        self.assertFalse(helpers.is_bootstrapped())
-
-    @patch('time.sleep')
-    @patch('helpers.num_nodes')
-    def test_post_bootstrap(self, num_nodes, sleep):
-        hookenv.config()['post_bootstrap_delay'] = 42
-        num_nodes.return_value = 3
-        self.assertFalse(helpers.is_bootstrapped())
-        helpers.post_bootstrap()
-        # Wait 2 minutes between nodes when initializing new nodes into
-        # the cluster.
-        sleep.assert_called_once_with(42)
-        self.assertTrue(helpers.is_bootstrapped())
-
-    @patch('helpers.num_nodes')
-    def test_post_bootstrap_alone(self, num_nodes):
-        num_nodes.return_value = 1  # Just us.
-        hookenv.config()['bootstrapped_into_cluster'] = True
-        self.assertTrue(helpers.is_bootstrapped())
-        helpers.post_bootstrap()
-        self.assertFalse(helpers.is_bootstrapped())
+#     @patch('time.sleep')
+#     @patch('helpers.num_nodes')
+#     def test_post_bootstrap(self, num_nodes, sleep):
+#         hookenv.config()['post_bootstrap_delay'] = 42
+#         num_nodes.return_value = 3
+#         self.assertFalse(helpers.is_bootstrapped())
+#         helpers.post_bootstrap()
+#         # Wait 2 minutes between nodes when initializing new nodes into
+#         # the cluster.
+#         sleep.assert_called_once_with(42)
+#         self.assertTrue(helpers.is_bootstrapped())
+#
+#     @patch('helpers.num_peers')
+#     def test_post_bootstrap_alone(self, num_peers):
+#         num_peers.return_value = 1  # Just us.
+#         hookenv.config()['bootstrapped_into_cluster'] = True
+#         self.assertTrue(helpers.is_bootstrapped())
+#         helpers.post_bootstrap()
+#         self.assertFalse(helpers.is_bootstrapped())
 
     @patch('subprocess.check_output')
     def test_up_node_ips(self, check_output):

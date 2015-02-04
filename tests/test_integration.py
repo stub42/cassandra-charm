@@ -303,11 +303,6 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
         self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
 
-
-class Test3UnitDeployment(Test1UnitDeployment):
-    """Tests run on a three node cluster."""
-    rf = 3
-
     def test_add_and_drop_node(self):
         # We need to be able to add a node correctly into the ring,
         # without an operator needing to repair keyspaces to ensure data
@@ -336,15 +331,56 @@ class Test3UnitDeployment(Test1UnitDeployment):
         status = self.juju_status()
         unit = list(status['services']['cassandra']['units'].keys())[-1]
         try:
+            # Amulet wait fails to correctly wait per Bug #1200267, so we
+            # need to explicity wait for a state we hope will be reached to
+            # actually be reached.
+            self._wait_for_nodecount(self.rf + 1)
             self.assertEqual(count(), total)
 
         finally:
             # When a node is dropped, it needs to decommission itself and
             # move its data to the remaining nodes so no data is lost.
+            # Alas, per Bug #1417874 we can't yet do this with Juju.
+            # First, the node must be manually decommissioned before we
+            # remove the unit.
+            self._decommission(unit)
             self.deployment.remove_unit(unit)
             self.wait()
+            self._wait_for_nodecount(self.rf)
 
         self.assertEqual(count(), total)
+
+    def _wait_for_nodecount(self, num_nodes):
+        while True:
+            raw = subprocess.check_output(['juju', 'run', '--unit=cassandra/0',
+                                           'nodetool describecluster'],
+                                          universal_newlines=True)
+            try:
+                raw.replace('\t', ' ')  # Almost yaml
+                desc = yaml.load(raw)
+            except Exception:
+                import pdb
+                pdb.set_trace()
+                raise
+            schemas = desc['Cluster Information']['Schema versions'] or {}
+            for schema, ips in schemas.items():
+                if len(ips) == num_nodes:
+                    return
+
+    def _decommission(self, unit):
+        subprocess.check_output(['juju', 'run', '--unit', unit,
+                                 'nodetool decommission'])
+        while True:
+            raw = subprocess.check_output(['juju', 'run', '--unit', unit,
+                                           'nodetool status'],
+                                          universal_newlines=True)
+            if 'UL' not in raw and 'DL' not in raw:
+                break
+
+
+class Test3UnitDeployment(Test1UnitDeployment):
+    """Tests run on a three node cluster."""
+    rf = 3
 
 
 class TestOracleJVMDeployment(Test1UnitDeployment):

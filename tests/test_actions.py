@@ -394,59 +394,14 @@ class TestsActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
-    @patch('helpers.reset_auth_keyspace_replication')
-    def test_reset_auth_keyspace_replication(self, reset_auth_helper):
-        # Normally this action does nothing.
-        hookenv.hook_name.return_value = 'whatever'
-        actions.reset_auth_keyspace_replication('')
-        self.assertFalse(reset_auth_helper.called)
-
-        # In the peer relation-broken hook however, it lowers the
-        # replication level of the system_auth keyspace.
-        hookenv.hook_name.return_value = 'cluster-relation-broken'
-        actions.reset_auth_keyspace_replication('')
-        reset_auth_helper.assert_called_once_with()
-
-    @patch('rollingrestart.cancel_restart')
-    @patch('helpers.decommission_node')
-    @patch('helpers.wait_for_normality')
-    @patch('helpers.num_nodes')
-    def test_maybe_decomission_node(self, num_nodes, wait_for_normality,
-                                    decommission_node, cancel_restart):
-        # In the peer relation-broken hook, if there is at least one
-        # remaining peer the node is properly decomissioned
-        hookenv.hook_name.return_value = 'cluster-relation-broken'
-        num_nodes.return_value = 3
-        actions.maybe_decommission_node('')
-        wait_for_normality.assert_called_once_with()
-        decommission_node.assert_called_once_with()
-        cancel_restart.assert_called_once_with()
-
-    @patch('helpers.decommission_node')
-    @patch('helpers.num_nodes')
-    def test_maybe_decomission_node_other_hook(self, num_nodes,
-                                               decommission_node):
-        # If this is not the peer relation-broken hook, nothing happens.
-        hookenv.hook_name.return_value = 'cluster-relation-joined'
-        num_nodes.return_value = 3
-        actions.maybe_decommission_node('')
-        self.assertFalse(decommission_node.called)
-
-    @patch('helpers.decommission_node')
-    @patch('helpers.num_nodes')
-    def test_maybe_decomission_node_no_peers(self, num_nodes,
-                                             decommission_node):
-        # If this is not the peer relation-broken hook, nothing happens.
-        hookenv.hook_name.return_value = 'cluster-relation-broken'
-        num_nodes.return_value = 1  # Just me.
-        actions.maybe_decommission_node('')
-        self.assertFalse(decommission_node.called)
-
+    @patch('helpers.is_cassandra_running')
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_need_remount(self, request_restart,
-                                                 storage_relation, get_seeds):
+                                                 storage_relation, get_seeds,
+                                                 is_running):
+        is_running.return_value = True
         config = hookenv.config()
 
         # Storage says we need to restart.
@@ -468,12 +423,17 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_any_call('Mountpoint changed. '
                                     'Restart and migration required.')
 
+    @patch('helpers.is_cassandra_running')
+    @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_seeds_changed(self, request_restart,
-                                                  storage_relation, get_seeds):
+    def test_maybe_schedule_restart_new_seeds(self, request_restart,
+                                              storage_relation, get_seeds,
+                                              node_ips, is_running):
         config = hookenv.config()
+        node_ips.return_value = set()
+        is_running.return_value = True
 
         # Storage says we do not need to restart.
         storage_relation().needs_remount.return_value = False
@@ -491,14 +451,16 @@ class TestsActions(TestCaseBase):
 
         actions.maybe_schedule_restart('')
         request_restart.assert_called_once_with()
-        hookenv.log.assert_any_call('Seed list changed. '
-                                    'Restart required.')
+        hookenv.log.assert_any_call('Uncontacted seeds. Restart required.')
 
+    @patch('helpers.is_cassandra_running')
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_unchanged(self, request_restart,
-                                              storage_relation, get_seeds):
+                                              storage_relation, get_seeds,
+                                              is_running):
+        is_running.return_value = True
         config = hookenv.config()
 
         # Storage says we do not need to restart.
@@ -521,13 +483,15 @@ class TestsActions(TestCaseBase):
         actions.maybe_schedule_restart('')
         self.assertFalse(request_restart.called)
 
+    @patch('helpers.is_cassandra_running')
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_config_changed(self, request_restart,
                                                    storage_relation,
-                                                   get_seeds):
+                                                   get_seeds, is_running):
         config = hookenv.config()
+        is_running.return_value = True
 
         # Storage says we do not need to restart.
         storage_relation().needs_remount.return_value = False
@@ -551,12 +515,15 @@ class TestsActions(TestCaseBase):
         request_restart.assert_called_once_with()
         hookenv.log.assert_any_call('max_heap_size changed. Restart required.')
 
+    @patch('helpers.is_cassandra_running')
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_ip_changed(self, request_restart,
-                                               storage_relation, get_seeds):
+                                               storage_relation, get_seeds,
+                                               is_running):
         config = hookenv.config()
+        is_running.return_value = True
 
         # Storage says we do not need to restart.
         storage_relation().needs_remount.return_value = False
@@ -576,6 +543,13 @@ class TestsActions(TestCaseBase):
         request_restart.assert_called_once_with()
         hookenv.log.assert_any_call('Unit IP address changed. '
                                     'Restart required.')
+
+    @patch('helpers.is_cassandra_running')
+    @patch('rollingrestart.request_restart')
+    def test_maybe_schedule_restart_down(self, request_restart, is_running):
+        is_running.return_value = False
+        actions.maybe_schedule_restart('')
+        request_restart.assert_called_once_with()
 
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
