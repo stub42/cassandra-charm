@@ -77,7 +77,6 @@ def get_service_definitions():
         rollingrestart.make_service([helpers.stop_cassandra,
                                      helpers.remount_cassandra,
                                      helpers.ensure_database_directories,
-                                     # helpers.wait_for_seeds,
                                      helpers.start_cassandra,
                                      helpers.emit_describe_cluster,
                                      # helpers.post_bootstrap,
@@ -86,7 +85,8 @@ def get_service_definitions():
                                      helpers.emit_describe_cluster,
                                      helpers.reset_default_password,
                                      helpers.ensure_unit_superuser,
-                                     helpers.reset_auth_keyspace_replication]),
+                                     helpers.reset_auth_keyspace_replication],
+                                    [helpers.is_seed_responding]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',

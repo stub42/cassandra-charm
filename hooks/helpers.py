@@ -430,10 +430,10 @@ def start_cassandra():
 
 
 @logged
-def wait_for_seeds():
-    '''Wait for at least one of our seeds to be contactable.
+def is_seed_responding():
+    '''Return True if at least one of our seeds is contactable.
 
-    Does nothing if we are locally seeded (the only seed is this unit).
+    Also returns True if we are locally seeded (the only seed is this unit).
     We primarily need to wait until the seeds peer relation-changed hook
     has been run and the seed's firewall rules updated.
     '''
@@ -441,18 +441,15 @@ def wait_for_seeds():
     seed_ips.discard(hookenv.unit_private_ip())
     if not seed_ips:
         hookenv.log('Self-seeded')
-        return
-    i = 0
-    while True:
-        for ip in seed_ips:
-            try:
-                subprocess.check_output(['nodetool', '--host', ip, 'status'])
-                hookenv.log('Seed {} is responding'.format(ip))
-                return
-            except subprocess.CalledProcessError:
-                hookenv.log('Seed {} is not responding'.format(ip))
-        i += 1
-        time.sleep(max(2**i, 60))
+        return True
+    for ip in seed_ips:
+        try:
+            subprocess.check_output(['nodetool', '--host', ip, 'status'])
+            hookenv.log('Seed {} is responding'.format(ip))
+            return True
+        except subprocess.CalledProcessError:
+            hookenv.log('Seed {} is not responding'.format(ip))
+    return False
 
 
 @logged

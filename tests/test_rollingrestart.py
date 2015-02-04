@@ -423,7 +423,8 @@ class TestRollingRestart(TestCaseBase):
 
     @patch('rollingrestart.rolling_restart')
     def test_make_service(self, rolling_restart):
-        service = rollingrestart.make_service(sentinel.restart_hooks)
+        service = rollingrestart.make_service(sentinel.restart_hooks,
+                                              sentinel.prereqs)
         self.assertDictEqual(service,
                              dict(service='rollingrestart',
                                   data_ready=ANY,
@@ -431,7 +432,8 @@ class TestRollingRestart(TestCaseBase):
         # Call the service's data ready, and the rolling restart is
         # triggered.
         service['data_ready']('')
-        rolling_restart.assert_called_once_with(sentinel.restart_hooks)
+        rolling_restart.assert_called_once_with(sentinel.restart_hooks,
+                                                sentinel.prereqs)
 
 
 class TestUtc(unittest.TestCase):

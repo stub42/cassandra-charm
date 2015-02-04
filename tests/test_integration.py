@@ -355,13 +355,7 @@ class Test1UnitDeployment(TestDeploymentBase):
             raw = subprocess.check_output(['juju', 'run', '--unit=cassandra/0',
                                            'nodetool describecluster'],
                                           universal_newlines=True)
-            try:
-                raw.replace('\t', ' ')  # Almost yaml
-                desc = yaml.load(raw)
-            except Exception:
-                import pdb
-                pdb.set_trace()
-                raise
+            desc = yaml.load(raw.replace('\t', ' '))  # Almost yaml
             schemas = desc['Cluster Information']['Schema versions'] or {}
             for schema, ips in schemas.items():
                 if len(ips) == num_nodes:

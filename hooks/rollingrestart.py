@@ -96,7 +96,7 @@ def _enqueue(flag):
     hookenv.relation_set(relid, {key: value})
 
 
-def rolling_restart(restart_hooks):
+def rolling_restart(restart_hooks, prerequisites=()):
     '''To ensure availability, only restart one unit at a time.
 
     Returns:
@@ -118,6 +118,13 @@ def rolling_restart(restart_hooks):
     if not is_waiting_for_restart():
         cancel_restart()  # Clear any errant queue entries.
         return True
+
+    for prerequisite in prerequisites:
+        if not prerequisite():
+            hookenv.log('Prerequisite {} not met. Restart deferred.')
+            _enqueue(False)
+            _enqueue(True)  # Rejoin at the end of the queue.
+            return False
 
     def _restart():
         for restart_hook in restart_hooks:
@@ -221,7 +228,7 @@ def utcnow_str():
     return utcnow().strftime('%Y-%m-%d %H:%M:%S.%fZ')
 
 
-def make_service(restart_hooks):
+def make_service(restart_hooks, prerequisites=()):
     """Create a service dictionary for rolling restart.
 
     This needs to be a separate service, rather than a data_ready or
@@ -231,7 +238,7 @@ def make_service(restart_hooks):
     a service with no requirements.
     """
     def data_ready(servicename):
-        rolling_restart(restart_hooks)
+        rolling_restart(restart_hooks, prerequisites)
 
     return dict(service='rollingrestart', data_ready=data_ready,
                 stop=[], start=[])
