@@ -45,7 +45,7 @@ import rollingrestart
 from policies import ReconnectUntilReconnectionPolicy, RetryUntilRetryPolicy
 
 
-RESTART_TIMEOUT = 300
+RESTART_TIMEOUT = 600
 
 
 def logged(func):
@@ -137,7 +137,6 @@ def get_seeds():
 
     peers = rollingrestart.get_peers()
     if not peers:
-        hookenv.log('Local seed')
         return [hookenv.unit_private_ip()]
 
     seeds = [seed for seed in
@@ -496,13 +495,16 @@ def reset_default_password():
         with connect('cassandra', 'cassandra') as session:
             hookenv.log('Changing default admin password')
             query(session, 'ALTER USER cassandra WITH PASSWORD %s',
-                  ConsistencyLevel.ALL, (host.pwgen(),))  # pragma: no branch
+                  ConsistencyLevel.QUORUM,
+                  (host.pwgen(),))  # pragma: no branch
     except cassandra.AuthenticationFailed:
         hookenv.log('Default admin password already changed')
 
 
 CONNECT_TIMEOUT = 240
-AUTH_TIMEOUT = 15
+# Auth can fail in the window between updateing the system_auth
+# keyspace's replication factor and running nodetool repair.
+AUTH_TIMEOUT = 20
 
 
 @contextmanager
@@ -554,11 +556,14 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
         cluster.shutdown()
 
 
+QUERY_TIMEOUT = 600
+
+
 def query(session, statement, consistency_level, args=None):
     q = cassandra.query.SimpleStatement(statement,
                                         consistency_level=consistency_level)
 
-    until = time.time() + 60
+    until = time.time() + QUERY_TIMEOUT
     while True:
         try:
             return session.execute(q, args)
@@ -584,9 +589,9 @@ def ensure_user(username, password, superuser=False):
                 query(session,
                       'CREATE USER IF NOT EXISTS %s '
                       'WITH PASSWORD %s {}'.format(sup),
-                      ConsistencyLevel.ALL, (username, password,))
+                      ConsistencyLevel.QUORUM, (username, password,))
                 query(session, 'ALTER USER %s WITH PASSWORD %s {}'.format(sup),
-                      ConsistencyLevel.ALL, (username, password,))
+                      ConsistencyLevel.QUORUM, (username, password,))
                 break
             except cassandra.InvalidRequest:
                 pass
@@ -631,12 +636,12 @@ def create_unit_superuser():
             INSERT INTO system_auth.users (name, super)
             VALUES (%s, TRUE)
             ''')
-        query(session, statement, ConsistencyLevel.ALL, (username,))
+        query(session, statement, ConsistencyLevel.QUORUM, (username,))
         statement = dedent('''\
             INSERT INTO system_auth.credentials (username, salted_hash)
             VALUES (%s, %s)
             ''')
-        query(session, statement, ConsistencyLevel.ALL, (username, pwhash))
+        query(session, statement, ConsistencyLevel.QUORUM, (username, pwhash))
 
     # Restart Cassandra with regular config.
     wait_for_normality()
@@ -901,7 +906,7 @@ def get_auth_keyspace_replication(session):
         SELECT strategy_options FROM system.schema_keyspaces
         WHERE keyspace_name='system_auth'
         ''')
-    r = query(session, statement, ConsistencyLevel.ALL)
+    r = query(session, statement, ConsistencyLevel.QUORUM)
     return json.loads(r[0][0])
 
 

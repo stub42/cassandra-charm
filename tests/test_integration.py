@@ -318,6 +318,8 @@ class Test1UnitDeployment(TestDeploymentBase):
         s.execute('CREATE TABLE dat (x varchar PRIMARY KEY)')
 
         def count():
+            s = self.session()
+            s.set_keyspace('addndrop')
             return s.execute('SELECT COUNT(*) FROM dat')[0][0]
 
         total = self.rf * 100
@@ -329,11 +331,9 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.deployment.add_unit('cassandra')
         self.wait()
         status = self.juju_status()
-        unit = list(status['services']['cassandra']['units'].keys())[-1]
+        unit = sorted(status['services']['cassandra']['units'].keys())[-1]
         try:
-            # Amulet wait fails to correctly wait per Bug #1200267, so we
-            # need to explicity wait for a state we hope will be reached to
-            # actually be reached.
+            # Ensure we have reached the necessary state.
             self._wait_for_nodecount(self.rf + 1)
             self.assertEqual(count(), total)
 
@@ -344,9 +344,10 @@ class Test1UnitDeployment(TestDeploymentBase):
             # First, the node must be manually decommissioned before we
             # remove the unit.
             self._decommission(unit)
+            self._wait_for_decommission(unit)
+            self._wait_for_nodecount(self.rf)
             self.deployment.remove_unit(unit)
             self.wait()
-            self._wait_for_nodecount(self.rf)
 
         self.assertEqual(count(), total)
 
@@ -360,6 +361,15 @@ class Test1UnitDeployment(TestDeploymentBase):
             for schema, ips in schemas.items():
                 if len(ips) == num_nodes:
                     return
+
+    def _wait_for_decommission(self, unit):
+        while True:
+            raw = subprocess.check_output(['juju', 'run', '--unit', unit,
+                                           'nodetool netstats'],
+                                          universal_newlines=True)
+            if 'Mode: DECOMMISSIONED' in raw:
+                return
+            time.sleep(3)
 
     def _decommission(self, unit):
         subprocess.check_output(['juju', 'run', '--unit', unit,

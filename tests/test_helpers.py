@@ -697,7 +697,7 @@ class TestHelpers(TestCaseBase):
         connect.assert_called_once_with('cassandra', 'cassandra')
         query.assert_called_once_with(
             sentinel.session, 'ALTER USER cassandra WITH PASSWORD %s',
-            ConsistencyLevel.ALL, (sentinel.password,))
+            ConsistencyLevel.QUORUM, (sentinel.password,))
 
     @patch('helpers.query')
     @patch('helpers.connect')
@@ -780,7 +780,7 @@ class TestHelpers(TestCaseBase):
         # the desired configuration).
         yaml.return_value = dict(rpc_address='1.2.3.4',
                                  native_transport_port=666)
-        time.side_effect = [0, 10, 99999]
+        time.side_effect = [0, 7, 99999]
 
         creds.return_value = ('un', 'pw')
 
@@ -840,11 +840,11 @@ class TestHelpers(TestCaseBase):
         query.assert_has_calls([
             call(sentinel.session,
                  'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s NOSUPERUSER',
-                 ConsistencyLevel.ALL,
+                 ConsistencyLevel.QUORUM,
                  (sentinel.username, sentinel.password)),
             call(sentinel.session,
                  'ALTER USER %s WITH PASSWORD %s NOSUPERUSER',
-                 ConsistencyLevel.ALL,
+                 ConsistencyLevel.QUORUM,
                  (sentinel.username, sentinel.password))])
 
     @patch('helpers.query')
@@ -856,11 +856,11 @@ class TestHelpers(TestCaseBase):
         query.assert_has_calls([
             call(sentinel.session,
                  'CREATE USER IF NOT EXISTS %s WITH PASSWORD %s SUPERUSER',
-                 ConsistencyLevel.ALL,
+                 ConsistencyLevel.QUORUM,
                  (sentinel.username, sentinel.password)),
             call(sentinel.session,
                  'ALTER USER %s WITH PASSWORD %s SUPERUSER',
-                 ConsistencyLevel.ALL,
+                 ConsistencyLevel.QUORUM,
                  (sentinel.username, sentinel.password))])
 
     @patch('helpers.create_unit_superuser')
@@ -935,13 +935,13 @@ class TestHelpers(TestCaseBase):
                         INSERT INTO system_auth.users (name, super)
                         VALUES (%s, TRUE)
                         '''),
-                 ConsistencyLevel.ALL, ('super',)),
+                 ConsistencyLevel.QUORUM, ('super',)),
             call(sentinel.session,
                  dedent('''\
                     INSERT INTO system_auth.credentials (username, salted_hash)
                     VALUES (%s, %s)
                         '''),
-                 ConsistencyLevel.ALL, ('super', 'pwhash'))])
+                 ConsistencyLevel.QUORUM, ('super', 'pwhash'))])
 
     def test_cqlshrc_path(self):
         self.assertEqual(helpers.get_cqlshrc_path(),
@@ -1326,7 +1326,7 @@ class TestHelpers(TestCaseBase):
             sentinel.session, dedent('''\
                 SELECT strategy_options FROM system.schema_keyspaces
                 WHERE keyspace_name='system_auth'
-                '''), ConsistencyLevel.ALL)
+                '''), ConsistencyLevel.QUORUM)
 
     @patch('helpers.query')
     def test_set_auth_keyspace_replication(self, query):

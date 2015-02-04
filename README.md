@@ -28,6 +28,8 @@ New nodes can be added to scale up:
 /!\ Nodes must be manually decommissioned before dropping a unit.
 
     juju run --unit cassandra/1 "nodetool decommission"
+    # Wait until Mode is DECOMMISSIONED
+    juju run --unit cassandra/1 "nodetool netstats"
     juju remove-unit cassandra/1
 
 It is recommended to deploy at least 3 nodes and configure all your
