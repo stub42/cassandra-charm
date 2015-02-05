@@ -304,10 +304,12 @@ def reset_auth_keyspace_replication():
 def maybe_schedule_restart():
     '''Prepare for and schedule a rolling restart if necessary.'''
     if not helpers.is_cassandra_running():
-        # Short circuit if Cassandra is not running. One of the later
-        # checks invokes nodetool, which fails and retries indefinitely
-        # when Cassandra isn't running.
+        # Short circuit if Cassandra is not running to avoid log spam.
         rollingrestart.request_restart()
+        return
+
+    if helpers.is_decommissioned():
+        hookenv.log("Decommissioned")
         return
 
     # If any of these config items changed, a restart is required.
@@ -326,19 +328,17 @@ def maybe_schedule_restart():
         hookenv.log('Mountpoint changed. Restart and migration required.')
         restart = True
 
-    # If the seedlist has changed, we may need to restart.
-    config['configured_seeds'] = helpers.get_seeds()
-    if config.changed('configured_seeds'):
-        seeds = set(config['configured_seeds'])
-        nodes = helpers.node_ips()
-        if not seeds.issubset(nodes):
-            hookenv.log('Uncontacted seeds. Restart required.')
-            restart = True
-
     # If our IP address has changed, we need to restart.
     config['unit_private_ip'] = hookenv.unit_private_ip()
     if config.changed('unit_private_ip'):
         hookenv.log('Unit IP address changed. Restart required.')
+        restart = True
+
+    # If we have new seeds, we need to restart.
+    seeds = helpers.get_seeds()
+    nodes = helpers.node_ips()
+    if not seeds.issubset(nodes):
+        hookenv.log('New seeds. Restart required.')
         restart = True
 
     if restart:
@@ -486,6 +486,24 @@ def emit_netstats():
 
 
 @action
+def shutdown_before_joining_peers():
+    '''Shutdown the node before opening firewall ports for our peers.
+
+    When the peer relation is first joined, the node has already been
+    setup and is running as a standalone cluster. This is problematic
+    when the peer relation has been formed, as if it is left running
+    peers may conect to it and initiate replication before this node
+    has been properly reset and bootstrapped. To avoid this, we
+    shutdown the node before opening firewall ports to any peers. The
+    firewall can then be opened, and peers will not find a node here
+    until it starts its bootstrapping.
+    '''
+    relname = rollingrestart.get_peer_relation_name()
+    if hookenv.hook_name() == '{}-relation-joined'.format(relname):
+        helpers.stop_cassandra(immediate=True)
+
+
+@action
 def configure_firewall():
     '''Configure firewall rules using ufw.
 
@@ -525,9 +543,15 @@ def configure_firewall():
 
     desired_rules = set()  # ufw.grant_access/remove_access commands.
 
+    # Rules for peers
     for relinfo in hookenv.relations_of_type('cluster'):
         for port in peer_ports:
             desired_rules.add((relinfo['private-address'], 'any', port))
+
+    # External seeds also need access.
+    for seed_ip in helpers.get_seeds():
+        for port in peer_ports:
+            desired_rules.add((seed_ip, 'any', port))
 
     for relname in ['database', 'database-admin']:
         for relinfo in hookenv.relations_of_type(relname):

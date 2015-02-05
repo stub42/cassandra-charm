@@ -289,6 +289,7 @@ class TestRollingRestart(TestCaseBase):
     @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_first_in_queue(self, is_waiting, cancel_restart,
                                             get_peers, get_queue, peer_echo):
+        hookenv.hook_name.return_value = 'cluster-relation-changed'
         is_waiting.return_value = True
         restart_hooks = [MagicMock(), MagicMock()]
         get_peers.return_value = ['unit/1', 'unit/2']
@@ -305,8 +306,29 @@ class TestRollingRestart(TestCaseBase):
     @patch('rollingrestart.get_peers')
     @patch('rollingrestart.cancel_restart')
     @patch('rollingrestart.is_waiting_for_restart')
+    def test_rolling_restart_wrong_hook(self, is_waiting, cancel_restart,
+                                        get_peers, get_queue, peer_echo):
+        # We only restart in the peer relation-changed hook, to ensure
+        # we see up to date peer info.
+        hookenv.hook_name.return_value = 'cluster-relation-joined'
+        is_waiting.return_value = True
+        restart_hooks = [MagicMock(), MagicMock()]
+        get_peers.return_value = ['unit/1', 'unit/2']
+        get_queue.return_value = [hookenv.local_unit(), 'unit/1']
+
+        self.assertFalse(rollingrestart.rolling_restart(restart_hooks))
+        self.assertFalse(cancel_restart.called)
+        self.assertFalse(restart_hooks[0].called)
+        peer_echo.assert_called_once_with()  # peer_echo helper called.
+
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_fails(self, is_waiting, cancel_restart,
                                    get_peers, get_queue, peer_echo):
+        hookenv.hook_name.return_value = 'cluster-relation-changed'
         is_waiting.return_value = True
         restart_hook = MagicMock()
         restart_hook.side_effect = RuntimeError('Kaboom')

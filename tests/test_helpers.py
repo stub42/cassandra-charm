@@ -169,38 +169,44 @@ class TestHelpers(TestCaseBase):
         hookenv.local_unit.return_value = 'service/1'
         get_peers.return_value = set(['service/2', 'service/3', 'service/4'])
 
-        # The first three units are used as the seed list, except for
-        # the local unit (so seed nodes list up to two seeds and the
-        # remaining nodes list up to three seeds).
-        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
-        self.assertEqual(['10.20.0.2', '10.20.0.3'], helpers.get_seeds())
+        # # The first three units are used as the seed list, except for
+        # # the local unit (so seed nodes list up to two seeds and the
+        # # remaining nodes list up to three seeds).
+        # self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
+        # self.assertEqual(['10.20.0.2', '10.20.0.3'], helpers.get_seeds())
 
-    @patch('rollingrestart.get_peers')
-    def test_get_seeds_nonseed(self, get_peers):
-        hookenv.local_unit.return_value = 'service/4'
-        get_peers.return_value = set(['service/1', 'service/2', 'service/3'])
+        # The first three units are used as the seed list.
+        self.assertSetEqual(helpers.get_seeds(), set(['10.20.0.1',
+                                                      '10.20.0.2',
+                                                      '10.20.0.3']))
 
-        # The first three units are used as the seed list, except for
-        # the local unit (so seed nodes list up to two seeds and the
-        # remaining nodes list up to three seeds).
-        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.4')
-        self.assertEqual(['10.20.0.1', '10.20.0.2', '10.20.0.3'],
-                         helpers.get_seeds())
+    # @patch('rollingrestart.get_peers')
+    # def test_get_seeds_nonseed(self, get_peers):
+    #     hookenv.local_unit.return_value = 'service/4'
+    #     get_peers.return_value = set(['service/1', 'service/2', 'service/3'])
+
+    #     # The first three units are used as the seed list, except for
+    #     # the local unit (so seed nodes list up to two seeds and the
+    #     # remaining nodes list up to three seeds).
+    #     self.assertEqual(hookenv.unit_private_ip(), '10.20.0.4')
+    #     self.assertEqual(['10.20.0.1', '10.20.0.2', '10.20.0.3'],
+    #                      helpers.get_seeds())
 
     @patch('rollingrestart.get_peers')
     def test_get_seeds_alone(self, get_peers):
         hookenv.local_unit.return_value = 'service/1'
         get_peers.return_value = set()
 
-        # The first three units are used as the seed list, except for
-        # the local unit (so seed nodes list up to two seeds and the
-        # remaining nodes list up to three seeds).
-        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
-        self.assertEqual(['10.20.0.1'], helpers.get_seeds())
+        # # The first three units are used as the seed list, except for
+        # # the local unit (so seed nodes list up to two seeds and the
+        # # remaining nodes list up to three seeds).
+        # self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
+
+        self.assertSetEqual(helpers.get_seeds(), set(['10.20.0.1']))
 
     def test_get_seeds_forced(self):
         hookenv.config()['force_seed_nodes'] = 'a,b,c'
-        self.assertEqual(['a', 'b', 'c'], sorted(helpers.get_seeds()))
+        self.assertSetEqual(helpers.get_seeds(), set(['a', 'b', 'c']))
 
     @patch('relations.StorageRelation')
     def test_get_database_directory(self, storage_relation):
@@ -694,7 +700,8 @@ class TestHelpers(TestCaseBase):
         connect().__exit__.return_value = False
         connect.reset_mock()
         helpers.reset_default_password()
-        connect.assert_called_once_with('cassandra', 'cassandra')
+        connect.assert_called_once_with('cassandra', 'cassandra',
+                                        auth_timeout=5)
         query.assert_called_once_with(
             sentinel.session, 'ALTER USER cassandra WITH PASSWORD %s',
             ConsistencyLevel.QUORUM, (sentinel.password,))
@@ -707,17 +714,12 @@ class TestHelpers(TestCaseBase):
         helpers.reset_default_password()
         self.assertFalse(query.called)  # Nothing happened.
 
-    @patch('helpers.ReconnectUntilReconnectionPolicy')
-    @patch('helpers.RetryUntilRetryPolicy')
     @patch('cassandra.cluster.Cluster')
     @patch('cassandra.auth.PlainTextAuthProvider')
     @patch('helpers.get_seeds')
     @patch('helpers.superuser_credentials')
     @patch('helpers.read_cassandra_yaml')
-    def test_connect(self, yaml, creds, get_seeds, auth_provider, cluster,
-                     retry_policy, reconnection_policy):
-        retry_policy.return_value = sentinel.retry_policy
-        reconnection_policy.return_value = sentinel.reconnection_policy
+    def test_connect(self, yaml, creds, get_seeds, auth_provider, cluster):
         # host and port are pulled from the current active
         # cassandra.yaml file, rather than configuration, as
         # configuration may not match reality (if for no other reason
@@ -734,15 +736,13 @@ class TestHelpers(TestCaseBase):
 
         # Connection may be to localhost or a seed. Other units may not
         # yet be part of the cluster, so we don't use them.
-        get_seeds.return_value = ['5.6.7.8']
+        get_seeds.return_value = set(['5.6.7.8'])
 
         with helpers.connect() as session:
             auth_provider.assert_called_once_with(username='un',
                                                   password='pw')
             cluster.assert_called_once_with(
-                ['1.2.3.4', '5.6.7.8'], port=666, auth_provider=sentinel.ap,
-                default_retry_policy=sentinel.retry_policy,
-                reconnection_policy=sentinel.reconnection_policy)
+                ['1.2.3.4', '5.6.7.8'], port=666, auth_provider=sentinel.ap)
             self.assertIs(session, sentinel.session)
             self.assertFalse(cluster().shutdown.called)
 
@@ -884,7 +884,7 @@ class TestHelpers(TestCaseBase):
 
         # If connect works, nothing happens
         helpers.ensure_unit_superuser()
-        connect.assert_called_once_with()  # Superuser requested.
+        connect.assert_called_once_with(auth_timeout=10)  # As Superuser.
         self.assertFalse(create_unit_superuser.called)  # No need to create.
 
     @patch('helpers.wait_for_normality')
@@ -999,7 +999,7 @@ class TestHelpers(TestCaseBase):
     @patch('rollingrestart.get_peers')
     def test_num_peers(self, get_peers):
         get_peers.return_value = ['a', 'b']
-        self.assertEqual(helpers.num_peers(), 3)
+        self.assertEqual(helpers.num_peers(), 2)
 
     @patch('helpers.get_cassandra_yaml_file')
     def test_read_cassandra_yaml(self, get_cassandra_yaml_file):
@@ -1337,39 +1337,42 @@ class TestHelpers(TestCaseBase):
                                       'WITH REPLICATION = %s',
                                       ConsistencyLevel.ALL, (settings,))
 
-    @patch('subprocess.check_call')
-    def test_repair_auth_keyspace(self, check_call):
+    @patch('helpers.nodetool')
+    def test_repair_auth_keyspace(self, nodetool):
         helpers.repair_auth_keyspace()
-        check_call.assert_called_once_with(['nodetool', 'repair',
-                                            'system_auth'])
+        nodetool.assert_called_once_with('repair', 'system_auth')
 
-#     def test_is_bootstrapped(self):
-#         config = hookenv.config()
-#         self.assertFalse(helpers.is_bootstrapped())
-#         config['bootstrapped_into_cluster'] = True
-#         self.assertTrue(helpers.is_bootstrapped())
-#         config['bootstrapped_into_cluster'] = False
-#         self.assertFalse(helpers.is_bootstrapped())
+    def test_is_bootstrapped(self):
+        config = hookenv.config()
+        self.assertFalse(helpers.is_bootstrapped())
+        config['bootstrapped_into_cluster'] = True
+        self.assertTrue(helpers.is_bootstrapped())
+        config['bootstrapped_into_cluster'] = False
+        self.assertFalse(helpers.is_bootstrapped())
 
-#     @patch('time.sleep')
-#     @patch('helpers.num_nodes')
-#     def test_post_bootstrap(self, num_nodes, sleep):
-#         hookenv.config()['post_bootstrap_delay'] = 42
-#         num_nodes.return_value = 3
-#         self.assertFalse(helpers.is_bootstrapped())
-#         helpers.post_bootstrap()
-#         # Wait 2 minutes between nodes when initializing new nodes into
-#         # the cluster.
-#         sleep.assert_called_once_with(42)
-#         self.assertTrue(helpers.is_bootstrapped())
-#
-#     @patch('helpers.num_peers')
-#     def test_post_bootstrap_alone(self, num_peers):
-#         num_peers.return_value = 1  # Just us.
-#         hookenv.config()['bootstrapped_into_cluster'] = True
-#         self.assertTrue(helpers.is_bootstrapped())
-#         helpers.post_bootstrap()
-#         self.assertFalse(helpers.is_bootstrapped())
+    @patch('helpers.configure_cassandra_yaml')
+    @patch('time.sleep')
+    @patch('helpers.num_nodes')
+    def test_post_bootstrap(self, num_nodes, sleep, conf_yaml):
+        hookenv.config()['post_bootstrap_delay'] = 42
+        num_nodes.return_value = 3
+        self.assertFalse(helpers.is_bootstrapped())
+        helpers.post_bootstrap()
+        # Wait 2 minutes between nodes when initializing new nodes into
+        # the cluster.
+        sleep.assert_called_once_with(42)
+        self.assertTrue(helpers.is_bootstrapped())
+        # Reset any pre_bootstrap changes.
+        conf_yaml.assert_called_once_with()
+
+    @patch('helpers.configure_cassandra_yaml')
+    @patch('helpers.num_peers')
+    def test_post_bootstrap_alone(self, num_peers, conf_yaml):
+        num_peers.return_value = 0  # Just us.
+        helpers.set_bootstrapped(True)
+        self.assertTrue(helpers.is_bootstrapped())
+        helpers.post_bootstrap()
+        self.assertFalse(helpers.is_bootstrapped())
 
     @patch('subprocess.check_output')
     def test_up_node_ips(self, check_output):
@@ -1380,7 +1383,8 @@ class TestHelpers(TestCaseBase):
                 ''')
         self.assertSetEqual(set(helpers.up_node_ips()), set(['10.0.0.1',
                                                              '10.0.0.3']))
-        check_output.assert_called_once_with(['nodetool', 'status'],
+        check_output.assert_called_once_with(['nodetool', 'status',
+                                              'system_auth'],
                                              universal_newlines=True)
 
     @patch('helpers.up_node_ips')
@@ -1411,15 +1415,13 @@ class TestHelpers(TestCaseBase):
             ''')
         self.assertFalse(helpers.is_schema_agreed())
 
-    @patch('time.sleep')
+    @patch('helpers.backoff')
     @patch('helpers.is_schema_agreed')
-    def test_wait_agreed_schema(self, is_agreed, sleep):
+    def test_wait_for_agreed_schema(self, is_agreed, backoff):
         is_agreed.side_effect = iter([False, False, True, RuntimeError()])
+        backoff.return_value = True
         helpers.wait_for_agreed_schema()
-        self.assertEqual(sleep.call_count, 2)
-        sleep.assert_has_calls([call(2), call(4)])
-        is_agreed.side_effect = iter([False, RuntimeError()])
-        self.assertRaises(RuntimeError, helpers.wait_for_agreed_schema)
+        self.assertEqual(is_agreed.call_count, 3)
 
     @patch('subprocess.check_output')
     def is_all_normal(self, check_output):
@@ -1459,15 +1461,13 @@ class TestHelpers(TestCaseBase):
         check_output.return_value = 'DL  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
-    @patch('time.sleep')
+    @patch('helpers.backoff')
     @patch('helpers.is_all_normal')
-    def test_wait_for_normality(self, is_all_normal, sleep):
+    def test_wait_for_normality(self, is_all_normal, backoff):
         is_all_normal.side_effect = iter([False, False, True, RuntimeError()])
+        backoff.return_value = True
         helpers.wait_for_normality()
-        self.assertEqual(sleep.call_count, 2)
-        sleep.assert_has_calls([call(2), call(4)])
-        is_all_normal.side_effect = iter([False, RuntimeError()])
-        self.assertRaises(RuntimeError, helpers.wait_for_normality)
+        self.assertEqual(is_all_normal.call_count, 3)
 
     @patch('subprocess.call')
     def test_emit_describe_cluster(self, call):

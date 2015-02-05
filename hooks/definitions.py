@@ -15,14 +15,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from charmhelpers.core import hookenv
+from charmhelpers.core.hookenv import ERROR
 from charmhelpers.core.services import ServiceManager
 
 import actions
 import helpers
 import relations
 import rollingrestart
-
-import cassandra
 
 
 def get_service_definitions():
@@ -53,6 +52,7 @@ def get_service_definitions():
              data_ready=[actions.set_proxy,
                          actions.preinstall,
                          actions.revert_unchangeable_config,
+                         actions.shutdown_before_joining_peers,
                          actions.configure_firewall,
                          actions.cache_oracle_jdk,
                          actions.add_implicit_package_signing_keys,
@@ -77,16 +77,16 @@ def get_service_definitions():
         rollingrestart.make_service([helpers.stop_cassandra,
                                      helpers.remount_cassandra,
                                      helpers.ensure_database_directories,
+                                     helpers.pre_bootstrap,
                                      helpers.start_cassandra,
                                      helpers.emit_describe_cluster,
-                                     # helpers.post_bootstrap,
+                                     helpers.post_bootstrap,
                                      helpers.wait_for_agreed_schema,
                                      helpers.wait_for_normality,
                                      helpers.emit_describe_cluster,
                                      helpers.reset_default_password,
                                      helpers.ensure_unit_superuser,
-                                     helpers.reset_auth_keyspace_replication],
-                                    [helpers.is_seed_responding]),
+                                     helpers.reset_auth_keyspace_replication]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
@@ -103,13 +103,22 @@ def get_service_definitions():
 
 class RequiresLiveNode:
     def __bool__(self):
+        return self.is_live()
+
+    def is_live(self):
         if helpers.is_cassandra_running():
+            if helpers.is_decommissioned():
+                # Node is decommissioned and will refuse to talk.
+                hookenv.log('Node is decommissioned')
+                return False
             try:
                 with helpers.connect():
-                    hookenv.log("Authentication working")
+                    hookenv.log("Node live and authentication working")
                     return True
-            except cassandra.AuthenticationFailed:
-                hookenv.log('Unable to authenticate as superuser')
+            except Exception as x:
+                hookenv.log(
+                    'Unable to connect as superuser: {}'.format(str(x)),
+                    ERROR)
                 return False
         return False
 

@@ -394,22 +394,23 @@ class TestsActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
-    @patch('helpers.is_cassandra_running')
+    @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
+    @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_need_remount(self, request_restart,
-                                                 storage_relation, get_seeds,
-                                                 is_running):
+                                                 storage_relation, is_running,
+                                                 get_seeds, node_ips):
         is_running.return_value = True
         config = hookenv.config()
 
         # Storage says we need to restart.
         storage_relation().needs_remount.return_value = True
 
-        # Seedlist does not.
-        get_seeds.return_value = 'seed list'
-        config['configured_seeds'] = get_seeds()
+        # No new seeds
+        get_seeds.return_value = set(['a'])
+        node_ips.return_value = set(['a', 'b'])
 
         # IP address is unchanged.
         config['unit_private_ip'] = hookenv.unit_private_ip()
@@ -423,52 +424,23 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_any_call('Mountpoint changed. '
                                     'Restart and migration required.')
 
-    @patch('helpers.is_cassandra_running')
     @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
-    @patch('relations.StorageRelation')
-    @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_new_seeds(self, request_restart,
-                                              storage_relation, get_seeds,
-                                              node_ips, is_running):
-        config = hookenv.config()
-        node_ips.return_value = set()
-        is_running.return_value = True
-
-        # Storage says we do not need to restart.
-        storage_relation().needs_remount.return_value = False
-
-        # Seedlist has changed.
-        get_seeds.return_value = 'seed list'
-        config['configured_seeds'] = 'old seed list'
-
-        # IP address is unchanged.
-        config['unit_private_ip'] = hookenv.unit_private_ip()
-
-        # Config items are unchanged.
-        config.save()
-        config.load_previous()
-
-        actions.maybe_schedule_restart('')
-        request_restart.assert_called_once_with()
-        hookenv.log.assert_any_call('Uncontacted seeds. Restart required.')
-
     @patch('helpers.is_cassandra_running')
-    @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_unchanged(self, request_restart,
-                                              storage_relation, get_seeds,
-                                              is_running):
+                                              storage_relation, is_running,
+                                              get_seeds, node_ips):
         is_running.return_value = True
         config = hookenv.config()
 
         # Storage says we do not need to restart.
         storage_relation().needs_remount.return_value = False
 
-        # Seedlist does not.
-        get_seeds.return_value = 'seed list'
-        config['configured_seeds'] = get_seeds()
+        # No new seeds
+        get_seeds.return_value = set(['a'])
+        node_ips.return_value = set(['a', 'b'])
 
         # IP address is unchanged.
         config['unit_private_ip'] = hookenv.unit_private_ip()
@@ -483,22 +455,20 @@ class TestsActions(TestCaseBase):
         actions.maybe_schedule_restart('')
         self.assertFalse(request_restart.called)
 
+    @patch('helpers.node_ips')
     @patch('helpers.is_cassandra_running')
     @patch('helpers.get_seeds')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_config_changed(self, request_restart,
                                                    storage_relation,
-                                                   get_seeds, is_running):
+                                                   get_seeds, is_running,
+                                                   node_ips):
         config = hookenv.config()
         is_running.return_value = True
 
         # Storage says we do not need to restart.
         storage_relation().needs_remount.return_value = False
-
-        # Seedlist does not.
-        get_seeds.return_value = 'seed list'
-        config['configured_seeds'] = get_seeds()
 
         # IP address is unchanged.
         config['unit_private_ip'] = hookenv.unit_private_ip()
@@ -515,22 +485,23 @@ class TestsActions(TestCaseBase):
         request_restart.assert_called_once_with()
         hookenv.log.assert_any_call('max_heap_size changed. Restart required.')
 
-    @patch('helpers.is_cassandra_running')
+    @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
+    @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_ip_changed(self, request_restart,
-                                               storage_relation, get_seeds,
-                                               is_running):
+                                               storage_relation, is_running,
+                                               get_seeds, node_ips):
         config = hookenv.config()
         is_running.return_value = True
 
         # Storage says we do not need to restart.
         storage_relation().needs_remount.return_value = False
 
-        # Seedlist does not.
-        get_seeds.return_value = 'seed list'
-        config['configured_seeds'] = get_seeds()
+        # No new seeds
+        get_seeds.return_value = set(['a'])
+        node_ips.return_value = set(['a', 'b'])
 
         # IP address has changed.
         config['unit_private_ip'] = 'old ip address'

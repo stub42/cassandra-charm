@@ -61,10 +61,13 @@ class TestDefinitions(TestCaseBase):
                               ServiceManager)
 
     @patch('helpers.connect')
+    @patch('helpers.is_commissioned')
     @patch('helpers.is_cassandra_running')
-    def test_requires_live_node(self, is_running, connect):
+    def test_requires_live_node(self, is_running, is_commissioned, connect):
         # Is running and can authenticate
         is_running.return_value = True
+        # Is not decommissioned
+        is_commissioned.return_value = True
         # connect().__enter__.return_value = sentinel.session
         # connect().__exit__.return_value = False
         self.assertTrue(bool(definitions.RequiresLiveNode()))
@@ -73,9 +76,15 @@ class TestDefinitions(TestCaseBase):
         connect().__enter__.side_effect = cassandra.AuthenticationFailed()
         self.assertFalse(bool(definitions.RequiresLiveNode()))
 
+        # Is not commissioned
+        is_commissioned.return_value = False
+        self.assertFalse(bool(definitions.RequiresLiveNode()))
+
         # Is not running
         is_running.return_value = False
+        is_commissioned.reset_mock()
         self.assertFalse(bool(definitions.RequiresLiveNode()))
+        self.assertFalse(is_commissioned.called)  # Will fail it not is_running
 
 
 if __name__ == '__main__':

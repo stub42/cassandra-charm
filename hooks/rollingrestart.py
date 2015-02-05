@@ -49,6 +49,18 @@ def cancel_restart():
         os.remove(flag)
 
 
+_defer_restart = False
+
+
+class DeferRestart(Exception):
+    '''Defer the restart sequence until a future hook.
+
+    If a restart callback raises this exception, no further callbacks
+    are made and the restart request is moved to the end of the queue.
+    The restart will be triggered again in a future hook.
+    '''
+
+
 def get_restart_queue():
     '''The sorted list of units waiting for a rolling restart.
 
@@ -134,30 +146,41 @@ def rolling_restart(restart_hooks, prerequisites=()):
         hookenv.log('Restart queue entries purged.')
         return True
 
-    # If there are no peers, restart the service now since there is
-    # nobody to coordinate with.
-    if len(get_peers()) == 0:
-        hookenv.log('Restart request with no peers. Restarting.')
-        return _restart()
+    try:
+        # If there are no peers, restart the service now since there is
+        # nobody to coordinate with.
+        if len(get_peers()) == 0:
+            hookenv.log('Restart request with no peers. Restarting.')
+            return _restart()
 
-    local_unit = hookenv.local_unit()
-    queue = get_restart_queue()
+        local_unit = hookenv.local_unit()
+        queue = get_restart_queue()
 
-    # If we are not in the restart queue, join it and restart later.
-    # If there are peers, we cannot restart in the same hook we made
-    # the request or we will race with other units trying to restart.
-    if local_unit not in queue:
-        hookenv.log('Joining rolling restart queue')
-        _enqueue(True)
+        # If we are not in the restart queue, join it and restart later.
+        # If there are peers, we cannot restart in the same hook we made
+        # the request or we will race with other units trying to restart.
+        if local_unit not in queue:
+            hookenv.log('Joining rolling restart queue')
+            _enqueue(True)
+            return False
+
+        # We joined the restart queue in a previous hook, but we still have
+        # to wait until a peer relation-changed hook before we can do a
+        # restart. If we did the restart in any old hook, we might not see
+        # higher priority requests from peers.
+        peer_relname = get_peer_relation_name()
+        changed_hook = '{}-relation-changed'.format(peer_relname)
+        if local_unit == queue[0] and hookenv.hook_name() == changed_hook:
+            hookenv.log('First in rolling restart queue. Restarting.')
+            return _restart()
+
+        queue_str = ', '.join(queue)
+        hookenv.log('Waiting in rolling restart queue ({})'.format(queue_str))
         return False
-
-    if local_unit == queue[0]:
-        hookenv.log('First in rolling restart queue. Restarting.')
-        return _restart()
-
-    queue_str = ', '.join(queue)
-    hookenv.log('Waiting in rolling restart queue ({})'.format(queue_str))
-    return False
+    except DeferRestart:
+        _enqueue(False)
+        _enqueue(True)  # Rejoin at the end of the queue.
+        return False
 
 
 def _peerstorage_key():

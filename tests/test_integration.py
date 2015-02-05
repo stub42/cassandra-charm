@@ -89,8 +89,6 @@ class TestDeploymentBase(unittest.TestCase):
         cls.deployment = None
 
     def setUp(self):
-        self.reconfigure_cassandra()  # Reset cassandra configuration.
-
         session = self.cluster().connect()
         try:
             session.execute('DROP KEYSPACE test')
@@ -126,6 +124,9 @@ class TestDeploymentBase(unittest.TestCase):
                     raise
                 time.sleep(1)
 
+    def tearDown(self):
+        self.reconfigure_cassandra()
+
     def juju_status(self):
         status_yaml = subprocess.check_output(['juju', 'status',
                                                '--format=yaml'])
@@ -137,7 +138,7 @@ class TestDeploymentBase(unittest.TestCase):
         status = self.juju_status()
 
         # Get some valid credentials - unit's superuser account will do.
-        unit = list(status['services']['cassandra']['units'].keys())[0]
+        unit = sorted(status['services']['cassandra']['units'].keys())[0]
         cqlshrc_path = helpers.get_cqlshrc_path()
         cqlshrc = configparser.ConfigParser(interpolation=None)
         cqlshrc.read_string(
@@ -284,7 +285,7 @@ class Test1UnitDeployment(TestDeploymentBase):
                             raise
                         time.sleep(5)
 
-    def test_ports_closed(self):
+    def test_cluster_ports_closed(self):
         # The internal Cassandra ports are always closed, except to
         # peers. Opening the JMX or replication ports to the Internet
         # would be a very bad idea - even if we added authentication,
@@ -293,15 +294,16 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertFalse(self.is_port_open(7001), 'SSL Storage port open')
         self.assertFalse(self.is_port_open(7199), 'JMX port open')
 
-        self.reconfigure_cassandra(open_client_ports=False)
-        self.assertFalse(self.is_port_open(9042), 'Native trans port open')
-        self.assertFalse(self.is_port_open(9160), 'Thrift RPC port open')
-
-    def test_ports_open(self):
+    def test_client_ports_open(self):
         # By default, our tests have open_client_ports set to True
         # making the database accessible. Other tests rely on this.
         self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
         self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
+
+    def test_client_ports_closed(self):
+        self.reconfigure_cassandra(open_client_ports=False)
+        self.assertFalse(self.is_port_open(9042), 'Native trans port open')
+        self.assertFalse(self.is_port_open(9160), 'Thrift RPC port open')
 
     def test_add_and_drop_node(self):
         # We need to be able to add a node correctly into the ring,
@@ -309,24 +311,44 @@ class Test1UnitDeployment(TestDeploymentBase):
         # is located on the expected nodes.
         # To test this, first create a keyspace with rf==1 and enough
         # data too it so each node should have some.
-        s = self.session()
+        cluster = self.cluster()
+        s = cluster.connect()
         s.execute('''
                   CREATE KEYSPACE addndrop WITH REPLICATION = {
-                  'class': 'SimpleStrategy', 'replication_factor': 1}
+                  'class': 'NetworkTopologyStrategy', 'juju': 1}
                   ''')
-        s.set_keyspace('addndrop')
-        s.execute('CREATE TABLE dat (x varchar PRIMARY KEY)')
+        s.execute('CREATE TABLE addndrop.dat (x varchar PRIMARY KEY)')
 
-        def count():
-            s = self.session()
-            s.set_keyspace('addndrop')
-            return s.execute('SELECT COUNT(*) FROM dat')[0][0]
-
-        total = self.rf * 100
+        total = self.rf * 50
+        q = SimpleStatement('INSERT INTO addndrop.dat (x) VALUES (%s)',
+                            consistency_level=ConsistencyLevel.QUORUM)
         for _ in range(0, total):
-            s.execute('INSERT INTO dat (x) VALUES (%s)', (str(uuid.uuid1()),))
+            s.execute(q, (str(uuid.uuid1()),))
+        s.shutdown()
 
-        self.assertEqual(count(), total)
+        def validate_count():
+            # XXX: This comment is a lie?
+            # Despite QUORUM writes and reads, it still takes time for our
+            # updates to be visible. This does not inspire confidence.
+            # Wait until the number of rows meets expectations, or timeout.
+            until = time.time() + 600
+            while True:
+                s = cluster.connect()
+                try:
+                    results = s.execute(SimpleStatement(
+                        'SELECT x FROM addndrop.dat',
+                        consistency_level=ConsistencyLevel.QUORUM))
+                finally:
+                    s.shutdown()
+                if len(results) == total:
+                    return
+                self.assertLessEqual(
+                    time.time(), until,
+                    'Timeout. Only {} of {} rows visible.'.format(len(results),
+                                                                  total))
+                time.sleep(1)
+
+        validate_count()
 
         self.deployment.add_unit('cassandra')
         self.wait()
@@ -335,7 +357,7 @@ class Test1UnitDeployment(TestDeploymentBase):
         try:
             # Ensure we have reached the necessary state.
             self._wait_for_nodecount(self.rf + 1)
-            self.assertEqual(count(), total)
+            validate_count()
 
         finally:
             # When a node is dropped, it needs to decommission itself and
@@ -348,8 +370,7 @@ class Test1UnitDeployment(TestDeploymentBase):
             self._wait_for_nodecount(self.rf)
             self.deployment.remove_unit(unit)
             self.wait()
-
-        self.assertEqual(count(), total)
+        validate_count()
 
     def _wait_for_nodecount(self, num_nodes):
         while True:
