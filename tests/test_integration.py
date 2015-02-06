@@ -316,31 +316,19 @@ class Test1UnitDeployment(TestDeploymentBase):
                             consistency_level=ConsistencyLevel.QUORUM)
         for _ in range(0, total):
             s.execute(q, (str(uuid.uuid1()),))
-        s.shutdown()
+        cluster.shutdown()
+        del s
 
-        def validate_count():
-            # XXX: This comment is a lie?
-            # Despite QUORUM writes and reads, it still takes time for our
-            # updates to be visible. This does not inspire confidence.
-            # Wait until the number of rows meets expectations, or timeout.
-            until = time.time() + 600
-            while True:
-                s = cluster.connect()
-                try:
-                    results = s.execute(SimpleStatement(
-                        'SELECT x FROM addndrop.dat',
-                        consistency_level=ConsistencyLevel.QUORUM))
-                finally:
-                    s.shutdown()
-                if len(results) == total:
-                    return
-                self.assertLessEqual(
-                    time.time(), until,
-                    'Timeout. Only {} of {} rows visible.'.format(len(results),
-                                                                  total))
-                time.sleep(1)
+        def count():
+            cluster = self.cluster()
+            s = cluster.connect()
+            results = s.execute(
+                SimpleStatement('SELECT count(*) FROM addndrop.dat',
+                                consistency_level=ConsistencyLevel.QUORUM))
+            cluster.shutdown()
+            return results[0][0]
 
-        validate_count()
+        self.assertEqual(count(), total)
 
         self.deployment.add_unit('cassandra')
         self.wait()
@@ -348,8 +336,9 @@ class Test1UnitDeployment(TestDeploymentBase):
         unit = sorted(status['services']['cassandra']['units'].keys())[-1]
         try:
             # Ensure we have reached the necessary state.
-            self._wait_for_nodecount(self.rf + 1)
-            validate_count()
+            # self._wait_for_nodecount(self.rf + 1)
+
+            self.assertEqual(count(), total)
 
         finally:
             # When a node is dropped, it needs to decommission itself and
@@ -359,10 +348,11 @@ class Test1UnitDeployment(TestDeploymentBase):
             # remove the unit.
             self._decommission(unit)
             self._wait_for_decommission(unit)
-            self._wait_for_nodecount(self.rf)
+            # self._wait_for_nodecount(self.rf)
             self.deployment.remove_unit(unit)
             self.wait()
-        validate_count()
+
+        self.assertEqual(count(), total)
 
     def _wait_for_nodecount(self, num_nodes):
         while True:

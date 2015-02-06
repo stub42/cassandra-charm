@@ -916,6 +916,12 @@ def repair_auth_keyspace():
 
 def is_bootstrapped():
     '''Return True if the node has already bootstrapped into the cluster.'''
+    # Unit #0 is always bootstrapped, per comments in pre_bootstrap()
+    # Fix this when juju gives us proper leadership by ensuring the
+    # service leader is the initial seed node.
+    unit_num = int(hookenv.local_unit().split('/')[-1])
+    if unit_num == 0:
+        set_bootstrapped(True)
     return hookenv.config().get('bootstrapped_into_cluster', False)
 
 
@@ -932,11 +938,12 @@ def pre_bootstrap():
     node needs to be shutdown, the database needs to be completely reset,
     and the node restarted with a valid seed_node.
 
-    Note that a single node may have been running for some time before
-    we scale up and add a second one. In order to preserve the data, we
-    only reset the database it it contains nothing but system keyspaces.
-    If there are any user defined keyspaces, we know that the node was the
-    first one and has been active and should be the one to not bootstrap.
+    Until juju gains the necessary features, the best we can do is assume
+    that Unit 0 should be the initial seed node. If the service has been
+    running for some time and never had a second unit added, it is almost
+    certain that it is Unit 0 that contains data we want to keep. This
+    assumption is false if you have removed the only unit in the service
+    at some point, so don't do that.
     """
     if is_bootstrapped():
         hookenv.log("Already bootstrapped")
@@ -946,31 +953,38 @@ def pre_bootstrap():
         hookenv.log("No peers, no cluster, no bootstrapping")
         return
 
-    # If there are only system keyspaces defined, we can safely reset
-    # the local database.
-    dirs = get_all_database_directories()
-    keyspaces = set(chain(*[os.listdir(dfd)
-                            for dfd in dirs['data_file_directories']]))
-    hookenv.log('keyspaces=={!r}'.format(keyspaces), DEBUG)
-    keyspaces = keyspaces - set(['system', 'system_auth', 'system_traces'])
+    hookenv.log('Joining cluster and need to bootstrap.')
+    dfds = get_all_database_directories()['data_file_directories']
 
-    # If we have found data, we do not bootstrap.
+    # If there are only system keyspaces defined, there is no data we
+    # may want to preserve and we can safely proceed with the bootstrap.
+    # This should always be the case, but it is worth checking for weird
+    # situations such as reusing an existing external mount without
+    # clearing its data.
+    keyspaces = set(chain(*[os.listdir(dfd) for dfd in dfds]))
+    hookenv.log('keyspaces={!r}'.format(keyspaces), DEBUG)
+    keyspaces = keyspaces - set(['system', 'system_auth', 'system_traces'])
     if keyspaces:
-        hookenv.log('Existing data. Starting as initial seed')
-        set_bootstrapped(True)
-        hookenv.config()['initial_seed'] = True
-    else:
-        for dfd in dirs['data_file_directories']:
-            path = os.path.join(dfd, 'system')
-            if os.path.isdir(path):
-                hookenv.log('Removing {} before bootstrap'.format(path))
-                shutil.rmtree(path)
-        seeds = get_seeds()
-        seeds.discard(hookenv.unit_private_ip())
-        configure_cassandra_yaml(seeds=seeds)
-        if not is_seed_responding():
-            hookenv.log('Seed not responding. Bootstrap deferred.')
-            raise rollingrestart.DeferRestart()
+        hookenv.log('Non-system keyspaces {!r} detected. '
+                    'Unable to bootstrap.'.format(keyspaces), ERROR)
+        raise SystemExit(1)
+
+    # We need to clear the system keyspace to enable bootstrapping to
+    # correctly work.
+    for dfd in dfds:
+        path = os.path.join(dfd, 'system')
+        if os.path.isdir(path):
+            hookenv.log('Removing {} before bootstrap'.format(path))
+            shutil.rmtree(path)
+
+    # Remove this unit from the seeds list (if it is there) to enable
+    # bootstrapping.
+    seeds = get_seeds()
+    seeds.discard(hookenv.unit_private_ip())
+    configure_cassandra_yaml(seeds=seeds)
+    if not is_seed_responding():
+        hookenv.log('Seed not responding. Bootstrap deferred.')
+        raise rollingrestart.DeferRestart()
 
 
 @logged
