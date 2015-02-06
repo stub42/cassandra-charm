@@ -519,8 +519,7 @@ CONNECT_TIMEOUT = 240
 def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
             auth_timeout=CONNECT_TIMEOUT):
     cassandra_yaml = read_cassandra_yaml()
-    addresses = get_seeds()
-    addresses.add(cassandra_yaml['rpc_address'])
+    addresses = [cassandra_yaml['rpc_address']]
     port = cassandra_yaml['native_transport_port']
 
     if username is None or password is None:
@@ -831,15 +830,14 @@ def is_cassandra_running():
     pid_file = get_cassandra_pid_file()
 
     try:
-        # Keep checking for full up state with binary backoff
-        # up to 256 seconds, or 8.5 minutes total.
-        for i in range(9):
+        while backoff('Cassandra to respond'):
             # We reload the pid every time, in case it has gone away.
+            # If it goes away, a FileNotFound exception is raised.
             pid = get_pid_from_file(pid_file)
 
             # This does not kill the process but checks for its
-            # existence. It raises an OSError if the process is not
-            # running.
+            # existence. It raises an ProcessLookupError if the process
+            # is not running.
             os.kill(pid, 0)
 
             if subprocess.call(["nodetool", "-h",
@@ -849,34 +847,16 @@ def is_cassandra_running():
                 hookenv.log(
                     "Cassandra PID {} is running and responding".format(pid))
                 return True
-            else:
-                hookenv.log("Cassandra PID {} is running but not responding, "
-                            "attempt {}.".format(pid, i))
-                time.sleep(2 ** i)
-
-        pid = get_pid_from_file(pid_file)
-        hookenv.log("Cassandra PID {} is running but not responding to "
-                    "nodetool. Please manually check on the state of "
-                    "Cassandra".format(pid), ERROR)
-        raise SystemExit(1)  # System state is insane, so die.
-
-    except Exception:
-        # We check for pid file existance after attempting to check if the
-        # system is up, to avoid races where we are checking as the system
-        # is shutting itself down.
-        if not os.path.exists(pid_file):
-            hookenv.log("Cassandra is stopped")
-            return False
+    except FileNotFoundError:
+        hookenv.log("Cassandra is not running. PID file does not exist.")
+        return False
+    except (FileNotFoundError, ProcessLookupError):
+        if os.path.exists(pid_file):
+            hookenv.log("Cassandra is not running, but pid file exists.",
+                        WARNING)
         else:
-            try:
-                os.kill(get_pid_from_file(pid_file), 0)
-            except ProcessLookupError:
-                hookenv.log("Cassandra is not running, but pid file exists.",
-                            WARNING)
-                return False
-        # The system is insane. For example, the pid_file contains '-1'.
-        # Reraise the exception.
-        raise
+            hookenv.log("Cassandra is not running. PID file does not exist.")
+        return False
 
 
 @logged

@@ -87,6 +87,8 @@ RESTART_NOT_REQUIRED_KEYS = set([
 
 
 def action(func):
+    '''Log and call func, stripping the undesirable servicename argument.
+    '''
     @wraps(func)
     def wrapper(servicename, *args, **kw):
         if hookenv.remote_unit():
@@ -98,6 +100,30 @@ def action(func):
                                                  func.__name__))
         return func(*args, **kw)
     return wrapper
+
+
+def skip_unless(*check):
+    '''Skip the decorated function unless 1 or more of the checks returns True.
+    '''
+    def skip_unless_decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kw):
+            if not check():
+                return func(*args, **kw)
+        return wrapper
+    return skipif_decorator
+
+
+def skip_unless_config_changed(*config_keys):
+    '''Only run the decorated function if one of the config items has changed.
+    '''
+    def check():
+        config = hookenv.config()
+        for key in config_keys:
+            if config.changed(key):
+                return True
+        return False
+    return skip_unless(check)
 
 
 @action
