@@ -906,6 +906,30 @@ def repair_auth_keyspace():
     nodetool('repair', 'system_auth')
 
 
+def non_system_keyspaces():
+    # If there are only system keyspaces defined, there is no data we
+    # may want to preserve and we can safely proceed with the bootstrap.
+    # This should always be the case, but it is worth checking for weird
+    # situations such as reusing an existing external mount without
+    # clearing its data.
+    dfds = get_all_database_directories()['data_file_directories']
+    keyspaces = set(chain(*[os.listdir(dfd) for dfd in dfds]))
+    hookenv.log('keyspaces={!r}'.format(keyspaces), DEBUG)
+    return keyspaces - set(['system', 'system_auth', 'system_traces',
+                            'dse_system'])
+
+
+def nuke_system_keyspace():
+    # We need to clear the system keyspace to enable bootstrapping to
+    # correctly work.
+    dfds = get_all_database_directories()['data_file_directories']
+    for dfd in dfds:
+        path = os.path.join(dfd, 'system')
+        if os.path.isdir(path):
+            hookenv.log('Removing {} before bootstrap'.format(path))
+            shutil.rmtree(path)
+
+
 def is_bootstrapped():
     '''Return True if the node has already bootstrapped into the cluster.'''
     # Unit #0 is always bootstrapped, per comments in pre_bootstrap()
@@ -946,29 +970,14 @@ def pre_bootstrap():
         return
 
     hookenv.log('Joining cluster and need to bootstrap.')
-    dfds = get_all_database_directories()['data_file_directories']
 
-    # If there are only system keyspaces defined, there is no data we
-    # may want to preserve and we can safely proceed with the bootstrap.
-    # This should always be the case, but it is worth checking for weird
-    # situations such as reusing an existing external mount without
-    # clearing its data.
-    keyspaces = set(chain(*[os.listdir(dfd) for dfd in dfds]))
-    hookenv.log('keyspaces={!r}'.format(keyspaces), DEBUG)
-    keyspaces = keyspaces - set(['system', 'system_auth', 'system_traces',
-                                 'dse_system'])
+    keyspaces = non_system_keyspaces()
     if keyspaces:
         hookenv.log('Non-system keyspaces {!r} detected. '
                     'Unable to bootstrap.'.format(keyspaces), ERROR)
         raise SystemExit(1)
 
-    # We need to clear the system keyspace to enable bootstrapping to
-    # correctly work.
-    for dfd in dfds:
-        path = os.path.join(dfd, 'system')
-        if os.path.isdir(path):
-            hookenv.log('Removing {} before bootstrap'.format(path))
-            shutil.rmtree(path)
+    nuke_system_keyspace()
 
     # Remove this unit from the seeds list (if it is there) to enable
     # bootstrapping.

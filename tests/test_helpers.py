@@ -36,6 +36,7 @@ from charmhelpers.core import hookenv, host
 
 from tests.base import TestCaseBase
 import helpers
+import rollingrestart
 
 
 patch = functools.partial(patch, autospec=True)
@@ -1395,6 +1396,65 @@ class TestHelpers(TestCaseBase):
         self.assertTrue(helpers.is_bootstrapped())
         config['bootstrapped_into_cluster'] = False
         self.assertFalse(helpers.is_bootstrapped())
+
+    @patch('helpers.nuke_system_keyspace')
+    @patch('helpers.is_seed_responding')
+    @patch('helpers.configure_cassandra_yaml')
+    @patch('helpers.get_seeds')
+    @patch('shutil.rmtree')
+    @patch('helpers.non_system_keyspaces')
+    @patch('helpers.num_peers')
+    @patch('helpers.is_bootstrapped')
+    def test_pre_bootstrap(self, is_bootstrapped, num_peers, keyspaces,
+                           rmtree, get_seeds, conf_yaml, is_seed_resp,
+                           nuke_sys):
+        keyspaces.return_value = set()
+        is_bootstrapped.return_value = False
+        num_peers.return_value = 1
+        get_seeds.return_value = set([sentinel.seed_a, sentinel.seed_b,
+                                      hookenv.unit_private_ip()])
+        is_seed_resp.return_value = True
+
+        helpers.pre_bootstrap()
+
+        nuke_sys.assert_called_once_with()
+        conf_yaml.assert_called_once_with(seeds=set([sentinel.seed_a,
+                                                     sentinel.seed_b]))
+
+    @patch('helpers.nuke_system_keyspace')
+    @patch('helpers.is_seed_responding')
+    @patch('helpers.configure_cassandra_yaml')
+    @patch('helpers.get_seeds')
+    @patch('shutil.rmtree')
+    @patch('helpers.non_system_keyspaces')
+    @patch('helpers.num_peers')
+    @patch('helpers.is_bootstrapped')
+    def test_pre_bootstrap(self, is_bootstrapped, num_peers, keyspaces,
+                           rmtree, get_seeds, conf_yaml, is_seed_resp,
+                           nuke_sys):
+        keyspaces.return_value = set()
+        is_bootstrapped.return_value = False
+        num_peers.return_value = 1
+        get_seeds.return_value = set([sentinel.seed])
+        is_seed_resp.return_value = False  # seed not yet up.
+
+        self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
+
+
+    @patch('helpers.nuke_system_keyspace')
+    @patch('helpers.non_system_keyspaces')
+    @patch('helpers.num_peers')
+    @patch('helpers.is_bootstrapped')
+    def test_pre_bootstrap_fail(self, is_bootstrapped, num_peers, keyspaces,
+                                nuke_sys):
+        # If there are non-system keyspaces, this node cannot bootstrap.
+        # Fail hard. Perhaps one day we will use sstableloader to import
+        # this data.
+        keyspaces.return_value = set([sentinel.keyspace])
+        is_bootstrapped.return_value = False
+        num_peers.return_value = 1
+        self.assertRaises(SystemExit, helpers.pre_bootstrap)
+        self.assertFalse(nuke_sys.called)
 
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
