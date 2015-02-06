@@ -625,6 +625,24 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
+    @patch('subprocess.check_output')
+    @patch('helpers.get_seeds')
+    def test_is_seed_responding(self, get_seeds, check_output):
+        get_seeds.return_value = set([sentinel.a_seed,
+                                      sentinel.b_seed,
+                                      hookenv.unit_private_ip()])
+        check_output.side_effect = iter([subprocess.CalledProcessError(1, ''),
+                                         sentinel.ignored])
+        self.assertTrue(helpers.is_seed_responding())
+        check_output.assert_has_calls(
+            [call(['nodetool', '--host', sentinel.a_seed, 'status']),
+             call(['nodetool', '--host', sentinel.b_seed, 'status'])],
+            any_order=True)
+
+        check_output.side_effect = iter([subprocess.CalledProcessError(1, ''),
+                                         subprocess.CalledProcessError(1, '')])
+        self.assertFalse(helpers.is_seed_responding())
+
     @patch('time.time')
     @patch('time.sleep')
     @patch('helpers.get_cassandra_service')
