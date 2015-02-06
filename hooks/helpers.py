@@ -518,6 +518,9 @@ CONNECT_TIMEOUT = 240
 @contextmanager
 def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
             auth_timeout=CONNECT_TIMEOUT):
+    # We pull the currently configured listen address and port from the
+    # yaml, rather than the service configuration, as it may have been
+    # overridden.
     cassandra_yaml = read_cassandra_yaml()
     addresses = [cassandra_yaml['rpc_address']]
     port = cassandra_yaml['native_transport_port']
@@ -850,8 +853,10 @@ def is_cassandra_running():
     except FileNotFoundError:
         hookenv.log("Cassandra is not running. PID file does not exist.")
         return False
-    except (FileNotFoundError, ProcessLookupError):
+    except ProcessLookupError:
         if os.path.exists(pid_file):
+            # File disappeared between reading the PID and checking if
+            # the PID is running.
             hookenv.log("Cassandra is not running, but pid file exists.",
                         WARNING)
         else:

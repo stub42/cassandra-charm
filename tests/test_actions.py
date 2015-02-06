@@ -394,6 +394,7 @@ class TestsActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
+    @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
     @patch('helpers.is_cassandra_running')
@@ -401,9 +402,12 @@ class TestsActions(TestCaseBase):
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_need_remount(self, request_restart,
                                                  storage_relation, is_running,
-                                                 get_seeds, node_ips):
-        is_running.return_value = True
+                                                 get_seeds, node_ips,
+                                                 is_decom):
         config = hookenv.config()
+
+        is_decom.return_value = False
+        is_running.return_value = True
 
         # Storage says we need to restart.
         storage_relation().needs_remount.return_value = True
@@ -424,6 +428,7 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_any_call('Mountpoint changed. '
                                     'Restart and migration required.')
 
+    @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
     @patch('helpers.is_cassandra_running')
@@ -431,9 +436,11 @@ class TestsActions(TestCaseBase):
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_unchanged(self, request_restart,
                                               storage_relation, is_running,
-                                              get_seeds, node_ips):
-        is_running.return_value = True
+                                              get_seeds, node_ips, is_decom):
         config = hookenv.config()
+
+        is_decom.return_value = False
+        is_running.return_value = True
 
         # Storage says we do not need to restart.
         storage_relation().needs_remount.return_value = False
@@ -455,6 +462,7 @@ class TestsActions(TestCaseBase):
         actions.maybe_schedule_restart('')
         self.assertFalse(request_restart.called)
 
+    @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
     @patch('helpers.is_cassandra_running')
     @patch('helpers.get_seeds')
@@ -463,8 +471,10 @@ class TestsActions(TestCaseBase):
     def test_maybe_schedule_restart_config_changed(self, request_restart,
                                                    storage_relation,
                                                    get_seeds, is_running,
-                                                   node_ips):
+                                                   node_ips, is_decom):
         config = hookenv.config()
+
+        is_decom.return_value = False
         is_running.return_value = True
 
         # Storage says we do not need to restart.
@@ -485,6 +495,7 @@ class TestsActions(TestCaseBase):
         request_restart.assert_called_once_with()
         hookenv.log.assert_any_call('max_heap_size changed. Restart required.')
 
+    @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
     @patch('helpers.is_cassandra_running')
@@ -492,8 +503,9 @@ class TestsActions(TestCaseBase):
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_ip_changed(self, request_restart,
                                                storage_relation, is_running,
-                                               get_seeds, node_ips):
+                                               get_seeds, node_ips, is_decom):
         config = hookenv.config()
+        is_decom.return_value = False
         is_running.return_value = True
 
         # Storage says we do not need to restart.

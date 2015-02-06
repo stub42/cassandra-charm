@@ -102,28 +102,28 @@ def action(func):
     return wrapper
 
 
-def skip_unless(*check):
-    '''Skip the decorated function unless 1 or more of the checks returns True.
-    '''
-    def skip_unless_decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kw):
-            if not check():
-                return func(*args, **kw)
-        return wrapper
-    return skipif_decorator
-
-
-def skip_unless_config_changed(*config_keys):
-    '''Only run the decorated function if one of the config items has changed.
-    '''
-    def check():
-        config = hookenv.config()
-        for key in config_keys:
-            if config.changed(key):
-                return True
-        return False
-    return skip_unless(check)
+# def skip_unless(*check):
+#     '''Skip the decorated function unless one or more checks return True.
+#     '''
+#     def skip_unless_decorator(func):
+#         @wraps(func)
+#         def wrapper(*args, **kw):
+#             if not check():
+#                 return func(*args, **kw)
+#         return wrapper
+#     return skip_unless_decorator
+#
+#
+# def skip_unless_config_changed(*config_keys):
+#     '''Only run the decorated function if one or more config items changed.
+#     '''
+#     def check():
+#         config = hookenv.config()
+#         for key in config_keys:
+#             if config.changed(key):
+#                 return True
+#         return False
+#     return skip_unless(check)
 
 
 @action

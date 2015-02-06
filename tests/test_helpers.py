@@ -716,10 +716,9 @@ class TestHelpers(TestCaseBase):
 
     @patch('cassandra.cluster.Cluster')
     @patch('cassandra.auth.PlainTextAuthProvider')
-    @patch('helpers.get_seeds')
     @patch('helpers.superuser_credentials')
     @patch('helpers.read_cassandra_yaml')
-    def test_connect(self, yaml, creds, get_seeds, auth_provider, cluster):
+    def test_connect(self, yaml, creds, auth_provider, cluster):
         # host and port are pulled from the current active
         # cassandra.yaml file, rather than configuration, as
         # configuration may not match reality (if for no other reason
@@ -734,15 +733,11 @@ class TestHelpers(TestCaseBase):
         cluster().connect.return_value = sentinel.session
         cluster.reset_mock()
 
-        # Connection may be to localhost or a seed. Other units may not
-        # yet be part of the cluster, so we don't use them.
-        get_seeds.return_value = set(['5.6.7.8'])
-
         with helpers.connect() as session:
             auth_provider.assert_called_once_with(username='un',
                                                   password='pw')
             cluster.assert_called_once_with(
-                ['1.2.3.4', '5.6.7.8'], port=666, auth_provider=sentinel.ap)
+                ['1.2.3.4'], port=666, auth_provider=sentinel.ap)
             self.assertIs(session, sentinel.session)
             self.assertFalse(cluster().shutdown.called)
 
@@ -1139,14 +1134,11 @@ class TestHelpers(TestCaseBase):
             self.assertRaises(OSError, helpers.get_pid_from_file,
                               os.path.join(tmpdir, 'invalid.pid'))
 
-    @patch('os.path.exists')
     @patch('helpers.get_cassandra_pid_file')
-    def test_is_cassandra_running_not_running(self, get_pid_file, exists):
-        # When Cassandra is not running, there is no pidfile.
-        get_pid_file.return_value = sentinel.pid_file
-        exists.return_value = False
+    def test_is_cassandra_running_not_running(self, get_pid_file):
+        # When Cassandra is not running, the pidfile does not exist.
+        get_pid_file.return_value = 'does not exist'
         self.assertFalse(helpers.is_cassandra_running())
-        exists.assert_called_once_with(sentinel.pid_file)
 
     @patch('os.path.exists')
     @patch('helpers.get_pid_from_file')
@@ -1193,42 +1185,22 @@ class TestHelpers(TestCaseBase):
         subprocess.call.side_effect = iter([3, 2, 1, 0])  # 4th time the charm
         self.assertTrue(helpers.is_cassandra_running())
 
-    @patch('time.sleep')
+    @patch('helpers.backoff')
     @patch('os.kill')
     @patch('subprocess.call')
-    @patch('os.path.exists')
     @patch('helpers.get_pid_from_file')
     def test_is_cassandra_running_shutting_down(self, get_pid_from_file,
-                                                exists, call, kill, sleep):
+                                                call, kill, backoff):
         # If Cassandra is in the process of shutting down, it might take
         # several failed checks before the pid file disappears.
+        backoff.return_value = True
         os.kill.return_value = None  # The process is running
         call.return_value = 1  # But nodetool is not succeeding.
-        sleep.return_value = None  # Don't actually sleep in unittests.
 
         # Fourth time, the pid file is gone.
-        get_pid_from_file.side_effect = iter([42, 42, 42, OSError('Whoops')])
-        exists.return_value = False
+        get_pid_from_file.side_effect = iter([42, 42, 42,
+                                              FileNotFoundError('Whoops')])
         self.assertFalse(helpers.is_cassandra_running())
-        exists.assert_called_once_with(helpers.get_cassandra_pid_file())
-
-    @patch('time.sleep')
-    @patch('os.kill')
-    @patch('subprocess.call')
-    @patch('os.path.exists')
-    @patch('helpers.get_pid_from_file')
-    def test_is_cassandra_running_hung(self, get_pid, exists, subprocess_call,
-                                       kill, sleep):
-        get_pid.return_value = 42  # The pid is known.
-        os.kill.return_value = None  # The process is running.
-        subprocess_call.return_value = 1  # nodetool is failing.
-        sleep.return_value = None  # Don't actually sleep between retries.
-
-        self.assertRaises(SystemExit, helpers.is_cassandra_running)
-
-        # Binary backoff up to 256 seconds, or up to 8.5 minutes total.
-        sleep.assert_has_calls([call(i) for i in
-                                [1, 2, 4, 8, 16, 32, 64, 128, 256]])
 
     @patch('os.kill')
     @patch('subprocess.call')
