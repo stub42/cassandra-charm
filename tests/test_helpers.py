@@ -643,6 +643,11 @@ class TestHelpers(TestCaseBase):
                                          subprocess.CalledProcessError(1, '')])
         self.assertFalse(helpers.is_seed_responding())
 
+    @patch('helpers.get_seeds')
+    def test_is_seed_responding_self_seeded(self, get_seeds):
+        get_seeds.return_value = set([hookenv.unit_private_ip()])
+        self.assertTrue(helpers.is_seed_responding())
+
     @patch('time.time')
     @patch('time.sleep')
     @patch('helpers.get_cassandra_service')
@@ -864,6 +869,36 @@ class TestHelpers(TestCaseBase):
             sentinel.statement, consistency_level=sentinel.consistency)
         session.execute.assert_called_once_with(simple_statement(''),
                                                 sentinel.args)
+
+    @patch('cassandra.query.SimpleStatement')
+    @patch('helpers.backoff')
+    def test_query_retry(self, backoff, simple_statement):
+        backoff.return_value = repeat(True)
+        simple_statement.return_value = sentinel.s_statement
+        session = MagicMock()
+        session.execute.side_effect = iter([RuntimeError(), sentinel.results])
+        self.assertEqual(helpers.query(session, sentinel.statement,
+                                       sentinel.consistency, sentinel.args),
+                         sentinel.results)
+        self.assertEqual(session.execute.call_count, 2)
+
+    @patch('time.time')
+    @patch('cassandra.query.SimpleStatement')
+    @patch('helpers.backoff')
+    def test_query_timeout(self, backoff, simple_statement, time):
+        backoff.return_value = repeat(True)
+        # Timeout is 600
+        time.side_effect = iter([0, 1, 2, 3, 500, 700, RuntimeError()])
+        simple_statement.return_value = sentinel.s_statement
+        session = MagicMock()
+
+        class Whoops(Exception):
+            pass
+
+        session.execute.side_effect = Whoops('Fail')
+        self.assertRaises(Whoops, helpers.query, session, sentinel.statement,
+                          sentinel.consistency, sentinel.args)
+        self.assertEqual(session.execute.call_count, 5)
 
     @patch('helpers.query')
     @patch('helpers.connect')

@@ -33,9 +33,10 @@ def default_hook():
     # packages may not have been installed.
     import definitions
 
+    hookenv.log('*** {} Hook Start'.format(hookenv.hook_name()))
     sm = definitions.get_service_manager()
     sm.manage()
-    hookenv.log('{} Done'.format(hookenv.hook_name()))
+    hookenv.log('*** {} Hook Done'.format(hookenv.hook_name()))
 
 if __name__ == '__main__':
     bootstrap()

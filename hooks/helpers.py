@@ -52,8 +52,8 @@ RESTART_TIMEOUT = 600
 def logged(func):
     @wraps(func)
     def wrapper(*args, **kw):
-        hookenv.log("** Helper {}/{}".format(hookenv.hook_name(),
-                                             func.__name__))
+        hookenv.log("* Helper {}/{}".format(hookenv.hook_name(),
+                                            func.__name__))
         return func(*args, **kw)
     return wrapper
 
@@ -574,7 +574,7 @@ def query(session, statement, consistency_level, args=None):
                                         consistency_level=consistency_level)
 
     until = time.time() + QUERY_TIMEOUT
-    while True:
+    for _ in backoff('query to execute'):
         try:
             return session.execute(q, args)
         except Exception:
