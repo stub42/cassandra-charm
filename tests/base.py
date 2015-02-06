@@ -32,3 +32,7 @@ class TestCaseBase(unittest.TestCase):
         is_lxc = patch('helpers.is_lxc', return_value=False)
         is_lxc.start()
         self.addCleanup(is_lxc.stop)
+
+        emit = patch('helpers.emit')
+        emit.start()
+        self.addCleanup(emit.stop)

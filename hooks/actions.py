@@ -525,7 +525,8 @@ def shutdown_before_joining_peers():
     '''
     relname = rollingrestart.get_peer_relation_name()
     if hookenv.hook_name() == '{}-relation-joined'.format(relname):
-        helpers.stop_cassandra(immediate=True)
+        if not helpers.is_bootstrapped():
+            helpers.stop_cassandra(immediate=True)
 
 
 @action

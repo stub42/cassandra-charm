@@ -1429,9 +1429,9 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap(self, is_bootstrapped, num_peers, keyspaces,
-                           rmtree, get_seeds, conf_yaml, is_seed_resp,
-                           nuke_sys):
+    def test_pre_bootstrap_defer(self, is_bootstrapped, num_peers, keyspaces,
+                                 rmtree, get_seeds, conf_yaml, is_seed_resp,
+                                 nuke_sys):
         keyspaces.return_value = set()
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
@@ -1439,7 +1439,6 @@ class TestHelpers(TestCaseBase):
         is_seed_resp.return_value = False  # seed not yet up.
 
         self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
-
 
     @patch('helpers.nuke_system_keyspace')
     @patch('helpers.non_system_keyspaces')
@@ -1468,12 +1467,17 @@ class TestHelpers(TestCaseBase):
         is_bootstrapped.return_value = True
         helpers.pre_bootstrap()
 
+    @patch('helpers.is_all_normal')
+    @patch('helpers.is_cassandra_running')
     @patch('helpers.configure_cassandra_yaml')
     @patch('time.sleep')
     @patch('helpers.num_nodes')
-    def test_post_bootstrap(self, num_nodes, sleep, conf_yaml):
+    def test_post_bootstrap(self, num_nodes, sleep, conf_yaml,
+                            is_running, is_normal):
         hookenv.config()['post_bootstrap_delay'] = 42
         num_nodes.return_value = 3
+        is_running.return_value = True
+        is_normal.return_value = True
         self.assertFalse(helpers.is_bootstrapped())
         helpers.post_bootstrap()
         # Wait 2 minutes between nodes when initializing new nodes into
@@ -1540,6 +1544,12 @@ class TestHelpers(TestCaseBase):
         backoff.return_value = repeat(True)
         helpers.wait_for_agreed_schema()
         self.assertEqual(is_agreed.call_count, 3)
+
+    def test_get_peer_ips(self):
+        # IP addresses of the peers. Does not include the current unit.
+        self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
+        self.assertSetEqual(helpers.get_peer_ips(),
+                            set(['10.20.0.2', '10.20.0.3']))
 
     @patch('subprocess.check_output')
     def is_all_normal(self, check_output):

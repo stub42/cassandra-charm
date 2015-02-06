@@ -26,6 +26,7 @@ import os.path
 import re
 import shutil
 import subprocess
+import sys
 from textwrap import dedent
 import time
 
@@ -538,7 +539,7 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     auth_until = start + auth_timeout
     while True:
         cluster = cassandra.cluster.Cluster(sorted(addresses),
-                                            port=port,
+                                            port=port, protocol_version=3,
                                             auth_provider=auth_provider)
         try:
             session = cluster.connect()
@@ -566,7 +567,7 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
         cluster.shutdown()
 
 
-QUERY_TIMEOUT = 600
+QUERY_TIMEOUT = 60
 
 
 def query(session, statement, consistency_level, args=None):
@@ -704,15 +705,24 @@ def superuser_credentials():
     return username, password
 
 
+def emit(*args, **kw):
+    # Just like print, but mocked out in the test suite.
+    print(*args, **kw)
+
+
 def nodetool(*cmd):
     cmd = ['nodetool'] + [str(i) for i in cmd]
     i = 0
     for _ in backoff('nodetool to work'):
+        i += 1
         try:
             raw = subprocess.check_output(cmd, universal_newlines=True)
-            hookenv.log(raw)
+            emit(raw)
+            sys.stdout.flush()
             return raw
         except subprocess.CalledProcessError as x:
+            if i > 10:
+                raise
             hookenv.log(str(x))
 
 
@@ -930,19 +940,29 @@ def nuke_system_keyspace():
             shutil.rmtree(path)
 
 
+def unit_number():
+    return int(hookenv.local_unit().split('/')[-1])
+
+
 def is_bootstrapped():
     '''Return True if the node has already bootstrapped into the cluster.'''
     # Unit #0 is always bootstrapped, per comments in pre_bootstrap()
     # Fix this when juju gives us proper leadership by ensuring the
     # service leader is the initial seed node.
-    unit_num = int(hookenv.local_unit().split('/')[-1])
-    if unit_num == 0:
-        set_bootstrapped(True)
-    return hookenv.config().get('bootstrapped_into_cluster', False)
+    config = hookenv.config()
+    if unit_number() == 0:
+        return True
+    return config.get('bootstrapped_into_cluster', False)
 
 
 def set_bootstrapped(flag):
-    hookenv.config()['bootstrapped_into_cluster'] = bool(flag)
+    flag = bool(flag)
+    if flag is not is_bootstrapped():
+        if flag:
+            hookenv.log('Node is bootstrapped')
+        else:
+            hookenv.log('Node is unbootstrapped')
+    hookenv.config()['bootstrapped_into_cluster'] = flag
 
 
 @logged
@@ -969,15 +989,21 @@ def pre_bootstrap():
         hookenv.log("No peers, no cluster, no bootstrapping")
         return
 
-    hookenv.log('Joining cluster and need to bootstrap.')
+    config = hookenv.config()
+    if not config.get('bootstrap_started', False):
+        hookenv.log('Joining cluster and need to bootstrap.')
 
-    keyspaces = non_system_keyspaces()
-    if keyspaces:
-        hookenv.log('Non-system keyspaces {!r} detected. '
-                    'Unable to bootstrap.'.format(keyspaces), ERROR)
-        raise SystemExit(1)
+        keyspaces = non_system_keyspaces()
+        if keyspaces:
+            hookenv.log('Non-system keyspaces {!r} detected. '
+                        'Unable to bootstrap.'.format(keyspaces), ERROR)
+            raise SystemExit(1)
 
-    nuke_system_keyspace()
+        nuke_system_keyspace()
+
+        config['bootstrap_started'] = True
+    else:
+        hookenv.log('Attempting to complete bootstrap')
 
     # Remove this unit from the seeds list (if it is there) to enable
     # bootstrapping.
@@ -997,18 +1023,33 @@ def post_bootstrap():
     minutes if the unit has just bootstrapped to ensure no other.
     '''
     config = hookenv.config()
-    if num_peers() == 0:
+    if unit_number() == 0:
+        # Unit #0 is always considered bootstrapped, as it is the
+        # initial seed.
+        pass
+    elif num_peers() == 0:
         # There is no cluster (just us), so we are not bootstrapped into
         # the cluster.
         set_bootstrapped(False)
     else:
         if not is_bootstrapped():
+            # Bootstrap was attempted, but might still fail. Wait until
+            # the node has successfully joined, or retry the bootstrap
+            # in a future hook if the Cassandra process has shut down.
+            for _ in backoff('cluster operations to finish'):
+                if not is_cassandra_running():
+                    hookenv.log('Bootstrap failed. Will retry.')
+                    raise rollingrestart.DeferRestart()
+                try:
+                    if is_all_normal():
+                        break
+                except subprocess.CalledProcessError:
+                    pass
             set_bootstrapped(True)
-            if config.changed('bootstrapped_into_cluster'):
-                hookenv.log('Bootstrapped into the cluster. '
-                            'Waiting {}s.'.format(
-                                config['post_bootstrap_delay']))
-                time.sleep(config['post_bootstrap_delay'])
+            hookenv.log('Bootstrapped into the cluster. '
+                        'Waiting {}s.'.format(
+                            config['post_bootstrap_delay']))
+            time.sleep(config['post_bootstrap_delay'])
     # Revert any changes that pre_bootstrap may have made to enable
     # bootstrapping.
     configure_cassandra_yaml()
