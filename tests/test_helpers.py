@@ -19,6 +19,7 @@
 from collections import namedtuple
 import errno
 import functools
+from itertools import repeat
 import os.path
 import subprocess
 import tempfile
@@ -41,6 +42,26 @@ patch = functools.partial(patch, autospec=True)
 
 
 class TestHelpers(TestCaseBase):
+    @patch('time.sleep')
+    def test_backoff(self, sleep):
+        i = 0
+        for _ in helpers.backoff('foo to bar'):
+            i += 1
+            if i == 10:
+                break
+        sleep.assert_has_calls([
+            call(2), call(4), call(8), call(16), call(32),
+            call(60), call(60), call(60), call(60)])
+
+        i = 0
+        for _ in helpers.backoff('foo to bar', max_pause=10):
+            i += 1
+            if i == 10:
+                break
+        sleep.assert_has_calls([
+            call(2), call(4), call(8), call(10), call(10),
+            call(10), call(10), call(10), call(10)])
+
     def test_autostart_disabled(self):
         with tempfile.TemporaryDirectory() as tmpdir:
 
@@ -1193,7 +1214,7 @@ class TestHelpers(TestCaseBase):
                                                 call, kill, backoff):
         # If Cassandra is in the process of shutting down, it might take
         # several failed checks before the pid file disappears.
-        backoff.return_value = True
+        backoff.return_value = repeat(True)
         os.kill.return_value = None  # The process is running
         call.return_value = 1  # But nodetool is not succeeding.
 
@@ -1391,7 +1412,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_schema_agreed')
     def test_wait_for_agreed_schema(self, is_agreed, backoff):
         is_agreed.side_effect = iter([False, False, True, RuntimeError()])
-        backoff.return_value = True
+        backoff.return_value = repeat(True)
         helpers.wait_for_agreed_schema()
         self.assertEqual(is_agreed.call_count, 3)
 
@@ -1437,7 +1458,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_all_normal')
     def test_wait_for_normality(self, is_all_normal, backoff):
         is_all_normal.side_effect = iter([False, False, True, RuntimeError()])
-        backoff.return_value = True
+        backoff.return_value = repeat(True)
         helpers.wait_for_normality()
         self.assertEqual(is_all_normal.call_count, 3)
 

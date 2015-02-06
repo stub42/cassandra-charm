@@ -34,19 +34,20 @@ def get_service_definitions():
     # basic tests.
     config = hookenv.config()
 
-    # Opening ports by default is never a good idea, so the operator
-    # must explicitly choose to open database access to outside of the
-    # juju environment.
-    if config['open_client_ports']:
-        ports = [config['rpc_port'],               # Thrift clients.
-                 config['native_transport_port']]  # Native protocol clients.
-    else:
-        ports = []
-
     return [
         # Actions done before or while the Cassandra service is running.
         dict(service=helpers.get_cassandra_service(),
-             ports=ports,
+
+             # Open access to client and replication ports. Client
+             # protocols require password authentication. Access to
+             # the unauthenticated replication ports is protected via
+             # ufw firewall rules. We do not open the JMX port, although
+             # we could since it is similarly protected by ufw.
+             ports=[config['rpc_port'],               # Thrift clients
+                    config['native_transport_port'],  # Native clients.
+                    config['storage_port'],           # Plaintext replication
+                    config['ssl_storage_port']],      # Encrypted replication.
+
              required_data=[relations.StorageRelation()],
              provided_data=[relations.StorageRelation()],
              data_ready=[actions.set_proxy,

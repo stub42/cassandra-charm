@@ -224,14 +224,6 @@ options:
 
             
     # Networking options.
-    open_client_ports:
-        type: boolean
-        default: False
-        description: >
-            By default (False), client connections are only accepted from
-            related units. When set to True, the native_transport_port
-            and rpc_port ports are opened and client connections accepted
-            from anywhere.
     native_transport_port:
         type: int
         default: 9042

@@ -48,7 +48,6 @@ class TestDeploymentBase(unittest.TestCase):
 
     common_config = dict(max_heap_size='128M',
                          heap_newsize='32M',
-                         open_client_ports=True,
                          post_bootstrap_delay=120)
     test_config = dict()
 
@@ -59,6 +58,7 @@ class TestDeploymentBase(unittest.TestCase):
         cls.deployment = deployment
 
         deployment.add('cassandra', units=cls.rf)
+        deployment.expose('cassandra')  # Tests need client access.
         config = dict()
         config.update(cls.common_config)
         config.update(cls.test_config)  # Test subclass overrides
@@ -76,7 +76,8 @@ class TestDeploymentBase(unittest.TestCase):
         deployment.relate('cassandra:database', 'client:database')
         deployment.relate('cassandra:database-admin', 'client:database-admin')
 
-        deployment.deploy()
+        deployment.deploy(timeout=WAIT_TIMEOUT)
+        deployment.sentry.wait(timeout=WAIT_TIMEOUT)
 
         # Silence noise - we are testing the charm, not the Cassandra
         # driver.
@@ -123,9 +124,6 @@ class TestDeploymentBase(unittest.TestCase):
                 if time.time() > timeout:
                     raise
                 time.sleep(1)
-
-    def tearDown(self):
-        self.reconfigure_cassandra()
 
     def juju_status(self):
         status_yaml = subprocess.check_output(['juju', 'status',
@@ -286,31 +284,25 @@ class Test1UnitDeployment(TestDeploymentBase):
                         time.sleep(5)
 
     def test_cluster_ports_closed(self):
-        # The internal Cassandra ports are always closed, except to
-        # peers. Opening the JMX or replication ports to the Internet
-        # would be a very bad idea - even if we added authentication,
-        # it would still be a DOS target.
+        # The internal Cassandra ports are protected by ufw firewall
+        # rules, and are closed to everyone except for peers and the
+        # force_seed_nodes list. This is required for security, since
+        # the protocols are unauthenticated. It also stops rogue nodes
+        # on failed units from rejoining the cluster and causing chaos.
         self.assertFalse(self.is_port_open(7000), 'Storage port open')
         self.assertFalse(self.is_port_open(7001), 'SSL Storage port open')
         self.assertFalse(self.is_port_open(7199), 'JMX port open')
 
     def test_client_ports_open(self):
-        # By default, our tests have open_client_ports set to True
-        # making the database accessible. Other tests rely on this.
         self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
         self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
-
-    def test_client_ports_closed(self):
-        self.reconfigure_cassandra(open_client_ports=False)
-        self.assertFalse(self.is_port_open(9042), 'Native trans port open')
-        self.assertFalse(self.is_port_open(9160), 'Thrift RPC port open')
 
     def test_add_and_drop_node(self):
         # We need to be able to add a node correctly into the ring,
         # without an operator needing to repair keyspaces to ensure data
         # is located on the expected nodes.
-        # To test this, first create a keyspace with rf==1 and enough
-        # data too it so each node should have some.
+        # To test this, first create a keyspace with rf==1 and put enough
+        # data in it so each node will have some.
         cluster = self.cluster()
         s = cluster.connect()
         s.execute('''

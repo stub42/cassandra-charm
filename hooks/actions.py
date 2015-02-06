@@ -74,7 +74,6 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'install_sources',
     'install_keys',
     'http_proxy',
-    'open_client_ports',
     'wait_for_storage_broker',
     'io_scheduler',
     'nagios_context',
@@ -551,21 +550,19 @@ def configure_firewall():
 
     # Peers need replication and JMX access. These protocols do not
     # require authentication.
-    peer_ports = [config['storage_port'], config['ssl_storage_port'],
-                  config['native_transport_port'], config['rpc_port'],
-                  7199]  # JMX default.
+    JMX_PORT = 7199
+    peer_ports = [config['storage_port'], config['ssl_storage_port'], JMX_PORT]
 
-    # Enable client access from anywhere, if explicitly enabled. Juju and
-    # external firewalls can still restrict this further of course.
+    # Enable client access from anywhere. Juju and external firewalls
+    # can still restrict this further of course (ie. 'juju expose').
     for key in client_keys:
         if config.changed(key) and config.previous(key) is not None:
             # First close old ports. We use this order in the unlikely case
             # someone is trying to swap the native and Thrift ports.
             ufw.service(config.previous(key), 'close')
-    cmd = 'open' if config['open_client_ports'] else 'close'
     for port in client_ports:
         # Then open or close the configured ports.
-        ufw.service(port, cmd)
+        ufw.service(port, 'open')
 
     desired_rules = set()  # ufw.grant_access/remove_access commands.
 
@@ -578,11 +575,6 @@ def configure_firewall():
     for seed_ip in helpers.get_seeds():
         for port in peer_ports:
             desired_rules.add((seed_ip, 'any', port))
-
-    for relname in ['database', 'database-admin']:
-        for relinfo in hookenv.relations_of_type(relname):
-            for port in client_ports:
-                desired_rules.add((relinfo['private-address'], 'any', port))
 
     previous_rules = set(tuple(rule) for rule in config.get('ufw_rules', []))
 

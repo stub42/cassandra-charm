@@ -394,6 +394,16 @@ class TestsActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
+    @patch('helpers.is_cassandra_running')
+    @patch('helpers.is_decommissioned')
+    @patch('rollingrestart.request_restart')
+    def test_maybe_schedule_restart_decommissioned(self, request_restart,
+                                                   is_running, is_decom):
+        is_decom.return_value = True
+        is_running.return_value = True
+        actions.maybe_schedule_restart('')
+        self.assertFalse(request_restart.called)
+
     @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
     @patch('helpers.get_seeds')
@@ -883,28 +893,27 @@ class TestsActions(TestCaseBase):
         actions.emit_netstats('')
         helpers_emit.assert_called_once_with()
 
+    @patch('helpers.get_seeds')
     @patch('charmhelpers.core.hookenv.relations_of_type')
     @patch('actions.ufw')
-    def test_configure_firewall(self, ufw, rel_of_type):
-        rel_of_type.side_effect = iter([
-            [{'private-address': '1.1.0.1'}, {'private-address': '1.1.0.2'}],
-            [{'private-address': '1.2.0.1'}, {'private-address': '1.2.0.2'}],
-            [{'private-address': '1.3.0.1'}, {'private-address': '1.3.0.2'}]])
+    def test_configure_firewall(self, ufw, rel_of_type, get_seeds):
+        rel_of_type.return_value = [{'private-address': '1.1.0.1'},
+                                    {'private-address': '1.1.0.2'}]
+
+        # Seeds get access too, to ensure the force_seed_nodes work.
+        get_seeds.return_value = set(['10.20.0.1'])
 
         actions.configure_firewall('')
 
-        rel_of_type.assert_has_calls([call('cluster'),
-                                      call('database'),
-                                      call('database-admin')])
+        # Confirm our mock provided the expected data.
+        rel_of_type.assert_called_once_with('cluster')
 
         ufw.enable.assert_called_once_with()  # Always enabled.
 
-        # SSH is always opened. The database ports by default have the
-        # global allow rule removed, disabling access unless explicitly
-        # allowed in following steps.
+        # SSH and the client protocol ports are always fully open.
         ufw.service.assert_has_calls([call('ssh', 'open'),
-                                      call(9042, 'close'),
-                                      call(9160, 'close')])
+                                      call(9042, 'open'),
+                                      call(9160, 'open')])
 
         # This test is running for the first time, so there are no
         # previously applied rules to remove. It opens necessary access
@@ -915,36 +924,24 @@ class TestsActions(TestCaseBase):
         ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7000),
                                            call('1.1.0.1', 'any', 7001),
                                            call('1.1.0.1', 'any', 7199),
-                                           call('1.1.0.1', 'any', 9042),
-                                           call('1.1.0.1', 'any', 9160),
 
                                            call('1.1.0.2', 'any', 7000),
                                            call('1.1.0.2', 'any', 7001),
                                            call('1.1.0.2', 'any', 7199),
-                                           call('1.1.0.2', 'any', 9042),
-                                           call('1.1.0.2', 'any', 9160),
 
-                                           call('1.2.0.1', 'any', 9042),
-                                           call('1.2.0.1', 'any', 9160),
-                                           call('1.2.0.2', 'any', 9042),
-                                           call('1.2.0.2', 'any', 9160),
-
-                                           call('1.3.0.1', 'any', 9042),
-                                           call('1.3.0.1', 'any', 9160),
-                                           call('1.3.0.2', 'any', 9042),
-                                           call('1.3.0.2', 'any', 9160)],
+                                           call('10.20.0.1', 'any', 7000),
+                                           call('10.20.0.1', 'any', 7001),
+                                           call('10.20.0.1', 'any', 7199)],
                                           any_order=True)
 
         # If things change in a later hook, unwanted rules are removed
         # and new ones added.
-        rel_of_type.side_effect = iter([
-            [{'private-address': '1.1.0.1'}],
-            [{'private-address': '1.2.0.2'}],
-            [{'private-address': '1.3.0.1'}, {'private-address': '1.3.0.2'}]])
+        get_seeds.return_value = set(['1.1.0.1'])
         config = hookenv.config()
         config.save()
         config.load_previous()
         config['native_transport_port'] = 7777  # 9042 -> 7777
+        config['storage_port'] = 7002  # 7000 -> 7002
         config['open_client_ports'] = True
         ufw.reset_mock()
 
@@ -957,24 +954,18 @@ class TestsActions(TestCaseBase):
                                       call(9042, 'close'),
                                       call(7777, 'open'),
                                       call(9160, 'open')], any_order=True)
-        ufw.revoke_access.assert_has_calls([call('1.1.0.1', 'any', 9042),
+        ufw.revoke_access.assert_has_calls([call('1.1.0.1', 'any', 7000),
                                             call('1.1.0.2', 'any', 7000),
-                                            call('1.1.0.2', 'any', 7001),
-                                            call('1.1.0.2', 'any', 7199),
-                                            call('1.1.0.2', 'any', 9042),
-                                            call('1.1.0.2', 'any', 9160),
-
-                                            call('1.2.0.1', 'any', 9042),
-                                            call('1.2.0.1', 'any', 9160),
-                                            call('1.2.0.2', 'any', 9042),
-
-                                            call('1.3.0.1', 'any', 9042),
-                                            call('1.3.0.2', 'any', 9042)],
+                                            call('10.20.0.1', 'any', 7000),
+                                            call('10.20.0.1', 'any', 7001),
+                                            call('10.20.0.1', 'any', 7199)],
                                            any_order=True)
-        ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7777),
-                                           call('1.2.0.2', 'any', 7777),
-                                           call('1.3.0.1', 'any', 7777),
-                                           call('1.3.0.2', 'any', 7777)],
+        ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7001),
+                                           call('1.1.0.1', 'any', 7002),
+                                           call('1.1.0.1', 'any', 7199),
+                                           call('1.1.0.2', 'any', 7001),
+                                           call('1.1.0.2', 'any', 7002),
+                                           call('1.1.0.2', 'any', 7199)],
                                           any_order=True)
 
 

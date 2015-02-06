@@ -715,7 +715,7 @@ def superuser_credentials():
 def nodetool(*cmd):
     cmd = ['nodetool'] + [str(i) for i in cmd]
     i = 0
-    while backoff('nodetool to work'):
+    for _ in backoff('nodetool to work'):
         try:
             raw = subprocess.check_output(cmd, universal_newlines=True)
             hookenv.log(raw)
@@ -833,7 +833,7 @@ def is_cassandra_running():
     pid_file = get_cassandra_pid_file()
 
     try:
-        while backoff('Cassandra to respond'):
+        for _ in backoff('Cassandra to respond'):
             # We reload the pid every time, in case it has gone away.
             # If it goes away, a FileNotFound exception is raised.
             pid = get_pid_from_file(pid_file)
@@ -1018,7 +1018,7 @@ def is_schema_agreed():
 
 @logged
 def wait_for_agreed_schema():
-    while backoff('schema agreement'):
+    for _ in backoff('schema agreement'):
         if is_schema_agreed():
             return
 
@@ -1065,7 +1065,7 @@ def is_all_normal():
 
 @logged
 def wait_for_normality():
-    while backoff('cluster operators to complete'):
+    for _ in backoff('cluster operators to complete'):
         if is_all_normal():
             return
 
@@ -1075,7 +1075,7 @@ def is_decommissioned():
     if not is_cassandra_running():
         return True  # Decommissioned nodes are not shut down.
 
-    while backoff('stable node mode'):
+    for _ in backoff('stable node mode'):
         raw = nodetool('netstats')
         if 'Mode: DECOMMISSIONED' in raw:
             hookenv.log('DECOMMISSIONED', WARNING)

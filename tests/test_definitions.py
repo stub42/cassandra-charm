@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from itertools import chain
 import functools
 import unittest
 from unittest.mock import patch
@@ -43,18 +44,15 @@ class TestDefinitions(TestCaseBase):
             with self.subTest(d=d):
                 self.assertIsInstance(d, dict)
 
-    def test_get_service_definitions_closed_ports(self):
-        # By default, all ports are closed.
-        defs = definitions.get_service_definitions()
-        self.assertListEqual(defs[0]['ports'], [])
-
     def test_get_service_definitions_open_ports(self):
-        # Ports are only if explicitly requested in the config.
         config = hookenv.config()
-        config['open_client_ports'] = True
         defs = definitions.get_service_definitions()
-        expected_ports = [config['rpc_port'], config['native_transport_port']]
-        self.assertSetEqual(set(defs[0]['ports']), set(expected_ports))
+        expected_ports = set([config['rpc_port'],
+                              config['native_transport_port'],
+                              config['storage_port'],
+                              config['ssl_storage_port']])
+        opened_ports = set(chain(*(d.get('ports', []) for d in defs)))
+        self.assertSetEqual(opened_ports, expected_ports)
 
     def test_get_service_manager(self):
         self.assertIsInstance(definitions.get_service_manager(),
