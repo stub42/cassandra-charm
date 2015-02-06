@@ -1396,6 +1396,18 @@ class TestHelpers(TestCaseBase):
         config['bootstrapped_into_cluster'] = False
         self.assertFalse(helpers.is_bootstrapped())
 
+    @patch('helpers.num_peers')
+    @patch('helpers.is_bootstrapped')
+    def test_pre_bootstrap_alone(self, is_bootstrapped, num_peers):
+        is_bootstrapped.return_value = False
+        num_peers.return_value = 0
+        helpers.pre_bootstrap()
+
+    @patch('helpers.is_bootstrapped')
+    def test_pre_bootstrap_already(self, is_bootstrapped):
+        is_bootstrapped.return_value = True
+        helpers.pre_bootstrap()
+
     @patch('helpers.configure_cassandra_yaml')
     @patch('time.sleep')
     @patch('helpers.num_nodes')

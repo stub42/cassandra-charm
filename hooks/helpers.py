@@ -591,20 +591,12 @@ def ensure_user(username, password, superuser=False):
         hookenv.log('Creating user {}'.format(username))
         sup = 'NOSUPERUSER'
     with connect() as session:
-        # We do this in a loop, as there is a race condition between the
-        # CREATE USER IF EXISTS and the ALTER USER. It should be nearly
-        # impossible to hit it, but hit it I have.
-        while True:
-            try:
-                query(session,
-                      'CREATE USER IF NOT EXISTS %s '
-                      'WITH PASSWORD %s {}'.format(sup),
-                      ConsistencyLevel.QUORUM, (username, password,))
-                query(session, 'ALTER USER %s WITH PASSWORD %s {}'.format(sup),
-                      ConsistencyLevel.QUORUM, (username, password,))
-                break
-            except cassandra.InvalidRequest:
-                pass
+        query(session,
+              'CREATE USER IF NOT EXISTS %s '
+              'WITH PASSWORD %s {}'.format(sup),
+              ConsistencyLevel.QUORUM, (username, password,))
+        query(session, 'ALTER USER %s WITH PASSWORD %s {}'.format(sup),
+              ConsistencyLevel.QUORUM, (username, password,))
 
 
 @logged
@@ -963,7 +955,8 @@ def pre_bootstrap():
     # clearing its data.
     keyspaces = set(chain(*[os.listdir(dfd) for dfd in dfds]))
     hookenv.log('keyspaces={!r}'.format(keyspaces), DEBUG)
-    keyspaces = keyspaces - set(['system', 'system_auth', 'system_traces'])
+    keyspaces = keyspaces - set(['system', 'system_auth', 'system_traces',
+                                 'dse_system'])
     if keyspaces:
         hookenv.log('Non-system keyspaces {!r} detected. '
                     'Unable to bootstrap.'.format(keyspaces), ERROR)
@@ -1000,11 +993,13 @@ def post_bootstrap():
         # the cluster.
         set_bootstrapped(False)
     else:
-        set_bootstrapped(True)
-        if config.changed('bootstrapped_into_cluster'):
-            hookenv.log('Bootstrapped into the cluster. Waiting {}s.'.format(
-                config['post_bootstrap_delay']))
-            time.sleep(config['post_bootstrap_delay'])
+        if not is_bootstrapped():
+            set_bootstrapped(True)
+            if config.changed('bootstrapped_into_cluster'):
+                hookenv.log('Bootstrapped into the cluster. '
+                            'Waiting {}s.'.format(
+                                config['post_bootstrap_delay']))
+                time.sleep(config['post_bootstrap_delay'])
     # Revert any changes that pre_bootstrap may have made to enable
     # bootstrapping.
     configure_cassandra_yaml()
@@ -1084,7 +1079,6 @@ def wait_for_normality():
             return
 
 
-@logged
 def is_decommissioned():
     if not is_cassandra_running():
         return True  # Decommissioned nodes are not shut down.
@@ -1092,7 +1086,7 @@ def is_decommissioned():
     for _ in backoff('stable node mode'):
         raw = nodetool('netstats')
         if 'Mode: DECOMMISSIONED' in raw:
-            hookenv.log('DECOMMISSIONED', WARNING)
+            hookenv.log('This node is DECOMMISSIONED', WARNING)
             return True
         elif 'Mode: NORMAL' in raw:
             return False

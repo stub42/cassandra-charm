@@ -51,9 +51,11 @@ test: unittest
 	nosetests -sv tests.test_integration
 	
 ftest: unittest
+	AMULET_TIMEOUT=3600 \
 	nosetests -sv tests.test_integration:Test1UnitDeployment
 
 3test: unittest
+	AMULET_TIMEOUT=3600 \
 	nosetests -sv tests.test_integration:Test3UnitDeployment
 
 # Set the DSE_SOURCE environment variable for this to work:

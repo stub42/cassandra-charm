@@ -39,7 +39,7 @@ from testing.amuletfixture import AmuletFixture
 
 SERIES = os.environ.get('SERIES', 'trusty')
 
-WAIT_TIMEOUT = 1200
+WAIT_TIMEOUT = int(os.environ.get('AMULET_TIMEOUT', 3600))
 
 
 class TestDeploymentBase(unittest.TestCase):
