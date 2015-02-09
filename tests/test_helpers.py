@@ -781,8 +781,9 @@ class TestHelpers(TestCaseBase):
         with helpers.connect() as session:
             auth_provider.assert_called_once_with(username='un',
                                                   password='pw')
-            cluster.assert_called_once_with(
-                ['1.2.3.4'], port=666, auth_provider=sentinel.ap)
+            cluster.assert_called_once_with(['1.2.3.4'],
+                                            port=666, protocol_version=3,
+                                            auth_provider=sentinel.ap)
             self.assertIs(session, sentinel.session)
             self.assertFalse(cluster().shutdown.called)
 
@@ -899,7 +900,7 @@ class TestHelpers(TestCaseBase):
         session.execute.side_effect = Whoops('Fail')
         self.assertRaises(Whoops, helpers.query, session, sentinel.statement,
                           sentinel.consistency, sentinel.args)
-        self.assertEqual(session.execute.call_count, 5)
+        self.assertEqual(session.execute.call_count, 4)
 
     @patch('helpers.query')
     @patch('helpers.connect')
@@ -1389,6 +1390,22 @@ class TestHelpers(TestCaseBase):
         helpers.repair_auth_keyspace()
         nodetool.assert_called_once_with('repair', 'system_auth')
 
+    @patch('shutil.rmtree')
+    @patch('os.path.isdir')
+    @patch('helpers.get_all_database_directories')
+    def test_nuke_system_keyspace(self, get_all_db_dirs, isdir, rmtree):
+        get_all_db_dirs.return_value = dict(data_file_directories=['a', 'b'])
+        isdir.return_value = True
+        helpers.nuke_system_keyspace()
+        rmtree.assert_has_calls([call('a/system'), call('b/system')],
+                                any_order=True)
+
+    def test_unit_number(self):
+        hookenv.local_unit.return_value = 'foo/0'
+        self.assertEqual(helpers.unit_number(), 0)
+        hookenv.local_unit.return_value = 'foo/94'
+        self.assertEqual(helpers.unit_number(), 94)
+
     def test_is_bootstrapped(self):
         config = hookenv.config()
         self.assertFalse(helpers.is_bootstrapped())
@@ -1398,7 +1415,7 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(helpers.is_bootstrapped())
 
     @patch('helpers.nuke_system_keyspace')
-    @patch('helpers.is_seed_responding')
+    @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.get_seeds')
     @patch('shutil.rmtree')
@@ -1406,14 +1423,14 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap(self, is_bootstrapped, num_peers, keyspaces,
-                           rmtree, get_seeds, conf_yaml, is_seed_resp,
+                           rmtree, get_seeds, conf_yaml, are_nodes_responding,
                            nuke_sys):
         keyspaces.return_value = set()
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
         get_seeds.return_value = set([sentinel.seed_a, sentinel.seed_b,
                                       hookenv.unit_private_ip()])
-        is_seed_resp.return_value = True
+        are_nodes_responding.return_value = True
 
         helpers.pre_bootstrap()
 
@@ -1422,7 +1439,7 @@ class TestHelpers(TestCaseBase):
                                                      sentinel.seed_b]))
 
     @patch('helpers.nuke_system_keyspace')
-    @patch('helpers.is_seed_responding')
+    @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.get_seeds')
     @patch('shutil.rmtree')
@@ -1430,22 +1447,25 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap_defer(self, is_bootstrapped, num_peers, keyspaces,
-                                 rmtree, get_seeds, conf_yaml, is_seed_resp,
+                                 rmtree, get_seeds, conf_yaml, are_nodes_resp,
                                  nuke_sys):
         keyspaces.return_value = set()
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
         get_seeds.return_value = set([sentinel.seed])
-        is_seed_resp.return_value = False  # seed not yet up.
+        # A potentially required node is not contactable.
+        are_nodes_resp.return_value = False
 
         self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
 
+    @patch('helpers.are_all_nodes_responding')
     @patch('helpers.nuke_system_keyspace')
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap_fail(self, is_bootstrapped, num_peers, keyspaces,
-                                nuke_sys):
+                                nuke_sys, are_all_responding):
+        are_all_responding.return_value = True
         # If there are non-system keyspaces, this node cannot bootstrap.
         # Fail hard. Perhaps one day we will use sstableloader to import
         # this data.
@@ -1496,25 +1516,23 @@ class TestHelpers(TestCaseBase):
         helpers.post_bootstrap()
         self.assertFalse(helpers.is_bootstrapped())
 
-    @patch('subprocess.check_output')
-    def test_up_node_ips(self, check_output):
-        check_output.return_value = dedent('''\
+    @patch('helpers.nodetool')
+    def test_up_node_ips(self, nodetool):
+        nodetool.return_value = dedent('''\
                 UN 10.0.0.1 whatever
                 ?N 10.0.0.2 whatever
                 UL 10.0.0.3 whatever
                 ''')
         self.assertSetEqual(set(helpers.up_node_ips()), set(['10.0.0.1',
                                                              '10.0.0.3']))
-        check_output.assert_called_once_with(['nodetool', 'status',
-                                              'system_auth'],
-                                             universal_newlines=True)
+        nodetool.assert_called_once_with('status', 'system_auth')
 
     @patch('helpers.up_node_ips')
-    @patch('subprocess.check_output')
-    def test_is_schema_agreed(self, check_output, up_node_ips):
+    @patch('helpers.nodetool')
+    def test_is_schema_agreed(self, nodetool, up_node_ips):
         up_node_ips.return_value = ['10.0.0.2', '10.0.0.3']
         self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
-        check_output.return_value = dedent('''\
+        nodetool.return_value = dedent('''\
             Cluster Information:
             \tName: juju
             \tSnitch: org.apache.cassandra.locator.DynamicEndpointSnitch
@@ -1523,10 +1541,9 @@ class TestHelpers(TestCaseBase):
             \t\t15056434--0e7a98bbb067: [10.0.0.2, 10.20.0.1, 10.0.0.3]
             ''')
         self.assertTrue(helpers.is_schema_agreed())
-        check_output.assert_called_once_with(['nodetool', 'describecluster'],
-                                             universal_newlines=True)
+        nodetool.assert_called_once_with('describecluster')
 
-        check_output.return_value = dedent('''\
+        nodetool.return_value = dedent('''\
             Cluster Information:
             \tName: juju
             \tSnitch: org.apache.cassandra.locator.DynamicEndpointSnitch

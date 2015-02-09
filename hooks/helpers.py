@@ -59,7 +59,7 @@ def logged(func):
     return wrapper
 
 
-def backoff(what_for, max_pause=60):
+def backoff(what_for, max_pause=60, timeout=None):
     i = 0
     while True:
         yield True
@@ -464,6 +464,19 @@ def is_seed_responding():
 
 
 @logged
+def are_all_nodes_responding():
+    all_contactable = True
+    for ip in node_ips():
+        rc = subprocess.call(['nodetool', '--host', ip, 'status'])
+        if rc == 0:
+            hookenv.log('{} is responding'.format(ip))
+        else:
+            hookenv.log('{} is not responding'.format(ip))
+            all_contactable = False
+    return all_contactable
+
+
+@logged
 def reconfigure_and_restart_cassandra(overrides={}):
     stop_cassandra()
     configure_cassandra_yaml(overrides)
@@ -710,9 +723,12 @@ def emit(*args, **kw):
     print(*args, **kw)
 
 
-def nodetool(*cmd):
-    cmd = ['nodetool'] + [str(i) for i in cmd]
+def nodetool(*cmd, ip=None, timeout=120):
+    if ip is None:
+        ip = hookenv.unit_private_ip()
+    cmd = ['nodetool', '--host', ip, ] + [str(i) for i in cmd]
     i = 0
+    until = time.time() + timeout
     for _ in backoff('nodetool to work'):
         i += 1
         try:
@@ -721,14 +737,32 @@ def nodetool(*cmd):
             sys.stdout.flush()
             return raw
         except subprocess.CalledProcessError as x:
-            if i > 10:
+            if time.time() > until:
                 raise
-            hookenv.log(str(x))
+            if i > 4:
+                hookenv.log(str(x))
 
 
 def node_ips():
     '''IP addresses of all nodes in the Cassandra cluster.'''
-    raw = nodetool('status', 'system_auth')
+    # We query the seed for the list of nodes rather than the local
+    # node, because we need it when setting up the local node. And
+    # perhaps it is more definitive, so we can make this behavior the
+    # default.
+    seed_ips = set(get_seeds())
+    seed_ips.discard(hookenv.unit_private_ip())
+    if not seed_ips:
+        seed_ips = set([hookenv.unit_private_ip()])
+    raw = None
+    for seed_ip in seed_ips:
+        try:
+            raw = nodetool('status', 'system_auth', ip=seed_ip, timeout=10)
+            break
+        except subprocess.CalledProcessError:
+            hookenv.log('Seed {} is not responding.')
+    if raw is None:
+        hookenv.log('No seeds responding. There is no cluster, no nodes')
+        return set()
     ips = set()
     for line in raw.splitlines():
         match = re.search(r'^(\w)([NLJM])\s+([\d\.]+)\s', line)
@@ -845,8 +879,8 @@ def is_cassandra_running():
             # is not running.
             os.kill(pid, 0)
 
-            if subprocess.call(["nodetool", "-h",
-                                hookenv.unit_private_ip(), "status"],
+            if subprocess.call(["nodetool", "-h", hookenv.unit_private_ip(),
+                                "status", "system_auth"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
                 hookenv.log(
@@ -989,6 +1023,21 @@ def pre_bootstrap():
         hookenv.log("No peers, no cluster, no bootstrapping")
         return
 
+    # Bootstrap will fail if all the nodes that contain data that needs
+    # to move to the new node are down. If you are storing data in
+    # rf==1, bootstrap can fail if a single node is not contactable. As
+    # far as this charm is concerned, we should not attempt bootstrap
+    # until all the nodes in the cluster and contactable. This also
+    # ensures that peers have run their relation-changed hook and
+    # opened their firewall ports to the new unit.
+    if not are_all_nodes_responding():
+        raise rollingrestart.DeferRestart()
+    # As we are checking if *all* nodes are responding, there is no
+    # longer any need to explicitly check for a seed.
+    # if not is_seed_responding():
+    #     hookenv.log('Seed not responding. Bootstrap deferred.')
+    #     raise rollingrestart.DeferRestart()
+
     config = hookenv.config()
     if not config.get('bootstrap_started', False):
         hookenv.log('Joining cluster and need to bootstrap.')
@@ -1010,9 +1059,6 @@ def pre_bootstrap():
     seeds = get_seeds()
     seeds.discard(hookenv.unit_private_ip())
     configure_cassandra_yaml(seeds=seeds)
-    if not is_seed_responding():
-        hookenv.log('Seed not responding. Bootstrap deferred.')
-        raise rollingrestart.DeferRestart()
 
 
 @logged
