@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import functools
 import os.path
 import unittest
-from unittest.mock import ANY, MagicMock, patch, sentinel
+from unittest.mock import ANY, call, MagicMock, patch, sentinel
 
 from charmhelpers.core import hookenv
 
@@ -347,6 +347,29 @@ class TestRollingRestart(TestCaseBase):
         # attempted again next time rolling_restart() is called.
         self.assertFalse(cancel_restart.called)
 
+    @patch('rollingrestart._enqueue')
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
+    def test_rolling_restart_defer(self, is_waiting, cancel_restart,
+                                   get_peers, get_queue, peer_echo, enqueue):
+        hookenv.hook_name.return_value = 'cluster-relation-changed'
+        is_waiting.return_value = True
+        restart_hook = MagicMock()
+        restart_hook.side_effect = rollingrestart.DeferRestart()
+        get_peers.return_value = ['unit/1', 'unit/2']
+        get_queue.return_value = [hookenv.local_unit(), 'unit/1']
+
+        # If restart raises an exception, rolling_restart does not
+        # handle it. This is how you communicate a failed restart to
+        # your charm.
+        self.assertFalse(rollingrestart.rolling_restart([restart_hook]))
+        restart_hook.assert_called_once_with()
+        # Bumped to the end of the queue.
+        enqueue.assert_has_calls([call(False), call(True)])
+
     @patch('rollingrestart._peer_echo')
     @patch('rollingrestart.get_restart_queue')
     @patch('rollingrestart.get_peers')
@@ -366,13 +389,15 @@ class TestRollingRestart(TestCaseBase):
             [restart_hook], prerequisites=[prereq1, prereq2]))
         restart_hook.assert_called_once_with()
 
+    @patch('rollingrestart._enqueue')
     @patch('rollingrestart._peer_echo')
     @patch('rollingrestart.get_restart_queue')
     @patch('rollingrestart.get_peers')
     @patch('rollingrestart.cancel_restart')
     @patch('rollingrestart.is_waiting_for_restart')
     def test_rolling_restart_prereq_defer(self, is_waiting, cancel_restart,
-                                          get_peers, get_queue, peer_echo):
+                                          get_peers, get_queue, peer_echo,
+                                          enqueue):
         prereq1 = MagicMock(return_value=True)
         prereq2 = MagicMock(return_value=False)
         hookenv.hook_name.return_value = 'cluster-relation-changed'
@@ -384,6 +409,8 @@ class TestRollingRestart(TestCaseBase):
         self.assertFalse(rollingrestart.rolling_restart(
             [restart_hook], prerequisites=[prereq1, prereq2]))
         self.assertFalse(restart_hook.called)
+        # Bumped to the end of the queue.
+        enqueue.assert_has_calls([call(False), call(True)])
 
     @patch('charmhelpers.core.hookenv.local_unit')
     def test_peerstorage_key(self, local_unit):
