@@ -347,6 +347,44 @@ class TestRollingRestart(TestCaseBase):
         # attempted again next time rolling_restart() is called.
         self.assertFalse(cancel_restart.called)
 
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
+    def test_rolling_restart_prereq_allow(self, is_waiting, cancel_restart,
+                                          get_peers, get_queue, peer_echo):
+        prereq1 = MagicMock(return_value=True)
+        prereq2 = MagicMock(return_value=True)
+        hookenv.hook_name.return_value = 'cluster-relation-changed'
+        is_waiting.return_value = True
+        restart_hook = MagicMock()
+        get_peers.return_value = ['unit/1', 'unit/2']
+        get_queue.return_value = [hookenv.local_unit(), 'unit/1']
+
+        self.assertTrue(rollingrestart.rolling_restart(
+            [restart_hook], prerequisites=[prereq1, prereq2]))
+        restart_hook.assert_called_once_with()
+
+    @patch('rollingrestart._peer_echo')
+    @patch('rollingrestart.get_restart_queue')
+    @patch('rollingrestart.get_peers')
+    @patch('rollingrestart.cancel_restart')
+    @patch('rollingrestart.is_waiting_for_restart')
+    def test_rolling_restart_prereq_defer(self, is_waiting, cancel_restart,
+                                          get_peers, get_queue, peer_echo):
+        prereq1 = MagicMock(return_value=True)
+        prereq2 = MagicMock(return_value=False)
+        hookenv.hook_name.return_value = 'cluster-relation-changed'
+        is_waiting.return_value = True
+        restart_hook = MagicMock()
+        get_peers.return_value = ['unit/1', 'unit/2']
+        get_queue.return_value = [hookenv.local_unit(), 'unit/1']
+
+        self.assertFalse(rollingrestart.rolling_restart(
+            [restart_hook], prerequisites=[prereq1, prereq2]))
+        self.assertFalse(restart_hook.called)
+
     @patch('charmhelpers.core.hookenv.local_unit')
     def test_peerstorage_key(self, local_unit):
         local_unit.return_value = 'me/42'
