@@ -1568,9 +1568,9 @@ class TestHelpers(TestCaseBase):
         self.assertSetEqual(helpers.get_peer_ips(),
                             set(['10.20.0.2', '10.20.0.3']))
 
-    @patch('subprocess.check_output')
-    def is_all_normal(self, check_output):
-        check_output.return_value = dedent('''
+    @patch('helpers.nodetool')
+    def test_is_all_normal(self, nodetool):
+        nodetool.return_value = dedent('''
             Datacenter: juju
             ================
             Status=Up/Down
@@ -1581,29 +1581,29 @@ class TestHelpers(TestCaseBase):
             UN  10.0.3.236  109.75 KB  256     64.1%       e549-cf   r1
             ''')
         self.assertTrue(helpers.is_all_normal())
-        check_output.assert_called_once_with(['nodetool', 'status',
-                                              'system_auth'],
-                                             universal_newlines=True)
 
-        check_output.return_value = 'UN  10.0.3.197 ...'
+        nodetool.assert_called_once_with('status', 'system_auth')
+
+        nodetool.return_value = 'UN  10.0.3.197 ...'
         self.assertTrue(helpers.is_all_normal())
 
-        check_output.return_value = 'DN  10.0.3.197 ...'
+        # Down is normal
+        nodetool.return_value = 'DN  10.0.3.197 ...'
+        self.assertTrue(helpers.is_all_normal())
+
+        nodetool.return_value = 'UJ  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
+        nodetool.return_value = 'DJ  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
-        check_output.return_value = 'UJ  10.0.3.197 ...'
+        nodetool.return_value = 'UM  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
-        check_output.return_value = 'DJ  10.0.3.197 ...'
-        self.assertFalse(helpers.is_all_normal())
-
-        check_output.return_value = 'UM  10.0.3.197 ...'
-        self.assertFalse(helpers.is_all_normal())
-        check_output.return_value = 'DM  10.0.3.197 ...'
+        nodetool.return_value = 'DM  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
-        check_output.return_value = 'UL  10.0.3.197 ...'
+        nodetool.return_value = 'UL  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
-        check_output.return_value = 'DL  10.0.3.197 ...'
+        nodetool.return_value = 'DL  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())
 
     @patch('helpers.backoff')
