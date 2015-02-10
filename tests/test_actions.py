@@ -892,6 +892,30 @@ class TestsActions(TestCaseBase):
         actions.emit_netstats('')
         helpers_emit.assert_called_once_with()
 
+    @patch('helpers.is_bootstrapped')
+    @patch('helpers.stop_cassandra')
+    def test_shutdown_before_joining_peers(self, stop, is_bootstrapped):
+
+        # Nothing happens until the -joined hook.
+        hookenv.hook_name.return_value = 'install'
+        is_bootstrapped.return_value = False
+        actions.shutdown_before_joining_peers('')
+        self.assertFalse(stop.called)
+
+        # If we are joining the cluster, shutdown the current cassandra
+        # instance before we open firewall access to ensure no other
+        # nodes interfere before it is bootstrapped.
+        hookenv.hook_name.return_value = 'cluster-relation-joined'
+        actions.shutdown_before_joining_peers('')
+        stop.assert_called_once_with(immediate=True)
+
+        # If we are already bootstrapped (eg. Unit 0 is always
+        # considered bootstrapped), nothing happens.
+        stop.reset_mock()
+        is_bootstrapped.return_value = True
+        actions.shutdown_before_joining_peers('')
+        self.assertFalse(stop.called)
+
     @patch('helpers.get_seeds')
     @patch('charmhelpers.core.hookenv.relations_of_type')
     @patch('actions.ufw')

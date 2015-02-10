@@ -756,6 +756,10 @@ def nodetool(*cmd, ip=None, timeout=120):
         (out, _) = p.communicate(timeout=timeout)
         out = out.replace('\t', ' '*8)  # Replace tabs for juju debug-log.
         now = time.time()
+        # Work around CASSANDRA-8776.
+        if 'status' in cmd and 'Error:' in out:
+            hookenv.log('Error detected but nodetool returned success.')
+            p.returncode = 99
         if i > 4 or now > until or p.returncode == 0:
             emit(out)
         if p.returncode == 0:
@@ -770,14 +774,16 @@ def node_ips():
 
     Returns an empty set if the seeds are not responding.
     '''
-    # We query the seed for the list of nodes rather than the local
-    # node, because we need it when setting up the local node. And
-    # perhaps it is more definitive, so we can make this behavior the
-    # default.
-    seed_ips = set(get_seeds())
-    seed_ips.discard(hookenv.unit_private_ip())
-    if not seed_ips:
+    if is_bootstrapped():
         seed_ips = set([hookenv.unit_private_ip()])
+    else:
+        # Not bootstrapped, so we need to query the seed for the list of
+        # nodes.
+        seed_ips = set(get_seeds())
+        seed_ips.discard(hookenv.unit_private_ip())
+        if not seed_ips:
+            # No seeds, so assume we are still standalone.
+            seed_ips = set([hookenv.unit_private_ip()])
     raw = None
     for seed_ip in seed_ips:
         try:
@@ -1176,9 +1182,6 @@ def is_all_normal():
     '''
     is_all_normal = True
     raw = nodetool('status', 'system_auth')
-    if 'error:' in raw.lower():
-        hookenv.log('Error detected but nodetool returned success.')
-        return False
     node_status_re = re.compile('^(\w)([NLJM])\s+([\d\.]+)\s')
     for line in raw.splitlines():
         match = node_status_re.search(line)
