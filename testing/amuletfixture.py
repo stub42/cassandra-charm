@@ -71,7 +71,7 @@ class AmuletFixture(amulet.Deployment):
             # If setUp fails, tearDown is never called leaving the
             # environment setup. This is useful for debugging.
             self.setup(timeout=timeout)
-            self.sentry.wait()
+            self.sentry.wait(timeout=timeout)
         except amulet.helpers.TimeoutError:
             # Don't skip tests on timeout. This hides real failures,
             # such as deadlocks between peers.

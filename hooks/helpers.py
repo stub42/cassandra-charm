@@ -160,6 +160,13 @@ def get_seeds():
                for seed in seeds)
 
 
+def get_actual_seeds():
+    '''Return the seeds currently in cassandra.yaml'''
+    cassandra_yaml = read_cassandra_yaml()
+    s = cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds']
+    return set(s.split(','))
+
+
 def get_database_directory(config_path):
     '''Convert a database path from the service config to an absolute path.
 
@@ -427,7 +434,8 @@ def start_cassandra():
     if is_cassandra_running():
         return
 
-    hookenv.log('Starting Cassandra with seeds {!r}'.format(get_seeds()))
+    actual_seeds = get_actual_seeds()
+    hookenv.log('Starting Cassandra with seeds {!r}'.format(actual_seeds))
     host.service_start(get_cassandra_service())
 
     # Wait for Cassandra to actually start, or abort.
@@ -645,19 +653,28 @@ def create_unit_superuser():
     reconfigure_and_restart_cassandra(
         dict(authenticator='AllowAllAuthenticator', rpc_address='127.0.0.1'))
     wait_for_normality()
-
-    with connect() as session:
-        pwhash = bcrypt.hashpw(password, bcrypt.gensalt())  # Cassandra 2.1
-        statement = dedent('''\
-            INSERT INTO system_auth.users (name, super)
-            VALUES (%s, TRUE)
-            ''')
-        query(session, statement, ConsistencyLevel.QUORUM, (username,))
-        statement = dedent('''\
-            INSERT INTO system_auth.credentials (username, salted_hash)
-            VALUES (%s, %s)
-            ''')
-        query(session, statement, ConsistencyLevel.QUORUM, (username, pwhash))
+    emit_describe_cluster()
+    emit_auth_keyspace_status()
+    emit_netstats()
+    for _ in backoff('superuser creation'):
+        try:
+            with connect() as session:
+                pwhash = bcrypt.hashpw(password,
+                                       bcrypt.gensalt())  # Cassandra 2.1
+                statement = dedent('''\
+                    INSERT INTO system_auth.users (name, super)
+                    VALUES (%s, TRUE)
+                    ''')
+                query(session, statement, ConsistencyLevel.QUORUM, (username,))
+                statement = dedent('''\
+                    INSERT INTO system_auth.credentials (username, salted_hash)
+                    VALUES (%s, %s)
+                    ''')
+                query(session, statement,
+                      ConsistencyLevel.QUORUM, (username, pwhash))
+                break
+        except Exception as x:
+            print(str(x))
 
     # Restart Cassandra with regular config.
     wait_for_normality()
@@ -719,8 +736,9 @@ def superuser_credentials():
 
 
 def emit(*args, **kw):
-    # Just like print, but mocked out in the test suite.
+    # Just like print, but with plumbing and mocked out in the test suite.
     print(*args, **kw)
+    sys.stdout.flush()
 
 
 def nodetool(*cmd, ip=None, timeout=120):
@@ -731,20 +749,27 @@ def nodetool(*cmd, ip=None, timeout=120):
     until = time.time() + timeout
     for _ in backoff('nodetool to work'):
         i += 1
-        try:
-            raw = subprocess.check_output(cmd, universal_newlines=True)
-            emit(raw)
-            sys.stdout.flush()
-            return raw
-        except subprocess.CalledProcessError as x:
-            if time.time() > until:
-                raise
-            if i > 4:
-                hookenv.log(str(x))
+        p = subprocess.Popen(cmd, universal_newlines=True,
+                             stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT)
+        (out, _) = p.communicate(timeout=timeout)
+        out = out.replace('\t', ' '*8)  # Replace tabs for juju debug-log.
+        now = time.time()
+        if i > 4 or now > until or p.returncode == 0:
+            emit(out)
+        if p.returncode == 0:
+            hookenv.log('{} succeeded'.format(' '.join(cmd)), DEBUG)
+            return out
+        if now > until:
+            raise subprocess.TimeoutExpired(cmd, timeout, out)
 
 
 def node_ips():
-    '''IP addresses of all nodes in the Cassandra cluster.'''
+    '''IP addresses of all nodes in the Cassandra cluster.
+
+    Returns an empty set if the seeds are not responding.
+    '''
     # We query the seed for the list of nodes rather than the local
     # node, because we need it when setting up the local node. And
     # perhaps it is more definitive, so we can make this behavior the
@@ -758,8 +783,8 @@ def node_ips():
         try:
             raw = nodetool('status', 'system_auth', ip=seed_ip, timeout=10)
             break
-        except subprocess.CalledProcessError:
-            hookenv.log('Seed {} is not responding.')
+        except subprocess.TimeoutExpired:
+            hookenv.log('Seed {} is not responding.'.format(seed_ip))
     if raw is None:
         hookenv.log('No seeds responding. There is no cluster, no nodes')
         return set()
@@ -915,7 +940,7 @@ def reset_all_io_schedulers():
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
     # the system_auth keyspace, to ensure availability and redundancy.
-    n = min(num_nodes(), 5)  # Cap at 5 replicas. More is silly.
+    n = max(min(num_nodes(), 5), 1)  # Cap at 5 replicas. More is silly.
     datacenter = hookenv.config()['datacenter']
     with connect() as session:
         strategy_opts = get_auth_keyspace_replication(session)
@@ -963,15 +988,16 @@ def non_system_keyspaces():
                             'dse_system'])
 
 
-def nuke_system_keyspace():
+def nuke_system_keyspaces():
     # We need to clear the system keyspace to enable bootstrapping to
     # correctly work.
     dfds = get_all_database_directories()['data_file_directories']
     for dfd in dfds:
-        path = os.path.join(dfd, 'system')
-        if os.path.isdir(path):
-            hookenv.log('Removing {} before bootstrap'.format(path))
-            shutil.rmtree(path)
+        for subdir in ['system', 'system_auth', 'system_traces']:
+            path = os.path.join(dfd, subdir)
+            if os.path.isdir(path):
+                hookenv.log('Removing {} before bootstrap'.format(path))
+                shutil.rmtree(path)
 
 
 def unit_number():
@@ -1048,9 +1074,14 @@ def pre_bootstrap():
                         'Unable to bootstrap.'.format(keyspaces), ERROR)
             raise SystemExit(1)
 
-        nuke_system_keyspace()
+        nuke_system_keyspaces()
 
         config['bootstrap_started'] = True
+
+        # Do the actual bootstrap in a subsequent hook. This ensures
+        # that config['bootstrap_started'] is saved even if bootstrap
+        # bombs out and needs to be retried.
+        raise rollingrestart.DeferRestart()
     else:
         hookenv.log('Attempting to complete bootstrap')
 
@@ -1145,6 +1176,9 @@ def is_all_normal():
     '''
     is_all_normal = True
     raw = nodetool('status', 'system_auth')
+    if 'error:' in raw.lower():
+        hookenv.log('Error detected but nodetool returned success.')
+        return False
     node_status_re = re.compile('^(\w)([NLJM])\s+([\d\.]+)\s')
     for line in raw.splitlines():
         match = node_status_re.search(line)
@@ -1191,19 +1225,19 @@ def is_decommissioned():
 @logged
 def emit_describe_cluster():
     '''Run nodetool describecluster for the logs.'''
-    subprocess.call(['nodetool', 'describecluster'])
+    nodetool('describecluster')  # Implicit emit
 
 
 @logged
 def emit_auth_keyspace_status():
     '''Run 'nodetool status system_auth' for the logs.'''
-    subprocess.call(['nodetool', 'status', 'system_auth'])
+    nodetool('status', 'system_auth')  # Implicit emit
 
 
 @logged
 def emit_netstats():
     '''Run 'nodetool netstats' for the logs.'''
-    subprocess.call(['nodetool', 'netstats'])
+    nodetool('netstats')  # Implicit emit
 
 
 # FOR CHARMHELPERS (and think of a better name)

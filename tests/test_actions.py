@@ -514,7 +514,6 @@ class TestsActions(TestCaseBase):
     def test_maybe_schedule_restart_ip_changed(self, request_restart,
                                                storage_relation, is_running,
                                                get_seeds, node_ips, is_decom):
-        config = hookenv.config()
         is_decom.return_value = False
         is_running.return_value = True
 
@@ -525,12 +524,12 @@ class TestsActions(TestCaseBase):
         get_seeds.return_value = set(['a'])
         node_ips.return_value = set(['a', 'b'])
 
-        # IP address has changed.
-        config['unit_private_ip'] = 'old ip address'
-
         # Config items are unchanged.
+        config = hookenv.config()
         config.save()
         config.load_previous()
+
+        actions.store_unit_private_ip('')  # IP address change
 
         actions.maybe_schedule_restart('')
         request_restart.assert_called_once_with()

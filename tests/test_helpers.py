@@ -230,6 +230,17 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['force_seed_nodes'] = 'a,b,c'
         self.assertSetEqual(helpers.get_seeds(), set(['a', 'b', 'c']))
 
+    @patch('helpers.read_cassandra_yaml')
+    def test_get_actual_seeds(self, read_yaml):
+        read_yaml.return_value = yaml.load(dedent('''\
+                                                  seed_provider:
+                                                    - class_name: blah
+                                                      parameters:
+                                                        - seeds: a,b,c
+                                                  '''))
+        self.assertSetEqual(helpers.get_actual_seeds(),
+                            set(['a', 'b', 'c']))
+
     @patch('relations.StorageRelation')
     def test_get_database_directory(self, storage_relation):
         storage_relation().mountpoint = None
@@ -611,13 +622,15 @@ class TestHelpers(TestCaseBase):
                           helpers.stop_cassandra, immediate=True)
         service_stop.assert_called_once_with(sentinel.service_name)
 
+    @patch('helpers.get_actual_seeds')
     @patch('time.sleep')
     @patch('helpers.get_cassandra_service')
     @patch('charmhelpers.core.host.service_start')
     @patch('helpers.is_cassandra_running')
     def test_start_cassandra(self, is_cassandra_running,
-                             service_start, get_service, sleep):
+                             service_start, get_service, sleep, get_seeds):
         get_service.return_value = sentinel.service_name
+        get_seeds.return_value = sentinel.just_for_logging
         is_cassandra_running.return_value = True
         helpers.start_cassandra()
         self.assertFalse(service_start.called)
@@ -625,6 +638,24 @@ class TestHelpers(TestCaseBase):
         is_cassandra_running.side_effect = iter([False, False, False, True])
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
+
+    @patch('helpers.get_actual_seeds')
+    @patch('time.time')
+    @patch('time.sleep')
+    @patch('helpers.get_cassandra_service')
+    @patch('charmhelpers.core.host.service_start')
+    @patch('helpers.is_cassandra_running')
+    def test_start_cassandra_timeout(self, is_cassandra_running,
+                                     service_start, get_service, sleep, time,
+                                     get_seeds):
+        get_service.return_value = sentinel.service_name
+        get_seeds.return_value = sentinel.just_for_logging
+        is_cassandra_running.return_value = False
+        time.side_effect = iter([10, 20, 30, 40, 3600])
+        self.assertRaises(SystemExit, helpers.start_cassandra)
+        service_start.assert_called_once_with(sentinel.service_name)
+        # An error was logged.
+        hookenv.log.assert_has_calls([call(ANY, hookenv.ERROR)])
 
     @patch('subprocess.check_output')
     @patch('helpers.get_seeds')
@@ -648,21 +679,6 @@ class TestHelpers(TestCaseBase):
     def test_is_seed_responding_self_seeded(self, get_seeds):
         get_seeds.return_value = set([hookenv.unit_private_ip()])
         self.assertTrue(helpers.is_seed_responding())
-
-    @patch('time.time')
-    @patch('time.sleep')
-    @patch('helpers.get_cassandra_service')
-    @patch('charmhelpers.core.host.service_start')
-    @patch('helpers.is_cassandra_running')
-    def test_start_cassandra_timeout(self, is_cassandra_running,
-                                     service_start, get_service, sleep, time):
-        get_service.return_value = sentinel.service_name
-        is_cassandra_running.return_value = False
-        time.side_effect = iter([10, 20, 30, 40, 3600])
-        self.assertRaises(SystemExit, helpers.start_cassandra)
-        service_start.assert_called_once_with(sentinel.service_name)
-        # An error was logged.
-        hookenv.log.assert_has_calls([call(ANY, hookenv.ERROR)])
 
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.stop_cassandra')
@@ -958,6 +974,9 @@ class TestHelpers(TestCaseBase):
         connect.assert_called_once_with(auth_timeout=10)  # As Superuser.
         self.assertFalse(create_unit_superuser.called)  # No need to create.
 
+    @patch('helpers.emit_netstats')
+    @patch('helpers.emit_auth_keyspace_status')
+    @patch('helpers.emit_describe_cluster')
     @patch('helpers.wait_for_normality')
     @patch('helpers.repair_auth_keyspace')
     @patch('helpers.query')
@@ -967,7 +986,8 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.connect')
     @patch('helpers.superuser_credentials')
     def test_create_unit_superuser(self, creds, connect, restart,
-                                   bhash, bsalt, query, repair, normwait):
+                                   bhash, bsalt, query, repair, normwait,
+                                   emit_desc, emit_status, emit_netstats):
         creds.return_value = ('super', 'secret')
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
@@ -1393,11 +1413,16 @@ class TestHelpers(TestCaseBase):
     @patch('shutil.rmtree')
     @patch('os.path.isdir')
     @patch('helpers.get_all_database_directories')
-    def test_nuke_system_keyspace(self, get_all_db_dirs, isdir, rmtree):
+    def test_nuke_system_keyspaces(self, get_all_db_dirs, isdir, rmtree):
         get_all_db_dirs.return_value = dict(data_file_directories=['a', 'b'])
         isdir.return_value = True
-        helpers.nuke_system_keyspace()
-        rmtree.assert_has_calls([call('a/system'), call('b/system')],
+        helpers.nuke_system_keyspaces()
+        rmtree.assert_has_calls([call('a/system'),
+                                 call('a/system_auth'),
+                                 call('a/system_traces'),
+                                 call('b/system'),
+                                 call('b/system_auth'),
+                                 call('b/system_traces')],
                                 any_order=True)
 
     def test_unit_number(self):
@@ -1414,7 +1439,7 @@ class TestHelpers(TestCaseBase):
         config['bootstrapped_into_cluster'] = False
         self.assertFalse(helpers.is_bootstrapped())
 
-    @patch('helpers.nuke_system_keyspace')
+    @patch('helpers.nuke_system_keyspaces')
     @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.get_seeds')
@@ -1432,13 +1457,36 @@ class TestHelpers(TestCaseBase):
                                       hookenv.unit_private_ip()])
         are_nodes_responding.return_value = True
 
+        self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
+        nuke_sys.assert_called_once_with()
+        self.assertTrue(hookenv.config().get('bootstrap_started'))
+
+    @patch('helpers.nuke_system_keyspaces')
+    @patch('helpers.are_all_nodes_responding')
+    @patch('helpers.configure_cassandra_yaml')
+    @patch('helpers.get_seeds')
+    @patch('shutil.rmtree')
+    @patch('helpers.non_system_keyspaces')
+    @patch('helpers.num_peers')
+    @patch('helpers.is_bootstrapped')
+    def test_pre_bootstrap_cont(self, is_bootstrapped, num_peers, keyspaces,
+                                rmtree, get_seeds, conf_yaml,
+                                are_nodes_responding, nuke_sys):
+        hookenv.config()['bootstrap_started'] = True  # Stage 2
+        keyspaces.return_value = set()
+        is_bootstrapped.return_value = False
+        num_peers.return_value = 1
+        get_seeds.return_value = set([sentinel.seed_a, sentinel.seed_b,
+                                      hookenv.unit_private_ip()])
+        are_nodes_responding.return_value = True
+
         helpers.pre_bootstrap()
 
-        nuke_sys.assert_called_once_with()
+        self.assertFalse(nuke_sys.called)  # Done in Stage 1.
         conf_yaml.assert_called_once_with(seeds=set([sentinel.seed_a,
                                                      sentinel.seed_b]))
 
-    @patch('helpers.nuke_system_keyspace')
+    @patch('helpers.nuke_system_keyspaces')
     @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.get_seeds')
@@ -1459,7 +1507,7 @@ class TestHelpers(TestCaseBase):
         self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
 
     @patch('helpers.are_all_nodes_responding')
-    @patch('helpers.nuke_system_keyspace')
+    @patch('helpers.nuke_system_keyspaces')
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
@@ -1525,7 +1573,7 @@ class TestHelpers(TestCaseBase):
                 ''')
         self.assertSetEqual(set(helpers.up_node_ips()), set(['10.0.0.1',
                                                              '10.0.0.3']))
-        nodetool.assert_called_once_with('status', 'system_auth')
+        self.assertTrue(nodetool.called)
 
     @patch('helpers.up_node_ips')
     @patch('helpers.nodetool')
@@ -1614,20 +1662,20 @@ class TestHelpers(TestCaseBase):
         helpers.wait_for_normality()
         self.assertEqual(is_all_normal.call_count, 3)
 
-    @patch('subprocess.call')
-    def test_emit_describe_cluster(self, call):
+    @patch('helpers.nodetool')
+    def test_emit_describe_cluster(self, nodetool):
         helpers.emit_describe_cluster()
-        call.assert_called_once_with(['nodetool', 'describecluster'])
+        nodetool.assert_called_once_with('describecluster')
 
-    @patch('subprocess.call')
-    def test_emit_auth_keyspace_status(self, call):
+    @patch('helpers.nodetool')
+    def test_emit_auth_keyspace_status(self, nodetool):
         helpers.emit_auth_keyspace_status()
-        call.assert_called_once_with(['nodetool', 'status', 'system_auth'])
+        nodetool.assert_called_once_with('status', 'system_auth')
 
-    @patch('subprocess.call')
-    def test_emit_netstats(self, call):
+    @patch('helpers.nodetool')
+    def test_emit_netstats(self, nodetool):
         helpers.emit_netstats()
-        call.assert_called_once_with(['nodetool', 'netstats'])
+        nodetool.assert_called_once_with('netstats')
 
     def test_week_spread(self):
         # The first seven units run midnight on different days.

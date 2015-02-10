@@ -53,6 +53,7 @@ def get_service_definitions():
              data_ready=[actions.set_proxy,
                          actions.preinstall,
                          actions.revert_unchangeable_config,
+                         actions.store_unit_private_ip,
                          actions.shutdown_before_joining_peers,
                          actions.configure_firewall,
                          actions.cache_oracle_jdk,

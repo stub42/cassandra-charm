@@ -326,6 +326,11 @@ def reset_auth_keyspace_replication():
 
 
 @action
+def store_unit_private_ip():
+    hookenv.config()['unit_private_ip'] = hookenv.unit_private_ip()
+
+
+@action
 def maybe_schedule_restart():
     '''Prepare for and schedule a rolling restart if necessary.'''
     if not helpers.is_cassandra_running():
@@ -354,7 +359,6 @@ def maybe_schedule_restart():
         restart = True
 
     # If our IP address has changed, we need to restart.
-    config['unit_private_ip'] = hookenv.unit_private_ip()
     if config.changed('unit_private_ip'):
         hookenv.log('Unit IP address changed. Restart required.')
         restart = True
