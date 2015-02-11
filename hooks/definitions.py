@@ -81,7 +81,6 @@ def get_service_definitions():
                                      helpers.ensure_database_directories,
                                      helpers.pre_bootstrap,
                                      helpers.start_cassandra,
-                                     helpers.emit_describe_cluster,
                                      helpers.post_bootstrap,
                                      helpers.wait_for_agreed_schema,
                                      helpers.wait_for_normality,

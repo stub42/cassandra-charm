@@ -175,10 +175,9 @@ class TestHelpers(TestCaseBase):
                 selections = 'a_pack {}\nb_pack {}\n'.format(
                     status, status).encode('US-ASCII')
 
-                self.assertEqual([
-                    call(['dpkg', '--set-selections'], stdin=subprocess.PIPE),
-                    call().communicate(input=selections),
-                    ], popen.mock_calls)
+                self.assertEqual(
+                    [call(['dpkg', '--set-selections'], stdin=subprocess.PIPE),
+                     call().communicate(input=selections)], popen.mock_calls)
 
         popen.reset_mock()
         hookenv.config()['package_status'] = 'invalid'
@@ -680,6 +679,24 @@ class TestHelpers(TestCaseBase):
         get_seeds.return_value = set([hookenv.unit_private_ip()])
         self.assertTrue(helpers.is_seed_responding())
 
+    @patch('helpers.nodetool')
+    @patch('helpers.node_ips')
+    def test_are_all_nodes_responding(self, node_ips, nodetool):
+        node_ips.return_value = set([sentinel.ip1, sentinel.ip2])
+        nodetool.return_value = sentinel.success
+        self.assertTrue(helpers.are_all_nodes_responding())
+        nodetool.assert_has_calls([call(ANY, ip=sentinel.ip1, timeout=5),
+                                   call(ANY, ip=sentinel.ip2, timeout=5)],
+                                  any_order=True)
+
+    @patch('helpers.nodetool')
+    @patch('helpers.node_ips')
+    def test_are_all_nodes_responding_fail(self, node_ips, nodetool):
+        node_ips.return_value = set([sentinel.ip1, sentinel.ip2])
+        nodetool.side_effect = iter([sentinel.success,
+                                     subprocess.TimeoutExpired([], 0)])
+        self.assertFalse(helpers.are_all_nodes_responding())
+
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.stop_cassandra')
     @patch('helpers.start_cassandra')
@@ -761,11 +778,15 @@ class TestHelpers(TestCaseBase):
         connect().__exit__.return_value = False
         connect.reset_mock()
         helpers.reset_default_password()
-        connect.assert_called_once_with('cassandra', 'cassandra',
-                                        auth_timeout=5)
+        connect.assert_called_once_with('cassandra', 'cassandra')
         query.assert_called_once_with(
             sentinel.session, 'ALTER USER cassandra WITH PASSWORD %s',
             ConsistencyLevel.QUORUM, (sentinel.password,))
+
+        # Second time, nothing.
+        connect.reset_mock()
+        helpers.reset_default_password()
+        self.assertFalse(connect.called)
 
     @patch('helpers.query')
     @patch('helpers.connect')
@@ -974,20 +995,17 @@ class TestHelpers(TestCaseBase):
         connect.assert_called_once_with(auth_timeout=10)  # As Superuser.
         self.assertFalse(create_unit_superuser.called)  # No need to create.
 
-    @patch('helpers.emit_netstats')
-    @patch('helpers.emit_auth_keyspace_status')
-    @patch('helpers.emit_describe_cluster')
+    @patch('helpers.emit_cluster_info')
     @patch('helpers.wait_for_normality')
-    @patch('helpers.repair_auth_keyspace')
     @patch('helpers.query')
     @patch('bcrypt.gensalt')
     @patch('bcrypt.hashpw')
+    @patch('helpers.nodetool')
     @patch('helpers.reconfigure_and_restart_cassandra')
     @patch('helpers.connect')
     @patch('helpers.superuser_credentials')
-    def test_create_unit_superuser(self, creds, connect, restart,
-                                   bhash, bsalt, query, repair, normwait,
-                                   emit_desc, emit_status, emit_netstats):
+    def test_create_unit_superuser(self, creds, connect, restart, nodetool,
+                                   bhash, bsalt, query, normwait, emit_info):
         creds.return_value = ('super', 'secret')
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
@@ -1004,13 +1022,6 @@ class TestHelpers(TestCaseBase):
             call(dict(authenticator='AllowAllAuthenticator',
                       rpc_address='127.0.0.1')),
             call()])
-
-        # The system_auth keyspace was repaired. This may not be
-        # required, but I'm trying to track down an intermitted
-        # authentication failure where the superuser is created but
-        # cannot be connected to after the node is restarted with the
-        # correct authenticator.
-        repair.assert_called_once_with()
 
         # We also waited several times, guarding the necessary node
         # restarts.
@@ -1033,6 +1044,9 @@ class TestHelpers(TestCaseBase):
                     VALUES (%s, %s)
                         '''),
                  ConsistencyLevel.QUORUM, ('super', 'pwhash'))])
+
+        # Local Cassandra was flushed.
+        nodetool.assert_called_once_with('flush')
 
     def test_cqlshrc_path(self):
         self.assertEqual(helpers.get_cqlshrc_path(),
@@ -1410,20 +1424,20 @@ class TestHelpers(TestCaseBase):
         helpers.repair_auth_keyspace()
         nodetool.assert_called_once_with('repair', 'system_auth')
 
-    @patch('shutil.rmtree')
-    @patch('os.path.isdir')
-    @patch('helpers.get_all_database_directories')
-    def test_nuke_system_keyspaces(self, get_all_db_dirs, isdir, rmtree):
-        get_all_db_dirs.return_value = dict(data_file_directories=['a', 'b'])
-        isdir.return_value = True
-        helpers.nuke_system_keyspaces()
-        rmtree.assert_has_calls([call('a/system'),
-                                 call('a/system_auth'),
-                                 call('a/system_traces'),
-                                 call('b/system'),
-                                 call('b/system_auth'),
-                                 call('b/system_traces')],
-                                any_order=True)
+    # @patch('shutil.rmtree')
+    # @patch('os.path.isdir')
+    # @patch('helpers.get_all_database_directories')
+    # def test_nuke_system_keyspaces(self, get_all_db_dirs, isdir, rmtree):
+    #     get_all_db_dirs.return_value = dict(data_file_directories=['a', 'b'])
+    #     isdir.return_value = True
+    #     helpers.nuke_system_keyspaces()
+    #     rmtree.assert_has_calls([call('a/system'),
+    #                              call('a/system_auth'),
+    #                              call('a/system_traces'),
+    #                              call('b/system'),
+    #                              call('b/system_auth'),
+    #                              call('b/system_traces')],
+    #                             any_order=True)
 
     def test_unit_number(self):
         hookenv.local_unit.return_value = 'foo/0'
@@ -1439,7 +1453,7 @@ class TestHelpers(TestCaseBase):
         config['bootstrapped_into_cluster'] = False
         self.assertFalse(helpers.is_bootstrapped())
 
-    @patch('helpers.nuke_system_keyspaces')
+    @patch('helpers.nuke_local_database')
     @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.get_seeds')
@@ -1449,44 +1463,23 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap(self, is_bootstrapped, num_peers, keyspaces,
                            rmtree, get_seeds, conf_yaml, are_nodes_responding,
-                           nuke_sys):
-        keyspaces.return_value = set()
+                           nuke_all):
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
-        get_seeds.return_value = set([sentinel.seed_a, sentinel.seed_b,
-                                      hookenv.unit_private_ip()])
         are_nodes_responding.return_value = True
-
-        self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
-        nuke_sys.assert_called_once_with()
-        self.assertTrue(hookenv.config().get('bootstrap_started'))
-
-    @patch('helpers.nuke_system_keyspaces')
-    @patch('helpers.are_all_nodes_responding')
-    @patch('helpers.configure_cassandra_yaml')
-    @patch('helpers.get_seeds')
-    @patch('shutil.rmtree')
-    @patch('helpers.non_system_keyspaces')
-    @patch('helpers.num_peers')
-    @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_cont(self, is_bootstrapped, num_peers, keyspaces,
-                                rmtree, get_seeds, conf_yaml,
-                                are_nodes_responding, nuke_sys):
-        hookenv.config()['bootstrap_started'] = True  # Stage 2
         keyspaces.return_value = set()
-        is_bootstrapped.return_value = False
-        num_peers.return_value = 1
         get_seeds.return_value = set([sentinel.seed_a, sentinel.seed_b,
                                       hookenv.unit_private_ip()])
-        are_nodes_responding.return_value = True
 
         helpers.pre_bootstrap()
 
-        self.assertFalse(nuke_sys.called)  # Done in Stage 1.
+        # Existing node destroyed.
+        nuke_all.assert_called_once_with()
+        # Reconfigured with this node removed from seeds.
         conf_yaml.assert_called_once_with(seeds=set([sentinel.seed_a,
                                                      sentinel.seed_b]))
 
-    @patch('helpers.nuke_system_keyspaces')
+    @patch('helpers.nuke_local_database')
     @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
     @patch('helpers.get_seeds')
@@ -1496,7 +1489,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap_defer(self, is_bootstrapped, num_peers, keyspaces,
                                  rmtree, get_seeds, conf_yaml, are_nodes_resp,
-                                 nuke_sys):
+                                 nuke_all):
         keyspaces.return_value = set()
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
@@ -1507,12 +1500,12 @@ class TestHelpers(TestCaseBase):
         self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
 
     @patch('helpers.are_all_nodes_responding')
-    @patch('helpers.nuke_system_keyspaces')
+    @patch('helpers.nuke_local_database')
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap_fail(self, is_bootstrapped, num_peers, keyspaces,
-                                nuke_sys, are_all_responding):
+                                nuke_all, are_all_responding):
         are_all_responding.return_value = True
         # If there are non-system keyspaces, this node cannot bootstrap.
         # Fail hard. Perhaps one day we will use sstableloader to import
@@ -1521,7 +1514,7 @@ class TestHelpers(TestCaseBase):
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
         self.assertRaises(SystemExit, helpers.pre_bootstrap)
-        self.assertFalse(nuke_sys.called)
+        self.assertFalse(nuke_all.called)
 
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
@@ -1535,13 +1528,15 @@ class TestHelpers(TestCaseBase):
         is_bootstrapped.return_value = True
         helpers.pre_bootstrap()
 
+    @patch('helpers.unit_number')
     @patch('helpers.is_all_normal')
     @patch('helpers.is_cassandra_running')
     @patch('helpers.configure_cassandra_yaml')
     @patch('time.sleep')
     @patch('helpers.num_nodes')
     def test_post_bootstrap(self, num_nodes, sleep, conf_yaml,
-                            is_running, is_normal):
+                            is_running, is_normal, unit_number):
+        unit_number.return_value = 1
         hookenv.config()['post_bootstrap_delay'] = 42
         num_nodes.return_value = 3
         is_running.return_value = True
@@ -1555,14 +1550,24 @@ class TestHelpers(TestCaseBase):
         # Reset any pre_bootstrap changes.
         conf_yaml.assert_called_once_with()
 
-    @patch('helpers.configure_cassandra_yaml')
+    @patch('helpers.unit_number')
+    @patch('helpers.set_bootstrapped')
     @patch('helpers.num_peers')
-    def test_post_bootstrap_alone(self, num_peers, conf_yaml):
+    def test_post_bootstrap_alone(self, num_peers, set_bootstrapped, unum):
+        unum.return_value = 1
         num_peers.return_value = 0  # Just us.
-        helpers.set_bootstrapped(True)
-        self.assertTrue(helpers.is_bootstrapped())
+        helpers.post_bootstrap()  # Noop
+        self.assertFalse(set_bootstrapped.called)
+
+    @patch('helpers.unit_number')
+    @patch('helpers.set_bootstrapped')
+    @patch('helpers.num_peers')
+    def test_post_bootstrap_zero(self, num_peers, set_bootstrapped, unum):
+        unum.return_value = 0
+        num_peers.return_value = 3
+        # Noop. Unit #0 is always considered bootstrapped.
         helpers.post_bootstrap()
-        self.assertFalse(helpers.is_bootstrapped())
+        self.assertFalse(set_bootstrapped.called)
 
     @patch('helpers.nodetool')
     def test_up_node_ips(self, nodetool):
@@ -1630,7 +1635,7 @@ class TestHelpers(TestCaseBase):
             ''')
         self.assertTrue(helpers.is_all_normal())
 
-        nodetool.assert_called_once_with('status', 'system_auth')
+        nodetool.assert_called_once_with('status')
 
         nodetool.return_value = 'UN  10.0.3.197 ...'
         self.assertTrue(helpers.is_all_normal())
@@ -1662,6 +1667,34 @@ class TestHelpers(TestCaseBase):
         helpers.wait_for_normality()
         self.assertEqual(is_all_normal.call_count, 3)
 
+    @patch('helpers.backoff')
+    @patch('helpers.nodetool')
+    @patch('helpers.is_cassandra_running')
+    def test_is_decommissioned(self, is_cassandra_running, nodetool, backoff):
+        backoff.return_value = repeat(True)
+        is_cassandra_running.return_value = True
+
+        nodetool.return_value = 'rhubarb rhubarb Mode: NORMAL rhubarb'
+        self.assertFalse(helpers.is_decommissioned())
+
+        nodetool.return_value = 'rhubarb rhubarb Mode: DECOMMISSIONED rhubarb'
+        self.assertTrue(helpers.is_decommissioned())
+
+        # Unknown states are retried until NORMAL or DECOMMISSIONED is
+        # reached.
+        nodetool.side_effect = iter(['Mode: ONFIRE', 'Mode: NORMAL',
+                                     'Mode: DECOMMISSIONED'])
+        self.assertFalse(helpers.is_decommissioned())
+        nodetool.side_effect = iter(['Mode: ONFIRE', 'Mode: DECOMMISSIONED',
+                                     'Mode: NORMAL'])
+        self.assertTrue(helpers.is_decommissioned())
+
+        # Decommissioned nodes are not shut down. Therefore, if
+        # Cassandra is not running it is not decommissioned.
+        nodetool.reset_mock()
+        is_cassandra_running.return_value = False
+        self.assertFalse(helpers.is_decommissioned())
+
     @patch('helpers.nodetool')
     def test_emit_describe_cluster(self, nodetool):
         helpers.emit_describe_cluster()
@@ -1686,12 +1719,12 @@ class TestHelpers(TestCaseBase):
         # The next seven units run midday on different days.
         for i in range(7, 14):
             with self.subTest(unit=i):
-                self.assertTupleEqual(helpers.week_spread(i), (i-7, 12, 0))
+                self.assertTupleEqual(helpers.week_spread(i), (i - 7, 12, 0))
 
         # And the next seven units at 6 am on different days.
         for i in range(14, 21):
             with self.subTest(unit=i):
-                self.assertTupleEqual(helpers.week_spread(i), (i-14, 6, 0))
+                self.assertTupleEqual(helpers.week_spread(i), (i - 14, 6, 0))
 
         # This keeps going as best we can, subdividing the hours.
         self.assertTupleEqual(helpers.week_spread(811), (6, 19, 18))

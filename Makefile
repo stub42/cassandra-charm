@@ -35,7 +35,9 @@ deps: packages venv3
 
 lint: deps
 	charm proof $(CHARM_DIR)
-	flake8 --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
+	flake8 \
+	    --ignore=E402 \
+	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
 
 unittest: lint
 	nosetests -sv \

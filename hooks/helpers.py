@@ -59,7 +59,7 @@ def logged(func):
     return wrapper
 
 
-def backoff(what_for, max_pause=60, timeout=None):
+def backoff(what_for, max_pause=60):
     i = 0
     while True:
         yield True
@@ -475,12 +475,12 @@ def is_seed_responding():
 def are_all_nodes_responding():
     all_contactable = True
     for ip in node_ips():
-        rc = subprocess.call(['nodetool', '--host', ip, 'status'])
-        if rc == 0:
+        try:
+            nodetool('status', ip=ip, timeout=5)
             hookenv.log('{} is responding'.format(ip))
-        else:
-            hookenv.log('{} is not responding'.format(ip))
+        except subprocess.TimeoutExpired:
             all_contactable = False
+            hookenv.log('{} is not responding'.format(ip))
     return all_contactable
 
 
@@ -522,16 +522,24 @@ def ensure_database_directories():
 
 @logged
 def reset_default_password():
+    config = hookenv.config()
+    if config.get('default_admin_password_changed', False):
+        hookenv.log('Default admin password changed in an earlier hook')
+        return
+
     # If we can connect using the default superuser password
-    # 'cassandra', change it to something random.
+    # 'cassandra', change it to something random. We do this in a loop
+    # to ensure the hook that calls this is idempotent.
     try:
-        with connect('cassandra', 'cassandra', auth_timeout=5) as session:
+        with connect('cassandra', 'cassandra') as session:
             hookenv.log('Changing default admin password')
             query(session, 'ALTER USER cassandra WITH PASSWORD %s',
                   ConsistencyLevel.QUORUM,
                   (host.pwgen(),))  # pragma: no branch
     except cassandra.AuthenticationFailed:
         hookenv.log('Default admin password already changed')
+
+    config['default_admin_password_changed'] = True
 
 
 CONNECT_TIMEOUT = 240
@@ -653,9 +661,7 @@ def create_unit_superuser():
     reconfigure_and_restart_cassandra(
         dict(authenticator='AllowAllAuthenticator', rpc_address='127.0.0.1'))
     wait_for_normality()
-    emit_describe_cluster()
-    emit_auth_keyspace_status()
-    emit_netstats()
+    emit_cluster_info()
     for _ in backoff('superuser creation'):
         try:
             with connect() as session:
@@ -677,12 +683,9 @@ def create_unit_superuser():
             print(str(x))
 
     # Restart Cassandra with regular config.
-    wait_for_normality()
+    nodetool('flush')  # Ensure our backdoor updates are flushed.
     reconfigure_and_restart_cassandra()
     wait_for_normality()
-
-    # Ensure auth details replicated to where they need to be.
-    repair_auth_keyspace()
 
 
 def get_cqlshrc_path():
@@ -754,7 +757,7 @@ def nodetool(*cmd, ip=None, timeout=120):
                              stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
         (out, _) = p.communicate(timeout=timeout)
-        out = out.replace('\t', ' '*8)  # Replace tabs for juju debug-log.
+        out = out.replace('\t', ' ' * 8)  # Replace tabs for juju debug-log.
         now = time.time()
         # Work around CASSANDRA-8776.
         if 'status' in cmd and 'Error:' in out:
@@ -994,16 +997,41 @@ def non_system_keyspaces():
                             'dse_system'])
 
 
-def nuke_system_keyspaces():
-    # We need to clear the system keyspace to enable bootstrapping to
-    # correctly work.
-    dfds = get_all_database_directories()['data_file_directories']
-    for dfd in dfds:
-        for subdir in ['system', 'system_auth', 'system_traces']:
-            path = os.path.join(dfd, subdir)
+def nuke_local_database():
+    '''Destroy the local database, entirely, so this node may bootstrap.
+
+    This needs to be lower level than just removing selected keyspaces
+    such as 'system', as commitlogs and other crumbs can also cause the
+    bootstrap process to fail disasterously.
+    '''
+    # This function is dangerous enough to warrent a guard.
+    assert not is_bootstrapped()
+    assert unit_number() != 0
+
+    keyspaces = non_system_keyspaces()
+    if keyspaces:
+        hookenv.log('Non-system keyspaces {!r} detected. '
+                    'Unable to bootstrap.'.format(keyspaces), ERROR)
+        raise SystemExit(1)
+
+    def nuke(d):
+        '''Remove the contents of directory d, leaving d in place.
+
+        We don't remove the top level directory as it may be a mount
+        or symlink we cannot recreate.
+        '''
+        for name in os.listdir(d):
+            path = os.path.join(d, name)
             if os.path.isdir(path):
-                hookenv.log('Removing {} before bootstrap'.format(path))
                 shutil.rmtree(path)
+            else:
+                os.remove(path)
+
+    dirs = get_all_database_directories()
+    nuke(dirs['saved_caches_directory'])
+    nuke(dirs['commitlog_directory'])
+    for dfd in dirs['data_file_directories']:
+        nuke(dfd)
 
 
 def unit_number():
@@ -1070,26 +1098,9 @@ def pre_bootstrap():
     #     hookenv.log('Seed not responding. Bootstrap deferred.')
     #     raise rollingrestart.DeferRestart()
 
-    config = hookenv.config()
-    if not config.get('bootstrap_started', False):
-        hookenv.log('Joining cluster and need to bootstrap.')
+    hookenv.log('Joining cluster and need to bootstrap.')
 
-        keyspaces = non_system_keyspaces()
-        if keyspaces:
-            hookenv.log('Non-system keyspaces {!r} detected. '
-                        'Unable to bootstrap.'.format(keyspaces), ERROR)
-            raise SystemExit(1)
-
-        nuke_system_keyspaces()
-
-        config['bootstrap_started'] = True
-
-        # Do the actual bootstrap in a subsequent hook. This ensures
-        # that config['bootstrap_started'] is saved even if bootstrap
-        # bombs out and needs to be retried.
-        raise rollingrestart.DeferRestart()
-    else:
-        hookenv.log('Attempting to complete bootstrap')
+    nuke_local_database()
 
     # Remove this unit from the seeds list (if it is there) to enable
     # bootstrapping.
@@ -1113,29 +1124,27 @@ def post_bootstrap():
     elif num_peers() == 0:
         # There is no cluster (just us), so we are not bootstrapped into
         # the cluster.
-        set_bootstrapped(False)
+        pass
     else:
         if not is_bootstrapped():
-            # Bootstrap was attempted, but might still fail. Wait until
-            # the node has successfully joined, or retry the bootstrap
-            # in a future hook if the Cassandra process has shut down.
-            for _ in backoff('cluster operations to finish'):
-                if not is_cassandra_running():
-                    hookenv.log('Bootstrap failed. Will retry.')
-                    raise rollingrestart.DeferRestart()
-                try:
-                    if is_all_normal():
-                        break
-                except subprocess.CalledProcessError:
-                    pass
-            set_bootstrapped(True)
-            hookenv.log('Bootstrapped into the cluster. '
+            assert is_cassandra_running(), 'Bootstrap failed'
+            hookenv.log('Bootstrapping into the cluster. '
                         'Waiting {}s.'.format(
                             config['post_bootstrap_delay']))
             time.sleep(config['post_bootstrap_delay'])
-    # Revert any changes that pre_bootstrap may have made to enable
-    # bootstrapping.
-    configure_cassandra_yaml()
+            assert is_cassandra_running(), 'Bootstrap failed'
+            set_bootstrapped(True)
+
+        for _ in backoff('cluster operations to finish'):
+            try:
+                if is_all_normal():
+                    break
+            except subprocess.TimeoutExpired:
+                pass
+
+        # Revert any changes that pre_bootstrap may have made to enable
+        # bootstrapping.
+        configure_cassandra_yaml()
 
 
 def is_schema_agreed():
@@ -1181,7 +1190,7 @@ def is_all_normal():
     Returns false if a node is joining, leaving or moving in the ring.
     '''
     is_all_normal = True
-    raw = nodetool('status', 'system_auth')
+    raw = nodetool('status')
     node_status_re = re.compile('^(\w)([NLJM])\s+([\d\.]+)\s')
     for line in raw.splitlines():
         match = node_status_re.search(line)
@@ -1191,7 +1200,11 @@ def is_all_normal():
             # nodes will disappear without decommissioning leaving these
             # entries.
             if updown == 'D':
-                hookenv.log('Node {} is down'.format(address))
+                if address == hookenv.unit_private_ip():
+                    is_all_normal = False
+                    hookenv.log('Node {} (this node) is down'.format(address))
+                else:
+                    hookenv.log('Node {} is down'.format(address))
 
             if mode == 'L':
                 hookenv.log('Node {} is leaving the cluster'.format(address))
@@ -1214,7 +1227,7 @@ def wait_for_normality():
 
 def is_decommissioned():
     if not is_cassandra_running():
-        return True  # Decommissioned nodes are not shut down.
+        return False  # Decommissioned nodes are not shut down.
 
     for _ in backoff('stable node mode'):
         raw = nodetool('netstats')
@@ -1241,6 +1254,12 @@ def emit_auth_keyspace_status():
 def emit_netstats():
     '''Run 'nodetool netstats' for the logs.'''
     nodetool('netstats')  # Implicit emit
+
+
+def emit_cluster_info():
+    emit_describe_cluster()
+    emit_auth_keyspace_status()
+    emit_netstats()
 
 
 # FOR CHARMHELPERS (and think of a better name)
@@ -1274,7 +1293,7 @@ def week_spread(unit_num):
     # We spread time of day so each batch of 7 units gets the same time,
     # as far spread out from the other batches of 7 units as possible.
     minutes_in_day = 24 * 60
-    sched = timedelta(minutes=int(minutes_in_day * vdc(unit_num//7)))
-    sched_hour = sched.seconds//(60*60)
-    sched_minute = sched.seconds//60 - sched_hour * 60
-    return sched_dow, sched_hour, sched_minute
+    sched = timedelta(minutes=int(minutes_in_day * vdc(unit_num // 7)))
+    sched_hour = sched.seconds // (60 * 60)
+    sched_minute = sched.seconds // 60 - sched_hour * 60
+    return (sched_dow, sched_hour, sched_minute)

@@ -27,9 +27,9 @@ import warnings
 
 warnings.filterwarnings('ignore', 'The blist library is not available')
 
-from cassandra import ConsistencyLevel
+from cassandra import ConsistencyLevel, AuthenticationFailed
 from cassandra.auth import PlainTextAuthProvider
-from cassandra.cluster import Cluster
+from cassandra.cluster import Cluster, NoHostAvailable
 from cassandra.query import SimpleStatement
 import yaml
 
@@ -90,40 +90,22 @@ class TestDeploymentBase(unittest.TestCase):
         cls.deployment = None
 
     def setUp(self):
-        session = self.cluster().connect()
-        try:
-            session.execute('DROP KEYSPACE test')
-        except Exception:
-            pass
-        # It might take a while for the DROP KEYSPACE to propagate,
-        # so retry the CREATE KEYSPACE for a while.
-        timeout = time.time() + 120
-        while True:
-            try:
-                # We create a keyspace with a replication factor equal
-                # to the number of units. This ensures that all records
-                # are replicated to all nodes, and we can cofirm that
-                # all nodes are working by doing an insert with
-                # ConsistencyLevel.ALL.
-                session.execute('''
-                                CREATE KEYSPACE test WITH REPLICATION = {
-                                    'class': 'SimpleStrategy',
-                                    'replication_factor': %s}
-                                ''', (self.rf,))
-                break
-            except Exception:
-                if time.time() > timeout:
-                    raise
-                time.sleep(1)
-
-        while True:
-            try:
-                self.session()  # Ensure the CREATE KEYSPACE has replicated.
-                break
-            except Exception:
-                if time.time() > timeout:
-                    raise
-                time.sleep(1)
+        cluster = self.cluster()
+        session = cluster.connect()
+        # We create a keyspace with a replication factor equal
+        # to the number of units. This ensures that all records
+        # are replicated to all nodes, and we can cofirm that
+        # all nodes are working by doing an insert with
+        # ConsistencyLevel.ALL.
+        session.execute(
+            SimpleStatement('DROP KEYSPACE IF EXISTS test',
+                            consistency_level=ConsistencyLevel.ALL))
+        q = SimpleStatement('''
+            CREATE KEYSPACE test WITH REPLICATION = {
+                'class': 'SimpleStrategy', 'replication_factor': %s}
+            ''', consistency_level=ConsistencyLevel.ALL)
+        session.execute(q, (self.rf,))
+        cluster.shutdown()
 
     def juju_status(self):
         status_yaml = subprocess.check_output(['juju', 'status',
@@ -132,25 +114,28 @@ class TestDeploymentBase(unittest.TestCase):
             return None
         return yaml.safe_load(status_yaml)
 
-    def cluster(self):
+    def cluster(self, username=None, password=None, hosts=None):
         status = self.juju_status()
 
-        # Get some valid credentials - unit's superuser account will do.
-        unit = sorted(status['services']['cassandra']['units'].keys())[0]
-        cqlshrc_path = helpers.get_cqlshrc_path()
-        cqlshrc = configparser.ConfigParser(interpolation=None)
-        cqlshrc.read_string(
-            self.deployment.sentry[unit].file_contents(cqlshrc_path))
-        username = cqlshrc['authentication']['username']
-        password = cqlshrc['authentication']['password']
+        if username is None or password is None:
+            # Get some valid credentials - unit's superuser account will do.
+            unit = sorted(status['services']['cassandra']['units'].keys())[0]
+            cqlshrc_path = helpers.get_cqlshrc_path()
+            cqlshrc = configparser.ConfigParser(interpolation=None)
+            cqlshrc.read_string(
+                self.deployment.sentry[unit].file_contents(cqlshrc_path))
+            username = cqlshrc['authentication']['username']
+            password = cqlshrc['authentication']['password']
+
         auth_provider = PlainTextAuthProvider(username=username,
                                               password=password)
 
         # Get the IP addresses
-        ips = []
-        for unit, detail in status['services']['cassandra']['units'].items():
-            ips.append(detail['public-address'])
-        cluster = Cluster(ips, auth_provider=auth_provider)
+        if hosts is None:
+            hosts = []
+            for unit, d in status['services']['cassandra']['units'].items():
+                hosts.append(d['public-address'])
+        cluster = Cluster(hosts, auth_provider=auth_provider)
         self.addCleanup(cluster.shutdown)
         return cluster
 
@@ -168,11 +153,11 @@ class TestDeploymentBase(unittest.TestCase):
         '''
         relinfo = self.get_client_relinfo(relname)
         self.assertIn('host', relinfo.keys())
-        ips = [relinfo['host']]
+        hosts = [relinfo['host']]
         port = int(relinfo['native_transport_port'])
         auth_provider = PlainTextAuthProvider(username=relinfo['username'],
                                               password=relinfo['password'])
-        cluster = Cluster(ips, auth_provider=auth_provider, port=port)
+        cluster = Cluster(hosts, auth_provider=auth_provider, port=port)
         self.addCleanup(cluster.shutdown)
         session = cluster.connect('test')
         self.addCleanup(session.shutdown)
@@ -297,7 +282,16 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertTrue(self.is_port_open(9042), 'Native trans port closed')
         self.assertTrue(self.is_port_open(9160), 'Thrift RPC port closed')
 
-    def test_add_and_drop_node(self):
+    def test_default_superuser_account_closed(self):
+        cluster = self.cluster(username='cassandra', password='cassandra')
+        try:
+            cluster.connect()
+            self.fail('Default credentials not reset')
+        except NoHostAvailable as x:
+            for fail in x.errors.values():
+                self.assertIsInstance(fail, AuthenticationFailed)
+
+    def test_z_add_and_drop_node(self):  # 'z' to run this test last.
         # We need to be able to add a node correctly into the ring,
         # without an operator needing to repair keyspaces to ensure data
         # is located on the expected nodes.

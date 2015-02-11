@@ -363,12 +363,16 @@ def maybe_schedule_restart():
         hookenv.log('Unit IP address changed. Restart required.')
         restart = True
 
+    # I took this out to limit the hookstorm when creating a new
+    # cluster. Any new seed will be discovered via gossip once it
+    # bootstraps in, and the seeds are only really needed on startup in
+    # any case.
     # If we have new seeds, we need to restart.
-    seeds = helpers.get_seeds()
-    nodes = helpers.node_ips()
-    if not seeds.issubset(nodes):
-        hookenv.log('New seeds. Restart required.')
-        restart = True
+    # seeds = helpers.get_seeds()
+    # nodes = helpers.node_ips()
+    # if not seeds.issubset(nodes):
+    #     hookenv.log('New seeds. Restart required.')
+    #     restart = True
 
     if restart:
         rollingrestart.request_restart()
