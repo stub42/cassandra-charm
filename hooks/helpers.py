@@ -129,25 +129,15 @@ def ensure_package_status(packages):
     dpkg.communicate(input=''.join(selections).encode('US-ASCII'))
 
 
-def get_seeds():
-    '''Return the set of seed nodes.
-
-    This list may be calculated, or manually overridden by the
-    force_seed_nodes configuration setting.
+def seed_ips():
+    '''Return the set of seed ip addresses.
 
     If this is the only unit in the service, then the local unit's IP
     address is returned as the only seed.
 
     If there is more than one unit in the service, then the IP addresses
-    of the three lowest numbered peers are returned. The local unit will
-    never be listed as a seed, and ensures that the local unit will always
-    bootstrap.
+    of three lowest numbered peers (if bootstrapped) are returned.
     '''
-    config_dict = hookenv.config()
-
-    if config_dict['force_seed_nodes']:
-        return set(config_dict['force_seed_nodes'].split(','))
-
     peers = rollingrestart.get_peers()
     if not peers:
         return set([hookenv.unit_private_ip()])
@@ -155,12 +145,14 @@ def get_seeds():
     # The three lowest numbered units are seeds & may include this unit.
     seeds = sorted(list(peers) + [hookenv.local_unit()],
                    key=lambda x: int(x.split('/')[-1]))[:3]
+
     relid = rollingrestart.get_peer_relation_id()
     return set(hookenv.relation_get('private-address', seed, relid)
-               for seed in seeds)
+               for seed in seeds
+               if is_bootstrapped(seed))
 
 
-def get_actual_seeds():
+def actual_seed_ips():
     '''Return the seeds currently in cassandra.yaml'''
     cassandra_yaml = read_cassandra_yaml()
     s = cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds']
@@ -434,7 +426,7 @@ def start_cassandra():
     if is_cassandra_running():
         return
 
-    actual_seeds = get_actual_seeds()
+    actual_seeds = actual_seed_ips()
     hookenv.log('Starting Cassandra with seeds {!r}'.format(actual_seeds))
     host.service_start(get_cassandra_service())
 
@@ -729,24 +721,25 @@ def nodetool(*cmd, ip=None, timeout=120):
     until = time.time() + timeout
     for _ in backoff('nodetool to work'):
         i += 1
-        p = subprocess.Popen(cmd, universal_newlines=True,
-                             stdin=subprocess.DEVNULL,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT)
-        (out, _) = p.communicate(timeout=timeout)
-        out = out.replace('\t', ' ' * 8)  # Replace tabs for juju debug-log.
-        now = time.time()
-        # Work around CASSANDRA-8776.
-        if 'status' in cmd and 'Error:' in out:
-            hookenv.log('Error detected but nodetool returned success.')
-            p.returncode = 99
-        if i > 4 or now > until or p.returncode == 0:
-            emit(out)
-        if p.returncode == 0:
+        try:
+            raw = subprocess.check_output(cmd, universal_newlines=True,
+                                          timeout=max(0, until - time.time()),
+                                          stderr=subprocess.STDOUT)
+
+            # Work around CASSANDRA-8776.
+            if 'status' in cmd and 'Error:' in raw:
+                hookenv.log('Error detected but nodetool returned success.',
+                            WARNING)
+                raise subprocess.CalledProcessError(99, cmd, raw)
+
             hookenv.log('{} succeeded'.format(' '.join(cmd)), DEBUG)
+            out = raw.expandtabs()
+            emit(out)
             return out
-        if now > until:
-            raise subprocess.TimeoutExpired(cmd, timeout, out)
+
+        except subprocess.CalledProcessError as x:
+            if i > 4:
+                emit(x.output.expandtabs())  # Expand tabs for juju debug-log.
 
 
 def node_ips():
@@ -754,18 +747,17 @@ def node_ips():
 
     Returns an empty set if the seeds are not responding.
     '''
-    if is_bootstrapped():
-        seed_ips = set([hookenv.unit_private_ip()])
+    if is_bootstrapped() or num_peers() == 0:
+        seeds = set([hookenv.unit_private_ip()])
     else:
-        # Not bootstrapped, so we need to query the seed for the list of
-        # nodes.
-        seed_ips = set(get_seeds())
-        seed_ips.discard(hookenv.unit_private_ip())
-        if not seed_ips:
-            # No seeds, so assume we are still standalone.
-            seed_ips = set([hookenv.unit_private_ip()])
+        # Not bootstrapped and not standalone, so we need to query the
+        # seed for the list of nodes.
+        seeds = set(seed_ips())
+        if len(seeds) > 1:
+            seeds.discard(hookenv.unit_private_ip())
+
     raw = None
-    for seed_ip in seed_ips:
+    for seed_ip in seeds:
         try:
             raw = nodetool('status', 'system_auth', ip=seed_ip, timeout=10)
             break
@@ -840,7 +832,7 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
                           'storage_port', 'ssl_storage_port']
     cassandra_yaml.update((k, config[k]) for k in simple_config_keys)
 
-    seeds = ','.join(seeds or get_seeds())  # Don't include whitespace!
+    seeds = ','.join(seeds or seed_ips())  # Don't include whitespace!
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
@@ -1018,20 +1010,24 @@ def unit_number(unit=None):
     return int(unit.split('/')[-1])
 
 
-def is_bootstrapped():
+def is_bootstrapped(unit=None):
     '''Return True if the node has already bootstrapped into the cluster.'''
+    if unit is None:
+        unit = hookenv.local_unit()
+    if unit.endswith('/0'):
+        return True
     relid = rollingrestart.get_peer_relation_id()
-    return hookenv.relation_get('bootstrapped', hookenv.local_unit(),
-                                relid) == '1'
+    return hookenv.relation_get('bootstrapped', unit, relid) == '1'
 
 
 def set_bootstrapped(flag):
     relid = rollingrestart.get_peer_relation_id()
+    if bool(flag) is not is_bootstrapped():
+        hookenv.log('Setting bootstrapped to {}'.format(flag))
+
     if flag:
-        hookenv.log('Node is bootstrapped')
         hookenv.relation_set(relid, bootstrapped="1")
     else:
-        hookenv.log('Node is unbootstrapped')
         hookenv.relation_set(relid, bootstrapped=None)
 
 
@@ -1066,11 +1062,6 @@ def pre_bootstrap():
         hookenv.log("No peers, no cluster, no bootstrapping")
         return
 
-    if unit_number() == 0:
-        hookenv.log("Unit 0, initial node. Flagging as bootstrapped")
-        set_bootstrapped(True)
-        return
-
     # Don't attempt to bootstrap until all lower numbered units have
     # bootstrapped. We need to do this as the rollingrestart algorithm
     # fails during initial cluster setup, where two or more newly joined
@@ -1081,6 +1072,15 @@ def pre_bootstrap():
         if unit_number(peer) < unit_number():
             hookenv.log("{} is not bootstrapped. Deferring.")
             raise rollingrestart.DeferRestart()
+
+    # Bootstrap fail if we haven't yet opened our ports to all
+    # the bootstrapped nodes. This is the case if we have not yet
+    # joined the peer relationship with the node's unit.
+    missing = node_ips() - peer_ips()
+    if missing:
+        hookenv.log("Not yet in a peer relationship with {!r}. "
+                    "Deferring bootstrap".format(missing))
+        raise rollingrestart.DeferRestart()
 
     # Bootstrap will fail if all the nodes that contain data that needs
     # to move to the new node are down. If you are storing data in
@@ -1096,12 +1096,6 @@ def pre_bootstrap():
 
     nuke_local_database()
 
-    # Remove this unit from the seeds list (if it is there) to enable
-    # bootstrapping.
-    seeds = get_seeds()
-    seeds.discard(hookenv.unit_private_ip())
-    configure_cassandra_yaml(seeds=seeds)
-
 
 @logged
 def post_bootstrap():
@@ -1116,25 +1110,20 @@ def post_bootstrap():
         return
 
     if not is_bootstrapped():
-        assert is_cassandra_running(), 'Bootstrap failed'
-        config = hookenv.config()
-        hookenv.log('Bootstrapping into the cluster. '
-                    'Waiting {}s.'.format(
-                        config['post_bootstrap_delay']))
-        time.sleep(config['post_bootstrap_delay'])
-        assert is_cassandra_running(), 'Bootstrap failed'
-        set_bootstrapped(True)
-
-    for _ in backoff('cluster operations to finish'):
-        try:
-            if is_all_normal():
+        for _ in backoff('bootstrap to finish'):
+            if not is_cassandra_running():
+                hookenv.log('Bootstrap failed. Retrying')
+                start_cassandra()
                 break
-        except subprocess.TimeoutExpired:
-            pass
-
-    # Revert any changes that pre_bootstrap may have made to enable
-    # bootstrapping.
-    configure_cassandra_yaml()
+            if is_all_normal():
+                hookenv.log('Cluster settled after bootstrap.')
+                config = hookenv.config()
+                hookenv.log('Waiting {}s.'.format(
+                    config['post_bootstrap_delay']))
+                time.sleep(config['post_bootstrap_delay'])
+                if is_cassandra_running():
+                    set_bootstrapped(True)
+                    break
 
 
 def is_schema_agreed():
@@ -1145,7 +1134,7 @@ def is_schema_agreed():
     raw = nodetool('describecluster')
     # The output of nodetool describe cluster is almost yaml,
     # so we use that tool once we fix the tabs.
-    description = yaml.load(raw.replace('\t', ' '))
+    description = yaml.load(raw.expandtabs())
     versions = description['Cluster Information']['Schema versions'] or {}
 
     for schema, schema_ips in versions.items():
@@ -1164,7 +1153,7 @@ def wait_for_agreed_schema():
             return
 
 
-def get_peer_ips():
+def peer_ips():
     ips = set()
     relid = rollingrestart.get_peer_relation_id()
     if relid is not None:
@@ -1174,13 +1163,16 @@ def get_peer_ips():
     return ips
 
 
-def is_all_normal():
+def is_all_normal(timeout=120):
     '''All nodes in the cluster report status Normal.
 
     Returns false if a node is joining, leaving or moving in the ring.
     '''
     is_all_normal = True
-    raw = nodetool('status')
+    try:
+        raw = nodetool('status', timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False
     node_status_re = re.compile('^(.)([NLJM])\s+([\d\.]+)\s')
     for line in raw.splitlines():
         match = node_status_re.search(line)

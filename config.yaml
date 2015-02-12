@@ -198,13 +198,15 @@ options:
         type: int
         default: 256
         description: Number of tokens per node.
-    force_seed_nodes:
-        type: string
-        default: ""
-        description: >
-            A comma separated list of seed node ip addresses. This is
-            useful if the cluster being created in this juju environment
-            is part of a larger cluser and the seed nodes are remote.
+            
+    # Not implemented.
+    # force_seed_nodes:
+    #     type: string
+    #     default: ""
+    #     description: >
+    #         A comma separated list of seed node ip addresses. This is
+    #         useful if the cluster being created in this juju environment
+    #         is part of a larger cluser and the seed nodes are remote.
             
     # Topology of the service in the cluster.
     datacenter:

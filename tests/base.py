@@ -15,6 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import functools
+from itertools import count
 import unittest
 from unittest.mock import patch
 
@@ -36,3 +37,7 @@ class TestCaseBase(unittest.TestCase):
         emit = patch('helpers.emit')
         emit.start()
         self.addCleanup(emit.stop)
+
+        time = patch('time.time', side_effect=count(1))
+        time.start()
+        self.addCleanup(time.stop)

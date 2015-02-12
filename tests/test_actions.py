@@ -406,13 +406,13 @@ class TestsActions(TestCaseBase):
 
     @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_need_remount(self, request_restart,
                                                  storage_relation, is_running,
-                                                 get_seeds, node_ips,
+                                                 seed_ips, node_ips,
                                                  is_decom):
         config = hookenv.config()
 
@@ -423,7 +423,7 @@ class TestsActions(TestCaseBase):
         storage_relation().needs_remount.return_value = True
 
         # No new seeds
-        get_seeds.return_value = set(['a'])
+        seed_ips.return_value = set(['a'])
         node_ips.return_value = set(['a', 'b'])
 
         # IP address is unchanged.
@@ -440,14 +440,17 @@ class TestsActions(TestCaseBase):
 
     @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_unchanged(self, request_restart,
                                               storage_relation, is_running,
-                                              get_seeds, node_ips, is_decom):
+                                              seed_ips, node_ips, is_decom):
         config = hookenv.config()
+        config['configured_seeds'] = ['a']
+        config.save()
+        config.load_previous()
 
         is_decom.return_value = False
         is_running.return_value = True
@@ -456,8 +459,7 @@ class TestsActions(TestCaseBase):
         storage_relation().needs_remount.return_value = False
 
         # No new seeds
-        get_seeds.return_value = set(['a'])
-        node_ips.return_value = set(['a', 'b'])
+        seed_ips.return_value = set(['a'])
 
         # IP address is unchanged.
         config['unit_private_ip'] = hookenv.unit_private_ip()
@@ -475,12 +477,12 @@ class TestsActions(TestCaseBase):
     @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
     @patch('helpers.is_cassandra_running')
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_config_changed(self, request_restart,
                                                    storage_relation,
-                                                   get_seeds, is_running,
+                                                   seed_ips, is_running,
                                                    node_ips, is_decom):
         config = hookenv.config()
 
@@ -507,13 +509,13 @@ class TestsActions(TestCaseBase):
 
     @patch('helpers.is_decommissioned')
     @patch('helpers.node_ips')
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_ip_changed(self, request_restart,
                                                storage_relation, is_running,
-                                               get_seeds, node_ips, is_decom):
+                                               seed_ips, node_ips, is_decom):
         is_decom.return_value = False
         is_running.return_value = True
 
@@ -521,7 +523,7 @@ class TestsActions(TestCaseBase):
         storage_relation().needs_remount.return_value = False
 
         # No new seeds
-        get_seeds.return_value = set(['a'])
+        seed_ips.return_value = set(['a'])
         node_ips.return_value = set(['a', 'b'])
 
         # Config items are unchanged.
@@ -916,15 +918,15 @@ class TestsActions(TestCaseBase):
         actions.shutdown_before_joining_peers('')
         self.assertFalse(stop.called)
 
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('charmhelpers.core.hookenv.relations_of_type')
     @patch('actions.ufw')
-    def test_configure_firewall(self, ufw, rel_of_type, get_seeds):
+    def test_configure_firewall(self, ufw, rel_of_type, seed_ips):
         rel_of_type.return_value = [{'private-address': '1.1.0.1'},
                                     {'private-address': '1.1.0.2'}]
 
         # Seeds get access too, to ensure the force_seed_nodes work.
-        get_seeds.return_value = set(['10.20.0.1'])
+        seed_ips.return_value = set(['10.20.0.1'])
 
         actions.configure_firewall('')
 
@@ -959,7 +961,7 @@ class TestsActions(TestCaseBase):
 
         # If things change in a later hook, unwanted rules are removed
         # and new ones added.
-        get_seeds.return_value = set(['1.1.0.1'])
+        seed_ips.return_value = set(['1.1.0.1'])
         config = hookenv.config()
         config.save()
         config.load_previous()

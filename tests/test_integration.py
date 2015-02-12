@@ -164,7 +164,15 @@ class TestDeploymentBase(unittest.TestCase):
         return session
 
     def wait(self):
-        self.deployment.sentry.wait(timeout=WAIT_TIMEOUT)
+        # Work around Bug #1421195 by retrying failed waits.
+        until = time.time() + WAIT_TIMEOUT
+        while True:
+            try:
+                self.deployment.sentry.wait(timeout=int(until - time.time()))
+                return
+            except OSError:
+                if time.time() > until:
+                    raise
 
     def get_client_relinfo(self, relname):
         # We only need one unit, even if rf > 1
@@ -341,7 +349,6 @@ class Test1UnitDeployment(TestDeploymentBase):
             # First, the node must be manually decommissioned before we
             # remove the unit.
             self._decommission(unit)
-            self._wait_for_decommission(unit)
             # self._wait_for_nodecount(self.rf)
             self.deployment.remove_unit(unit)
             self.wait()
@@ -349,34 +356,52 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertEqual(count(), total)
 
     def _wait_for_nodecount(self, num_nodes):
+        until = time.time() + WAIT_TIMEOUT
         while True:
-            raw = subprocess.check_output(['juju', 'run', '--unit=cassandra/0',
-                                           'nodetool describecluster'],
-                                          universal_newlines=True)
-            desc = yaml.load(raw.replace('\t', ' '))  # Almost yaml
-            schemas = desc['Cluster Information']['Schema versions'] or {}
-            for schema, ips in schemas.items():
-                if len(ips) == num_nodes:
-                    return
-
-    def _wait_for_decommission(self, unit):
-        while True:
-            raw = subprocess.check_output(['juju', 'run', '--unit', unit,
-                                           'nodetool netstats'],
-                                          universal_newlines=True)
-            if 'Mode: DECOMMISSIONED' in raw:
-                return
+            try:
+                cmd = ['juju', 'run', '--unit=cassandra/0',
+                       'nodetool describecluster']
+                raw = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                                              universal_newlines=True)
+                desc = yaml.load(raw.expandtabs())  # Almost yaml
+                schemas = desc['Cluster Information']['Schema versions'] or {}
+                for schema, ips in schemas.items():
+                    if len(ips) == num_nodes:
+                        return
+                if time.time() > until:
+                    raise subprocess.TimeoutExpired(cmd, WAIT_TIMEOUT, raw)
+            except subprocess.CalledProcessError:
+                if time.time() > until:
+                    raise
             time.sleep(3)
 
     def _decommission(self, unit):
-        subprocess.check_output(['juju', 'run', '--unit', unit,
-                                 'nodetool decommission'])
+        until = time.time() + WAIT_TIMEOUT
         while True:
-            raw = subprocess.check_output(['juju', 'run', '--unit', unit,
-                                           'nodetool status'],
-                                          universal_newlines=True)
-            if 'UL' not in raw and 'DL' not in raw:
+            try:
+                subprocess.check_output(['juju', 'run', '--unit', unit,
+                                         'nodetool decommission'],
+                                        stderr=subprocess.STDOUT,
+                                        universal_newlines=True)
                 break
+            except subprocess.CalledProcessError:
+                if time.time() > until:
+                    raise
+
+        until = time.time() + WAIT_TIMEOUT
+        while True:
+            try:
+                cmd = ['juju', 'run', '--unit', unit, 'nodetool netstats']
+                raw = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                                              universal_newlines=True)
+                if 'Mode: DECOMMISSIONED' in raw:
+                    return
+                if time.time() > until:
+                    raise subprocess.TimeoutExpired(cmd, WAIT_TIMEOUT, raw)
+            except subprocess.CalledProcessError:
+                if time.time() > until:
+                    raise
+            time.sleep(3)
 
 
 class Test3UnitDeployment(Test1UnitDeployment):

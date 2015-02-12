@@ -331,6 +331,28 @@ def store_unit_private_ip():
 
 
 @action
+def set_unit_zero_bootstrapped():
+    '''Unit #0 is used as the first node in the cluster.
+
+    Unit #0 is implicitly flagged as bootstrap, and thus befores the
+    first node in the cluster and providing a seed for other nodes to
+    bootstrap off. We can change this when we have juju leadership,
+    making the leader the first node in the cluster. Until then, don't
+    attempt to create a multiunit service if you have removed Unit #0.
+    '''
+    if helpers.unit_number() == 0:
+        try:
+            helpers.set_bootstrapped(True)
+        except subprocess.CalledProcessError as x:
+            # Alas, we can't store data on the peer relation until we
+            # have actually joined it. This is the only call site
+            # this might happen in, so catch the fault here rather than
+            # risk swallowing the error when we didn't mean too.
+            if x.returncode != 2:
+                raise
+
+
+@action
 def maybe_schedule_restart():
     '''Prepare for and schedule a rolling restart if necessary.'''
     if not helpers.is_cassandra_running():
@@ -363,12 +385,23 @@ def maybe_schedule_restart():
         hookenv.log('Unit IP address changed. Restart required.')
         restart = True
 
-    # I took this out to limit the hookstorm when creating a new
-    # cluster. Any new seed will be discovered via gossip once it
-    # bootstraps in, and the seeds are only really needed on startup in
-    # any case.
-    # If we have new seeds, we need to restart.
-    # seeds = helpers.get_seeds()
+    # If we have new seeds, we should restart.
+    new_seeds = helpers.seed_ips()
+    config['configured_seeds'] = sorted(new_seeds)
+    if config.changed('configured_seeds'):
+        old_seeds = set(config.previous('configured_seeds') or [])
+        changed = old_seeds.symmetric_difference(new_seeds)
+        # We don't care about the local node in the changes.
+        changed.discard(hookenv.unit_private_ip())
+        if changed:
+            hookenv.log('New seeds {!r}. Restart required.'.format(new_seeds))
+            restart = True
+
+    config['configured_seeds'] = sorted(helpers.seed_ips())  # List for JSON
+    if config.changed('configured_seeds') and helpers.is_bootstrapped():
+        hookenv.log('New seeds. Restart required.')
+        restart = True
+    # seeds = helpers.seed_ips()
     # nodes = helpers.node_ips()
     # if not seeds.issubset(nodes):
     #     hookenv.log('New seeds. Restart required.')
@@ -581,7 +614,7 @@ def configure_firewall():
             desired_rules.add((relinfo['private-address'], 'any', port))
 
     # External seeds also need access.
-    for seed_ip in helpers.get_seeds():
+    for seed_ip in helpers.seed_ips():
         for port in peer_ports:
             desired_rules.add((seed_ip, 'any', port))
 

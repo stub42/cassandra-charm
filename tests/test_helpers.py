@@ -185,36 +185,30 @@ class TestHelpers(TestCaseBase):
                           helpers.ensure_package_status, ['a_pack', 'b_back'])
         self.assertFalse(popen.called)
 
+    @patch('helpers.is_bootstrapped')
     @patch('rollingrestart.get_peers')
-    def test_get_seeds(self, get_peers):
+    def test_seed_ips(self, get_peers, is_bootstrapped):
         hookenv.local_unit.return_value = 'service/1'
         get_peers.return_value = set(['service/2', 'service/3', 'service/4'])
-
-        # # The first three units are used as the seed list, except for
-        # # the local unit (so seed nodes list up to two seeds and the
-        # # remaining nodes list up to three seeds).
-        # self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
-        # self.assertEqual(['10.20.0.2', '10.20.0.3'], helpers.get_seeds())
+        is_bootstrapped.return_value = True
 
         # The first three units are used as the seed list.
-        self.assertSetEqual(helpers.get_seeds(), set(['10.20.0.1',
-                                                      '10.20.0.2',
-                                                      '10.20.0.3']))
+        self.assertSetEqual(helpers.seed_ips(), set(['10.20.0.1',
+                                                     '10.20.0.2',
+                                                     '10.20.0.3']))
 
-    # @patch('rollingrestart.get_peers')
-    # def test_get_seeds_nonseed(self, get_peers):
-    #     hookenv.local_unit.return_value = 'service/4'
-    #     get_peers.return_value = set(['service/1', 'service/2', 'service/3'])
+    @patch('helpers.is_bootstrapped')
+    @patch('rollingrestart.get_peers')
+    def test_seed_ips_only_bootstrapped(self, get_peers, is_bootstrapped):
+        hookenv.local_unit.return_value = 'service/1'
+        get_peers.return_value = set(['service/2', 'service/3', 'service/4'])
+        is_bootstrapped.return_value = False
 
-    #     # The first three units are used as the seed list, except for
-    #     # the local unit (so seed nodes list up to two seeds and the
-    #     # remaining nodes list up to three seeds).
-    #     self.assertEqual(hookenv.unit_private_ip(), '10.20.0.4')
-    #     self.assertEqual(['10.20.0.1', '10.20.0.2', '10.20.0.3'],
-    #                      helpers.get_seeds())
+        # The first three units are used as the seed list.
+        self.assertSetEqual(helpers.seed_ips(), set())
 
     @patch('rollingrestart.get_peers')
-    def test_get_seeds_alone(self, get_peers):
+    def test_seed_ips_alone(self, get_peers):
         hookenv.local_unit.return_value = 'service/1'
         get_peers.return_value = set()
 
@@ -223,21 +217,17 @@ class TestHelpers(TestCaseBase):
         # # remaining nodes list up to three seeds).
         # self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
 
-        self.assertSetEqual(helpers.get_seeds(), set(['10.20.0.1']))
-
-    def test_get_seeds_forced(self):
-        hookenv.config()['force_seed_nodes'] = 'a,b,c'
-        self.assertSetEqual(helpers.get_seeds(), set(['a', 'b', 'c']))
+        self.assertSetEqual(helpers.seed_ips(), set(['10.20.0.1']))
 
     @patch('helpers.read_cassandra_yaml')
-    def test_get_actual_seeds(self, read_yaml):
+    def test_actual_seed_ips(self, read_yaml):
         read_yaml.return_value = yaml.load(dedent('''\
                                                   seed_provider:
                                                     - class_name: blah
                                                       parameters:
                                                         - seeds: a,b,c
                                                   '''))
-        self.assertSetEqual(helpers.get_actual_seeds(),
+        self.assertSetEqual(helpers.actual_seed_ips(),
                             set(['a', 'b', 'c']))
 
     @patch('relations.StorageRelation')
@@ -621,15 +611,15 @@ class TestHelpers(TestCaseBase):
                           helpers.stop_cassandra, immediate=True)
         service_stop.assert_called_once_with(sentinel.service_name)
 
-    @patch('helpers.get_actual_seeds')
+    @patch('helpers.actual_seed_ips')
     @patch('time.sleep')
     @patch('helpers.get_cassandra_service')
     @patch('charmhelpers.core.host.service_start')
     @patch('helpers.is_cassandra_running')
     def test_start_cassandra(self, is_cassandra_running,
-                             service_start, get_service, sleep, get_seeds):
+                             service_start, get_service, sleep, seed_ips):
         get_service.return_value = sentinel.service_name
-        get_seeds.return_value = sentinel.just_for_logging
+        seed_ips.return_value = sentinel.just_for_logging
         is_cassandra_running.return_value = True
         helpers.start_cassandra()
         self.assertFalse(service_start.called)
@@ -638,7 +628,7 @@ class TestHelpers(TestCaseBase):
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
 
-    @patch('helpers.get_actual_seeds')
+    @patch('helpers.actual_seed_ips')
     @patch('time.time')
     @patch('time.sleep')
     @patch('helpers.get_cassandra_service')
@@ -646,9 +636,9 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_cassandra_running')
     def test_start_cassandra_timeout(self, is_cassandra_running,
                                      service_start, get_service, sleep, time,
-                                     get_seeds):
+                                     seed_ips):
         get_service.return_value = sentinel.service_name
-        get_seeds.return_value = sentinel.just_for_logging
+        seed_ips.return_value = sentinel.just_for_logging
         is_cassandra_running.return_value = False
         time.side_effect = iter([10, 20, 30, 40, 3600])
         self.assertRaises(SystemExit, helpers.start_cassandra)
@@ -1073,6 +1063,45 @@ class TestHelpers(TestCaseBase):
             with open(cqlshrc_path, 'r') as f:
                 self.assertEqual(f.read().strip(), expected_cqlshrc)
 
+    @patch('subprocess.check_output')
+    def test_nodetool(self, check_output):
+        check_output.return_value = 'OK'
+        self.assertEqual(helpers.nodetool('status', 'system_auth'), 'OK')
+
+        # The expected command was run against the local node.
+        check_output.assert_called_once_with(
+            ['nodetool', '--host', '10.20.0.1', 'status', 'system_auth'],
+            universal_newlines=True, stderr=subprocess.STDOUT, timeout=119)
+
+        # The output was emitted.
+        helpers.emit.assert_called_once_with('OK')
+
+    @patch('helpers.backoff')
+    @patch('subprocess.check_output')
+    def test_nodetool_CASSANDRA_8776(self, check_output, backoff):
+        backoff.return_value = repeat(True)
+        check_output.side_effect = iter(['ONE Error: stuff', 'TWO OK'])
+        self.assertEqual(helpers.nodetool('status', 'system_auth'), 'TWO OK')
+
+        # The output was emitted.
+        helpers.emit.assert_called_once_with('TWO OK')
+
+    @patch('helpers.backoff')
+    @patch('subprocess.check_output')
+    def test_nodetool_retry(self, check_output, backoff):
+        backoff.return_value = repeat(True)
+        check_output.side_effect = iter([
+            subprocess.CalledProcessError([], 1, 'fail 1'),
+            subprocess.CalledProcessError([], 1, 'fail 2'),
+            subprocess.CalledProcessError([], 1, 'fail 3'),
+            subprocess.CalledProcessError([], 1, 'fail 4'),
+            subprocess.CalledProcessError([], 1, 'fail 5'),
+            'OK'])
+        self.assertEqual(helpers.nodetool('status', 'system_auth'), 'OK')
+
+        # Later fails and final output was emitted.
+        helpers.emit.assert_has_calls([call('fail 5'), call('OK')])
+
     @patch('helpers.node_ips')
     def test_num_nodes(self, node_ips):
         node_ips.return_value = ['10.0.0.1', '10.0.0.2']
@@ -1101,14 +1130,14 @@ class TestHelpers(TestCaseBase):
                 self.assertEqual(f2.read(), '[1, 2, 3]\n')
 
     @patch('helpers.get_cassandra_yaml_file')
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('charmhelpers.core.host.write_file')
-    def test_configure_cassandra_yaml(self, write_file, get_seeds, yaml_file):
+    def test_configure_cassandra_yaml(self, write_file, seed_ips, yaml_file):
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name='test_cluster_name',
                                      partitioner='test_partitioner'))
 
-        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
+        seed_ips.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
 
         existing_config = '''
             seed_provider:
@@ -1168,15 +1197,15 @@ class TestHelpers(TestCaseBase):
                              'fubar')
 
     @patch('helpers.get_cassandra_yaml_file')
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('charmhelpers.core.host.write_file')
-    def test_configure_cassandra_yaml_overrides(self, write_file, get_seeds,
+    def test_configure_cassandra_yaml_overrides(self, write_file, seed_ips,
                                                 yaml_file):
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name=None,
                                      partitioner='my_partitioner'))
 
-        get_seeds.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
+        seed_ips.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
 
         existing_config = dedent('''\
             seed_provider:
@@ -1431,47 +1460,34 @@ class TestHelpers(TestCaseBase):
         helpers.set_bootstrapped(False)
         self.assertFalse(helpers.is_bootstrapped())
 
+    @patch('helpers.peer_ips')
+    @patch('helpers.node_ips')
     @patch('helpers.nuke_local_database')
     @patch('helpers.are_all_nodes_responding')
-    @patch('helpers.configure_cassandra_yaml')
-    @patch('helpers.get_seeds')
-    @patch('shutil.rmtree')
-    @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap(self, is_bootstrapped, num_peers, keyspaces,
-                           rmtree, get_seeds, conf_yaml, are_nodes_responding,
-                           nuke_all):
+    def test_pre_bootstrap(self, is_bootstrapped, num_peers,
+                           are_nodes_responding, nuke_all,
+                           node_ips, peer_ips):
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
         are_nodes_responding.return_value = True
-        keyspaces.return_value = set()
-        get_seeds.return_value = set([sentinel.seed_a, sentinel.seed_b,
-                                      hookenv.unit_private_ip()])
+        node_ips.return_value = set(['1.1.1.1'])
+        peer_ips.return_value = set(['1.1.1.1'])
 
         helpers.pre_bootstrap()
 
         # Existing node destroyed.
         nuke_all.assert_called_once_with()
-        # Reconfigured with this node removed from seeds.
-        conf_yaml.assert_called_once_with(seeds=set([sentinel.seed_a,
-                                                     sentinel.seed_b]))
 
     @patch('helpers.nuke_local_database')
     @patch('helpers.are_all_nodes_responding')
-    @patch('helpers.configure_cassandra_yaml')
-    @patch('helpers.get_seeds')
-    @patch('shutil.rmtree')
-    @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_uncont(self, is_bootstrapped, num_peers, keyspaces,
-                                  rmtree, get_seeds, conf_yaml, are_nodes_resp,
-                                  nuke_all):
-        keyspaces.return_value = set()
+    def test_pre_bootstrap_uncont(self, is_bootstrapped, num_peers,
+                                  are_nodes_resp, nuke_all):
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
-        get_seeds.return_value = set([sentinel.seed])
         # A potentially required node is not contactable.
         are_nodes_resp.return_value = False
         self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
@@ -1480,18 +1496,18 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.nuke_local_database')
     @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
-    @patch('helpers.get_seeds')
+    @patch('helpers.seed_ips')
     @patch('shutil.rmtree')
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap_turn(self, is_bootstrapped, num_peers, keyspaces,
-                                rmtree, get_seeds, conf_yaml, are_nodes_resp,
+                                rmtree, seed_ips, conf_yaml, are_nodes_resp,
                                 nuke_all, unbootstrapped_peers):
         keyspaces.return_value = set()
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
-        get_seeds.return_value = set([sentinel.seed])
+        seed_ips.return_value = set([sentinel.seed])
         are_nodes_resp.return_value = True
         hookenv.local_unit.return_value = 'foo/3'
         helpers.unbootstrapped_peers.return_value = ['foo/1', 'foo/2']
@@ -1509,15 +1525,12 @@ class TestHelpers(TestCaseBase):
         is_bootstrapped.return_value = True
         helpers.pre_bootstrap()
 
-    @patch('helpers.unit_number')
     @patch('helpers.is_all_normal')
     @patch('helpers.is_cassandra_running')
-    @patch('helpers.configure_cassandra_yaml')
     @patch('time.sleep')
     @patch('helpers.num_nodes')
-    def test_post_bootstrap(self, num_nodes, sleep, conf_yaml,
-                            is_running, is_normal, unit_number):
-        unit_number.return_value = 1
+    def test_post_bootstrap(self, num_nodes, sleep, is_running, is_normal):
+        hookenv.local_unit.return_value = 'foo/1'
         hookenv.config()['post_bootstrap_delay'] = 42
         num_nodes.return_value = 3
         is_running.return_value = True
@@ -1528,8 +1541,6 @@ class TestHelpers(TestCaseBase):
         # the cluster.
         sleep.assert_called_once_with(42)
         self.assertTrue(helpers.is_bootstrapped())
-        # Reset any pre_bootstrap changes.
-        conf_yaml.assert_called_once_with()
 
     @patch('helpers.unit_number')
     @patch('helpers.set_bootstrapped')
@@ -1586,10 +1597,10 @@ class TestHelpers(TestCaseBase):
         helpers.wait_for_agreed_schema()
         self.assertEqual(is_agreed.call_count, 3)
 
-    def test_get_peer_ips(self):
+    def test_peer_ips(self):
         # IP addresses of the peers. Does not include the current unit.
         self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
-        self.assertSetEqual(helpers.get_peer_ips(),
+        self.assertSetEqual(helpers.peer_ips(),
                             set(['10.20.0.2', '10.20.0.3']))
 
     @patch('helpers.nodetool')
@@ -1606,7 +1617,7 @@ class TestHelpers(TestCaseBase):
             ''')
         self.assertTrue(helpers.is_all_normal())
 
-        nodetool.assert_called_once_with('status')
+        nodetool.assert_called_once_with('status', timeout=ANY)
 
         nodetool.return_value = 'UN  10.0.3.197 ...'
         self.assertTrue(helpers.is_all_normal())
