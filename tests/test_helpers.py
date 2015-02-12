@@ -656,29 +656,6 @@ class TestHelpers(TestCaseBase):
         # An error was logged.
         hookenv.log.assert_has_calls([call(ANY, hookenv.ERROR)])
 
-    @patch('subprocess.check_output')
-    @patch('helpers.get_seeds')
-    def test_is_seed_responding(self, get_seeds, check_output):
-        get_seeds.return_value = set([sentinel.a_seed,
-                                      sentinel.b_seed,
-                                      hookenv.unit_private_ip()])
-        check_output.side_effect = iter([subprocess.CalledProcessError(1, ''),
-                                         sentinel.ignored])
-        self.assertTrue(helpers.is_seed_responding())
-        check_output.assert_has_calls(
-            [call(['nodetool', '--host', sentinel.a_seed, 'status']),
-             call(['nodetool', '--host', sentinel.b_seed, 'status'])],
-            any_order=True)
-
-        check_output.side_effect = iter([subprocess.CalledProcessError(1, ''),
-                                         subprocess.CalledProcessError(1, '')])
-        self.assertFalse(helpers.is_seed_responding())
-
-    @patch('helpers.get_seeds')
-    def test_is_seed_responding_self_seeded(self, get_seeds):
-        get_seeds.return_value = set([hookenv.unit_private_ip()])
-        self.assertTrue(helpers.is_seed_responding())
-
     @patch('helpers.nodetool')
     @patch('helpers.node_ips')
     def test_are_all_nodes_responding(self, node_ips, nodetool):
@@ -1410,14 +1387,16 @@ class TestHelpers(TestCaseBase):
                 WHERE keyspace_name='system_auth'
                 '''), ConsistencyLevel.QUORUM)
 
+    @patch('helpers.wait_for_normality')
     @patch('helpers.query')
-    def test_set_auth_keyspace_replication(self, query):
+    def test_set_auth_keyspace_replication(self, query, wait):
         settings = dict(json=True)
         helpers.set_auth_keyspace_replication(sentinel.session, settings)
+        wait.assert_called_once_with()  # Block until bootstraps etc. complete.
         query.assert_called_once_with(sentinel.session,
                                       'ALTER KEYSPACE system_auth '
                                       'WITH REPLICATION = %s',
-                                      ConsistencyLevel.ALL, (settings,))
+                                      ConsistencyLevel.QUORUM, (settings,))
 
     @patch('helpers.nodetool')
     def test_repair_auth_keyspace(self, nodetool):
@@ -1446,11 +1425,10 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.unit_number(), 94)
 
     def test_is_bootstrapped(self):
-        config = hookenv.config()
         self.assertFalse(helpers.is_bootstrapped())
-        config['bootstrapped_into_cluster'] = True
+        helpers.set_bootstrapped(True)
         self.assertTrue(helpers.is_bootstrapped())
-        config['bootstrapped_into_cluster'] = False
+        helpers.set_bootstrapped(False)
         self.assertFalse(helpers.is_bootstrapped())
 
     @patch('helpers.nuke_local_database')
@@ -1487,34 +1465,37 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_defer(self, is_bootstrapped, num_peers, keyspaces,
-                                 rmtree, get_seeds, conf_yaml, are_nodes_resp,
-                                 nuke_all):
+    def test_pre_bootstrap_uncont(self, is_bootstrapped, num_peers, keyspaces,
+                                  rmtree, get_seeds, conf_yaml, are_nodes_resp,
+                                  nuke_all):
         keyspaces.return_value = set()
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
         get_seeds.return_value = set([sentinel.seed])
         # A potentially required node is not contactable.
         are_nodes_resp.return_value = False
-
         self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
 
-    @patch('helpers.are_all_nodes_responding')
+    @patch('helpers.unbootstrapped_peers')
     @patch('helpers.nuke_local_database')
+    @patch('helpers.are_all_nodes_responding')
+    @patch('helpers.configure_cassandra_yaml')
+    @patch('helpers.get_seeds')
+    @patch('shutil.rmtree')
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_fail(self, is_bootstrapped, num_peers, keyspaces,
-                                nuke_all, are_all_responding):
-        are_all_responding.return_value = True
-        # If there are non-system keyspaces, this node cannot bootstrap.
-        # Fail hard. Perhaps one day we will use sstableloader to import
-        # this data.
-        keyspaces.return_value = set([sentinel.keyspace])
+    def test_pre_bootstrap_turn(self, is_bootstrapped, num_peers, keyspaces,
+                                rmtree, get_seeds, conf_yaml, are_nodes_resp,
+                                nuke_all, unbootstrapped_peers):
+        keyspaces.return_value = set()
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
-        self.assertRaises(SystemExit, helpers.pre_bootstrap)
-        self.assertFalse(nuke_all.called)
+        get_seeds.return_value = set([sentinel.seed])
+        are_nodes_resp.return_value = True
+        hookenv.local_unit.return_value = 'foo/3'
+        helpers.unbootstrapped_peers.return_value = ['foo/1', 'foo/2']
+        self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
 
     @patch('helpers.num_peers')
     @patch('helpers.is_bootstrapped')
@@ -1557,16 +1538,6 @@ class TestHelpers(TestCaseBase):
         unum.return_value = 1
         num_peers.return_value = 0  # Just us.
         helpers.post_bootstrap()  # Noop
-        self.assertFalse(set_bootstrapped.called)
-
-    @patch('helpers.unit_number')
-    @patch('helpers.set_bootstrapped')
-    @patch('helpers.num_peers')
-    def test_post_bootstrap_zero(self, num_peers, set_bootstrapped, unum):
-        unum.return_value = 0
-        num_peers.return_value = 3
-        # Noop. Unit #0 is always considered bootstrapped.
-        helpers.post_bootstrap()
         self.assertFalse(set_bootstrapped.called)
 
     @patch('helpers.nodetool')
@@ -1640,9 +1611,19 @@ class TestHelpers(TestCaseBase):
         nodetool.return_value = 'UN  10.0.3.197 ...'
         self.assertTrue(helpers.is_all_normal())
 
-        # Down is normal
+        # Down is normal. Units destroyed without decommissioning leave
+        # these entries, such as during service teardown. Be stricter
+        # here once juju gives us more control and information during the
+        # decommissioning process.
         nodetool.return_value = 'DN  10.0.3.197 ...'
         self.assertTrue(helpers.is_all_normal())
+
+        # There is also an undocumented '?' Up/Down state which appears
+        # while a node is bootstrapping. It is important we don't miss
+        # this, or nodes will reboot without first waiting for any
+        # in progress bootstraps and sabotaging them. CASSANDRA-8791.
+        nodetool.return_value = '?N  10.0.3.197 ...'
+        self.assertFalse(helpers.is_all_normal())
 
         nodetool.return_value = 'UJ  10.0.3.197 ...'
         self.assertFalse(helpers.is_all_normal())

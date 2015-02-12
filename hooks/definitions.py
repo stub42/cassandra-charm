@@ -92,8 +92,7 @@ def get_service_definitions():
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresLiveNode()],
-             data_ready=[actions.reset_auth_keyspace_replication,
-                         actions.publish_database_relations,
+             data_ready=[actions.publish_database_relations,
                          actions.publish_database_admin_relations,
                          actions.install_maintenance_crontab,
                          actions.emit_describe_cluster,
