@@ -524,8 +524,7 @@ class TestHelpers(TestCaseBase):
     def test_get_cassandra_packages(self, accept_oracle_jvm_license):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools',
-                                 'ntp', 'run-one']))
+                            set(['cassandra', 'ntp', 'run-one']))
         self.assertFalse(accept_oracle_jvm_license.called)
 
     @patch('helpers.accept_oracle_jvm_license')
@@ -535,8 +534,8 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['jvm'] = 'oracle'
         accept_oracle_jvm_license.return_value = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools', 'ntp',
-                                 'run-one', 'oracle-java7-installer',
+                            set(['cassandra', 'ntp', 'run-one',
+                                 'oracle-java7-installer',
                                  'oracle-java7-set-default']))
         # It was called. We don't care that the mock did nothing, as
         # we explicitly set the magic config item just before.
@@ -551,8 +550,7 @@ class TestHelpers(TestCaseBase):
         accept_oracle_jvm_license.return_value = False
 
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'cassandra-tools',
-                                 'ntp', 'run-one']))
+                            set(['cassandra', 'ntp', 'run-one']))
         self.assertTrue(accept_oracle_jvm_license.called)
 
     @patch('helpers.accept_oracle_jvm_license')

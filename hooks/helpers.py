@@ -392,7 +392,7 @@ def get_cassandra_packages():
     if edition == 'dse':
         packages = set(['dse-full'])
     else:
-        packages = set(['cassandra', 'cassandra-tools'])
+        packages = set(['cassandra'])  # 'cassandra-tools'
 
     packages.add('ntp')
     packages.add('run-one')
@@ -1016,6 +1016,8 @@ def is_bootstrapped(unit=None):
     if unit.endswith('/0'):
         return True
     relid = rollingrestart.get_peer_relation_id()
+    if not relid:
+        return False
     return hookenv.relation_get('bootstrapped', unit, relid) == '1'
 
 

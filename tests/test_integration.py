@@ -17,6 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import configparser
+from functools import wraps
 import logging
 import os
 import subprocess
@@ -27,6 +28,8 @@ import warnings
 
 warnings.filterwarnings('ignore', 'The blist library is not available')
 
+import amulet.deployer
+import amulet.helpers
 from cassandra import ConsistencyLevel, AuthenticationFailed
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster, NoHostAvailable
@@ -171,7 +174,7 @@ class TestDeploymentBase(unittest.TestCase):
             try:
                 self.deployment.sentry.wait(timeout=timeout)
                 break
-            except OSError:
+            except (OSError, amulet.helpers.TimeoutError):
                 if time.time() > until:
                     raise
 
@@ -420,8 +423,8 @@ class TestOracleJVMDeployment(Test1UnitDeployment):
     test_config = dict(jvm='Oracle', edition='community')
 
 
-class TestDSEDeployment(Test3UnitDeployment):
-    """Tests run on a single node DataStax Enterprise cluster.
+class TestDSEDeployment(Test1UnitDeployment):
+    """Tests run a single node DataStax Enterprise cluster.
 
     These are *very slow* tests, due to the DSE and Oracle JVM
     downloads. In addition, the DSE_SOURCE environment variable
@@ -446,10 +449,19 @@ class TestDSEDeployment(Test3UnitDeployment):
         super(TestDSEDeployment, cls).setUpClass()
 
 
+class Test21Deployment(Test1UnitDeployment):
+    """Tests run on a single node Apache Cassandra 2.1 cluster.
+    """
+    rf = 1
+    test_config = dict(
+        edition='community',
+        install_sources=yaml.safe_dump([
+            'ppa:webupd8team/java',
+            'deb http://www.apache.org/dist/cassandra/debian 21x main']),
+        install_keys=yaml.safe_dump([None, None]))
+
+
 # Bug #1417097 means we need to monkey patch Amulet for now.
-from functools import wraps
-import amulet.helpers
-import amulet.deployer
 real_juju = amulet.helpers.juju
 
 

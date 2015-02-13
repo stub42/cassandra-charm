@@ -11,6 +11,19 @@ regional outages.
 See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 
 
+# Editions
+
+This charm supports Apache Cassandra 2.0, Apache Cassandra 2.1, and
+Datastax Enterprise 4.6. The default is Apache Cassandra 2.0.
+
+To use Apache Cassandra 2.1, specify the Apache Cassandra 2.1 archive source
+in the `install_sources` config setting when deploying.
+
+To use Datastax Enterprise, set the `edition` config setting to `dse`
+and the Datastax Enterprise archive URL in `install_sources` (including your
+username and password).
+
+
 # Deployment
 
 Cassandra deployments are relatively simple in that they consist of a set of
@@ -153,6 +166,11 @@ open automated test environment, due to DataStax's policy of requiring
 registration before downloading their software. While DSE hopefully works
 with this charm, it cannot be fully supported and using standard Open Source
 edition of Cassandra ('community') is recommended wherever possible.
+
+The `system_auth` keyspace replication factor is automatically increased
+but not decreased. If you have a service with three or more units and
+decommission enough nodes to drop below three, you will need to manually
+update the `system_auth` keyspace replication settings.
 
 
 # Contact Information
