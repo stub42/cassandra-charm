@@ -735,7 +735,7 @@ def nodetool(*cmd, ip=None, timeout=120):
             return out
 
         except subprocess.CalledProcessError as x:
-            if i > 4:
+            if i > 1:
                 emit(x.output.expandtabs())  # Expand tabs for juju debug-log.
 
 
@@ -948,7 +948,7 @@ def set_auth_keyspace_replication(session, settings):
 
 @logged
 def repair_auth_keyspace():
-    nodetool('repair', 'system_auth')
+    nodetool('repair', 'system_auth', timeout=600)
 
 
 def non_system_keyspaces():

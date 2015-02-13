@@ -1427,7 +1427,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.nodetool')
     def test_repair_auth_keyspace(self, nodetool):
         helpers.repair_auth_keyspace()
-        nodetool.assert_called_once_with('repair', 'system_auth')
+        nodetool.assert_called_once_with('repair', 'system_auth', timeout=600)
 
     # @patch('shutil.rmtree')
     # @patch('os.path.isdir')
