@@ -34,7 +34,6 @@ import bcrypt
 from cassandra import ConsistencyLevel
 import cassandra.auth
 import cassandra.cluster
-import cassandra.policies
 import cassandra.query
 import yaml
 
@@ -44,7 +43,6 @@ from charmhelpers import fetch
 
 import relations
 import rollingrestart
-# from policies import ReconnectUntilReconnectionPolicy, RetryUntilRetryPolicy
 
 
 RESTART_TIMEOUT = 600
