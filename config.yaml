@@ -62,7 +62,7 @@ options:
         description: >
             One of 'community' or 'dse'. 'community' uses the
             Apache Cassandra packages. 'dse' is for DataStax
-            Enterprise. Selecting 'dse' overrides the jvm setting
+            Enterprise. Selecting 'dse' overrides the jvm setting and
             constitutes acceptance of the Oracle Java Standard
             Edition license per
             http://www.oracle.com/technetwork/java/javase/terms/license/.
