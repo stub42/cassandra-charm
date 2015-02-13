@@ -340,16 +340,9 @@ def set_unit_zero_bootstrapped():
     making the leader the first node in the cluster. Until then, don't
     attempt to create a multiunit service if you have removed Unit #0.
     '''
-    if helpers.unit_number() == 0:
-        try:
-            helpers.set_bootstrapped(True)
-        except subprocess.CalledProcessError as x:
-            # Alas, we can't store data on the peer relation until we
-            # have actually joined it. This is the only call site
-            # this might happen in, so catch the fault here rather than
-            # risk swallowing the error when we didn't mean too.
-            if x.returncode != 2:
-                raise
+    relname = rollingrestart.get_peer_relation_name()
+    if helpers.unit_number() == 0 and hookenv.hook_name().startswith(relname):
+        helpers.set_bootstrapped(True)
 
 
 @action

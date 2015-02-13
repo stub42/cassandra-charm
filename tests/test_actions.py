@@ -405,6 +405,28 @@ class TestsActions(TestCaseBase):
         actions.store_unit_private_ip('')
         self.assertEqual(hookenv.config()['unit_private_ip'], sentinel.ip)
 
+    @patch('helpers.set_bootstrapped')
+    @patch('helpers.unit_number')
+    def test_set_unit_zero_bootstrapped(self, unit_number, set_bootstrapped):
+        unit_number.return_value = 0
+        hookenv.hook_name.return_value = 'cluster-whatever'
+        actions.set_unit_zero_bootstrapped('')
+        set_bootstrapped.assert_called_once_with(True)
+        set_bootstrapped.reset_mock()
+
+        # Noop if unit number is not 0.
+        unit_number.return_value = 2
+        actions.set_unit_zero_bootstrapped('')
+        self.assertFalse(set_bootstrapped.called)
+
+        # Noop if called from a non peer relation hook. Unfortunatly,
+        # attempting to set attributes on the peer relation fails before
+        # the peer relation has been joined.
+        unit_number.return_value = 0
+        hookenv.hook_name.return_value = 'install'
+        actions.set_unit_zero_bootstrapped('')
+        self.assertFalse(set_bootstrapped.called)
+
     @patch('helpers.is_cassandra_running')
     @patch('helpers.is_decommissioned')
     @patch('rollingrestart.request_restart')

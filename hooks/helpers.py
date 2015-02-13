@@ -511,7 +511,7 @@ def reset_default_password():
     config['default_admin_password_changed'] = True
 
 
-CONNECT_TIMEOUT = 240
+CONNECT_TIMEOUT = 300
 
 
 @contextmanager
@@ -536,8 +536,7 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     until = start + timeout
     auth_until = start + auth_timeout
     while True:
-        cluster = cassandra.cluster.Cluster(sorted(addresses),
-                                            port=port, protocol_version=3,
+        cluster = cassandra.cluster.Cluster(sorted(addresses), port=port,
                                             auth_provider=auth_provider)
         try:
             session = cluster.connect()
@@ -918,7 +917,7 @@ def reset_all_io_schedulers():
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
     # the system_auth keyspace, to ensure availability and redundancy.
-    n = max(min(num_nodes(), 5), 1)  # Cap at 5 replicas. More is silly.
+    n = max(min(num_nodes(), 3), 1)  # Cap at 1-3 replicas.
     datacenter = hookenv.config()['datacenter']
     with connect() as session:
         strategy_opts = get_auth_keyspace_replication(session)

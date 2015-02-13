@@ -785,8 +785,7 @@ class TestHelpers(TestCaseBase):
         with helpers.connect() as session:
             auth_provider.assert_called_once_with(username='un',
                                                   password='pw')
-            cluster.assert_called_once_with(['1.2.3.4'],
-                                            port=666, protocol_version=3,
+            cluster.assert_called_once_with(['1.2.3.4'], port=666,
                                             auth_provider=sentinel.ap)
             self.assertIs(session, sentinel.session)
             self.assertFalse(cluster().shutdown.called)
@@ -1368,7 +1367,7 @@ class TestHelpers(TestCaseBase):
         helpers.reset_auth_keyspace_replication()
         set_rep.assert_called_once_with(sentinel.session,
                                         {'class': 'NetworkTopologyStrategy',
-                                         'juju': 5})  # Capped rf==5
+                                         'juju': 3})  # Capped rf==3
         repair.assert_called_once_with()
 
     @patch('helpers.repair_auth_keyspace')
@@ -1399,10 +1398,10 @@ class TestHelpers(TestCaseBase):
         connect().__exit__.return_value = False
         num_nodes.return_value = 8
         get_rep.return_value = {'class': 'NetworkTopologyStrategy',
-                                'juju': 5,
+                                'juju': 3,
                                 'other_dc': 2}
         helpers.reset_auth_keyspace_replication()
-        self.assertFalse(set_rep.called)  # Already at our cap of rf==5
+        self.assertFalse(set_rep.called)  # Already at our cap of rf==3
         self.assertFalse(repair.called)
 
     @patch('helpers.query')
