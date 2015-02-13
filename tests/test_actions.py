@@ -394,6 +394,17 @@ class TestsActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
+    @patch('helpers.reset_auth_keyspace_replication')
+    def test_reset_auth_keyspace_replication(self, helpers_reset):
+        actions.reset_auth_keyspace_replication('')
+        helpers_reset.assert_called_once_with()
+
+    def test_store_unit_private_ip(self):
+        hookenv.unit_private_ip.side_effect = None
+        hookenv.unit_private_ip.return_value = sentinel.ip
+        actions.store_unit_private_ip('')
+        self.assertEqual(hookenv.config()['unit_private_ip'], sentinel.ip)
+
     @patch('helpers.is_cassandra_running')
     @patch('helpers.is_decommissioned')
     @patch('rollingrestart.request_restart')
