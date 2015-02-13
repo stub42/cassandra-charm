@@ -167,9 +167,10 @@ class TestDeploymentBase(unittest.TestCase):
         # Work around Bug #1421195 by retrying failed waits.
         until = time.time() + WAIT_TIMEOUT
         while True:
+            timeout = int(min(max(until - time.time(), 0), 300))
             try:
-                self.deployment.sentry.wait(timeout=int(until - time.time()))
-                return
+                self.deployment.sentry.wait(timeout=timeout)
+                break
             except OSError:
                 if time.time() > until:
                     raise
