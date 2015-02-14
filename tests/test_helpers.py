@@ -1429,21 +1429,6 @@ class TestHelpers(TestCaseBase):
         helpers.repair_auth_keyspace()
         nodetool.assert_called_once_with('repair', 'system_auth', timeout=600)
 
-    # @patch('shutil.rmtree')
-    # @patch('os.path.isdir')
-    # @patch('helpers.get_all_database_directories')
-    # def test_nuke_system_keyspaces(self, get_all_db_dirs, isdir, rmtree):
-    #     get_all_db_dirs.return_value = dict(data_file_directories=['a', 'b'])
-    #     isdir.return_value = True
-    #     helpers.nuke_system_keyspaces()
-    #     rmtree.assert_has_calls([call('a/system'),
-    #                              call('a/system_auth'),
-    #                              call('a/system_traces'),
-    #                              call('b/system'),
-    #                              call('b/system_auth'),
-    #                              call('b/system_traces')],
-    #                             any_order=True)
-
     def test_unit_number(self):
         hookenv.local_unit.return_value = 'foo/0'
         self.assertEqual(helpers.unit_number(), 0)
