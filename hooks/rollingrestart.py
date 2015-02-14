@@ -49,9 +49,6 @@ def cancel_restart():
         os.remove(flag)
 
 
-_defer_restart = False
-
-
 class DeferRestart(Exception):
     '''Defer the restart sequence until a future hook.
 
@@ -223,13 +220,6 @@ def get_peer_relation_id():
     for relid in hookenv.relation_ids(get_peer_relation_name()):
         return relid
     return None
-
-
-# Unneeded
-# def get_peer_relation_interface():
-#     relname = get_peer_relation_name()
-#     md = hookenv.metadata()
-#     return md['peers'][relname]['interface']
 
 
 def get_peers():
