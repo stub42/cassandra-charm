@@ -1282,3 +1282,8 @@ def week_spread(unit_num):
     sched_hour = sched.seconds // (60 * 60)
     sched_minute = sched.seconds // 60 - sched_hour * 60
     return (sched_dow, sched_hour, sched_minute)
+
+
+# FOR CHARMHELPERS. This should be a constant in nrpe.py
+def local_plugins_dir():
+    return '/usr/local/lib/nagios/plugins'

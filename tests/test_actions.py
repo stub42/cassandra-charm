@@ -20,6 +20,7 @@ import errno
 import functools
 import os.path
 import re
+import shutil
 import subprocess
 import tempfile
 from textwrap import dedent
@@ -1025,6 +1026,48 @@ class TestsActions(TestCaseBase):
                                            call('1.1.0.2', 'any', 7002),
                                            call('1.1.0.2', 'any', 7199)],
                                           any_order=True)
+
+    @patch('charmhelpers.core.host.write_file')
+    @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
+    @patch('helpers.local_plugins_dir')
+    def test_nrpe_external_master_relation(self, local_plugins_dir, nrpe,
+                                           write_file):
+        # The fake charm_dir() needs populating.
+        plugin_src_dir = os.path.join(os.path.dirname(__file__),
+                                      os.pardir, 'files')
+        shutil.copytree(plugin_src_dir,
+                        os.path.join(hookenv.charm_dir(), 'files'))
+
+        with tempfile.TemporaryDirectory() as d:
+            local_plugins_dir.return_value = d
+            actions.nrpe_external_master_relation('')
+
+            # The expected file was written to the expected filename
+            # with required perms.
+            with open(os.path.join(plugin_src_dir, 'check_cassandra_heap.sh'),
+                      'rb') as f:
+                write_file.assert_called_once_with(
+                    os.path.join(d, 'check_cassandra_heap.sh'), f.read(),
+                    perms=0o555)
+
+            nrpe().add_check.assert_has_calls([
+                call(shortname='cassandra_heap',
+                     description='Check Cassandra Heap',
+                     check_cmd='check_cassandra_heap.sh 10.20.0.1 80 90'),
+                call(description=('Check Cassandra Disk '
+                                  '/var/lib/cassandra/data'),
+                     shortname='cassandra_disk_var_lib_cassandra_data',
+                     check_cmd=('check_disk -u GB -w 50% -c 25% -K 5% '
+                                '-p /var/lib/cassandra/data')),
+                call(description=ANY,
+                     shortname='cassandra_disk_var_lib_cassandra_saved_caches',
+                     check_cmd=ANY),
+                call(description=ANY,
+                     shortname='cassandra_disk_var_lib_cassandra_commitlog',
+                     check_cmd=ANY)],
+                any_order=True)
+
+            nrpe().write.assert_called_once_with()
 
 
 if __name__ == '__main__':

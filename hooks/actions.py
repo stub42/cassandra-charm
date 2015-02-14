@@ -609,8 +609,7 @@ def configure_firewall():
 @action
 def nrpe_external_master_relation():
     ''' Configure the nrpe-external-master relation '''
-
-    local_plugins = '/usr/local/lib/nagios/plugins'
+    local_plugins = helpers.local_plugins_dir()
     if os.path.exists(local_plugins):
         src = os.path.join(hookenv.charm_dir(),
                            "files", "check_cassandra_heap.sh")
@@ -620,7 +619,7 @@ def nrpe_external_master_relation():
                             f.read(), perms=0o555)
 
     nrpe_compat = nrpe.NRPE()
-    conf = nrpe_compat.config
+    conf = hookenv.config()
 
     cassandra_heap_warn = conf.get('nagios_heapchk_warn_pct')
     cassandra_heap_crit = conf.get('nagios_heapchk_crit_pct')
@@ -635,7 +634,10 @@ def nrpe_external_master_relation():
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
-    for disk in conf.get('data_file_directories').split(' '):
+    dirs = helpers.get_all_database_directories()
+    dirs = set(dirs['data_file_directories']
+               + [dirs['commitlog_directory'], dirs['saved_caches_directory']])
+    for disk in dirs:
         check_name = re.sub('/', '_', disk)
         if cassandra_disk_warn and cassandra_disk_crit:
             nrpe_compat.add_check(

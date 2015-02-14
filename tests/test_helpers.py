@@ -1763,6 +1763,10 @@ class TestHelpers(TestCaseBase):
                 self.assertNotEqual(helpers.week_spread(i), (0, 0, 0))
         self.assertTupleEqual(helpers.week_spread(7168), (0, 0, 0))
 
+    def test_local_plugins_dir(self):
+        self.assertEqual(helpers.local_plugins_dir(),
+                         '/usr/local/lib/nagios/plugins')
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):
