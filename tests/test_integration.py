@@ -30,7 +30,7 @@ warnings.filterwarnings('ignore', 'The blist library is not available')
 
 import amulet.deployer
 import amulet.helpers
-from cassandra import ConsistencyLevel, AuthenticationFailed
+from cassandra import Unavailable, ConsistencyLevel, AuthenticationFailed
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster, NoHostAvailable
 from cassandra.query import SimpleStatement
@@ -336,13 +336,20 @@ class Test1UnitDeployment(TestDeploymentBase):
         del s
 
         def count():
-            cluster = self.cluster()
-            s = cluster.connect()
-            results = s.execute(
-                SimpleStatement('SELECT count(*) FROM addndrop.dat',
-                                consistency_level=ConsistencyLevel.QUORUM))
-            cluster.shutdown()
-            return results[0][0]
+            until = time.time() + 180
+            while True:
+                cluster = self.cluster()
+                try:
+                    s = cluster.connect()
+                    results = s.execute(SimpleStatement(
+                        'SELECT count(*) FROM addndrop.dat',
+                        consistency_level=ConsistencyLevel.QUORUM))
+                    return results[0][0]
+                except Unavailable:
+                    if time.time() > until:
+                        raise
+                finally:
+                    cluster.shutdown()
 
         self.assertEqual(count(), total)
 
