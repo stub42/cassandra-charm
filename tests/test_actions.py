@@ -1069,6 +1069,56 @@ class TestsActions(TestCaseBase):
 
             nrpe().write.assert_called_once_with()
 
+    @patch('charmhelpers.core.host.write_file')
+    @patch('os.path.exists')
+    @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
+    def test_nrpe_external_master_relation_no_local(self, nrpe,
+                                                    exists, write_file):
+        # If the local plugins directory doesn't exist, we don't attempt
+        # to write files to it. Wait until the subordinate has set it
+        # up.
+        exists.return_value = False
+        actions.nrpe_external_master_relation('')
+        self.assertFalse(write_file.called)
+
+    @patch('os.path.exists')
+    @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
+    def test_nrpe_external_master_relation_disable_heapchk(self, nrpe, exists):
+        exists.return_value = False
+
+        # Disable our checks
+        config = hookenv.config()
+        config['nagios_heapchk_warn_pct'] = 0  # Only one needs to be disabled.
+        config['nagios_heapchk_crit_pct'] = 90
+
+        actions.nrpe_external_master_relation('')
+        exists.assert_called_once_with(helpers.local_plugins_dir())
+
+        nrpe().add_check.assert_has_calls([
+            call(shortname='cassandra_disk_var_lib_cassandra_data',
+                 description=ANY, check_cmd=ANY),
+            call(shortname='cassandra_disk_var_lib_cassandra_saved_caches',
+                 description=ANY, check_cmd=ANY),
+            call(shortname='cassandra_disk_var_lib_cassandra_commitlog',
+                 description=ANY, check_cmd=ANY)], any_order=True)
+
+    @patch('os.path.exists')
+    @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
+    def test_nrpe_external_master_relation_disable_diskchk(self, nrpe, exists):
+        exists.return_value = False
+
+        # Disable our checks
+        config = hookenv.config()
+        config['nagios_disk_warn_pct'] = 0  # Only one needs to be disabled.
+        config['magios_disk_crit_pct'] = 50
+
+        actions.nrpe_external_master_relation('')
+        exists.assert_called_once_with(helpers.local_plugins_dir())
+
+        nrpe().add_check.assert_called_once_with(shortname='cassandra_heap',
+                                                 description=ANY,
+                                                 check_cmd=ANY)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
