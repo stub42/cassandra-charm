@@ -68,6 +68,8 @@ class TestDeploymentBase(unittest.TestCase):
         deployment.configure('cassandra', config)
 
         # No official trusty branch of the storage charm, yet.
+        # This is a problem as it means tests may not be running against
+        # the lastest version.
         deployment.add('storage', 'lp:~stub/charms/trusty/storage/trunk')
         deployment.configure('storage', dict(provider='local'))
 
@@ -78,6 +80,14 @@ class TestDeploymentBase(unittest.TestCase):
         deployment.add('client', empty_path)
         deployment.relate('cassandra:database', 'client:database')
         deployment.relate('cassandra:database-admin', 'client:database-admin')
+
+        # No official trusty branch of the nrpe-external-master charm, yet.
+        # This is a problem as it means tests may not be running against
+        # the lastest version.
+        deployment.add('nrpe',
+                       'lp:~stub/charms/trusty/nrpe-external-master/trunk')
+        deployment.relate('cassandra:nrpe-external-master',
+                          'nrpe:nrpe-external-master')
 
         deployment.deploy(timeout=WAIT_TIMEOUT)
         deployment.sentry.wait(timeout=WAIT_TIMEOUT)
