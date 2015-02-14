@@ -1429,6 +1429,15 @@ class TestHelpers(TestCaseBase):
         helpers.repair_auth_keyspace()
         nodetool.assert_called_once_with('repair', 'system_auth', timeout=600)
 
+    @patch('helpers.get_all_database_directories')
+    def test_non_system_keyspaces(self, dbdirs):
+        with tempfile.TemporaryDirectory() as dfd:
+            for keyspace in ['system', 'system_auth', 'system_traces',
+                             'dse_system', 'fred']:
+                os.mkdir(os.path.join(dfd, keyspace))
+            dbdirs.return_value = dict(data_file_directories=[dfd])
+            self.assertSetEqual(helpers.non_system_keyspaces(), set(['fred']))
+
     def test_unit_number(self):
         hookenv.local_unit.return_value = 'foo/0'
         self.assertEqual(helpers.unit_number(), 0)
