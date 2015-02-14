@@ -365,16 +365,6 @@ def maybe_schedule_restart():
             hookenv.log('New seeds {!r}. Restart required.'.format(new_seeds))
             restart = True
 
-    config['configured_seeds'] = sorted(helpers.seed_ips())  # List for JSON
-    if config.changed('configured_seeds') and helpers.is_bootstrapped():
-        hookenv.log('New seeds. Restart required.')
-        restart = True
-    # seeds = helpers.seed_ips()
-    # nodes = helpers.node_ips()
-    # if not seeds.issubset(nodes):
-    #     hookenv.log('New seeds. Restart required.')
-    #     restart = True
-
     if restart:
         rollingrestart.request_restart()
 

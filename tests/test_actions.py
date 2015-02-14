@@ -439,15 +439,13 @@ class TestsActions(TestCaseBase):
         self.assertFalse(request_restart.called)
 
     @patch('helpers.is_decommissioned')
-    @patch('helpers.node_ips')
     @patch('helpers.seed_ips')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_need_remount(self, request_restart,
                                                  storage_relation, is_running,
-                                                 seed_ips, node_ips,
-                                                 is_decom):
+                                                 seed_ips, is_decom):
         config = hookenv.config()
 
         is_decom.return_value = False
@@ -458,7 +456,9 @@ class TestsActions(TestCaseBase):
 
         # No new seeds
         seed_ips.return_value = set(['a'])
-        node_ips.return_value = set(['a', 'b'])
+        config['configured_seeds'] = sorted(seed_ips())
+        config.save()
+        config.load_previous()
 
         # IP address is unchanged.
         config['unit_private_ip'] = hookenv.unit_private_ip()
@@ -473,14 +473,13 @@ class TestsActions(TestCaseBase):
                                     'Restart and migration required.')
 
     @patch('helpers.is_decommissioned')
-    @patch('helpers.node_ips')
     @patch('helpers.seed_ips')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_unchanged(self, request_restart,
                                               storage_relation, is_running,
-                                              seed_ips, node_ips, is_decom):
+                                              seed_ips, is_decom):
         config = hookenv.config()
         config['configured_seeds'] = ['a']
         config.save()
@@ -494,6 +493,9 @@ class TestsActions(TestCaseBase):
 
         # No new seeds
         seed_ips.return_value = set(['a'])
+        config['configured_seeds'] = sorted(seed_ips())
+        config.save()
+        config.load_previous()
 
         # IP address is unchanged.
         config['unit_private_ip'] = hookenv.unit_private_ip()
@@ -509,7 +511,6 @@ class TestsActions(TestCaseBase):
         self.assertFalse(request_restart.called)
 
     @patch('helpers.is_decommissioned')
-    @patch('helpers.node_ips')
     @patch('helpers.is_cassandra_running')
     @patch('helpers.seed_ips')
     @patch('relations.StorageRelation')
@@ -517,7 +518,7 @@ class TestsActions(TestCaseBase):
     def test_maybe_schedule_restart_config_changed(self, request_restart,
                                                    storage_relation,
                                                    seed_ips, is_running,
-                                                   node_ips, is_decom):
+                                                   is_decom):
         config = hookenv.config()
 
         is_decom.return_value = False
@@ -542,14 +543,13 @@ class TestsActions(TestCaseBase):
         hookenv.log.assert_any_call('max_heap_size changed. Restart required.')
 
     @patch('helpers.is_decommissioned')
-    @patch('helpers.node_ips')
     @patch('helpers.seed_ips')
     @patch('helpers.is_cassandra_running')
     @patch('relations.StorageRelation')
     @patch('rollingrestart.request_restart')
     def test_maybe_schedule_restart_ip_changed(self, request_restart,
                                                storage_relation, is_running,
-                                               seed_ips, node_ips, is_decom):
+                                               seed_ips, is_decom):
         is_decom.return_value = False
         is_running.return_value = True
 
@@ -558,7 +558,10 @@ class TestsActions(TestCaseBase):
 
         # No new seeds
         seed_ips.return_value = set(['a'])
-        node_ips.return_value = set(['a', 'b'])
+        config = hookenv.config()
+        config['configured_seeds'] = sorted(seed_ips())
+        config.save()
+        config.load_previous()
 
         # Config items are unchanged.
         config = hookenv.config()

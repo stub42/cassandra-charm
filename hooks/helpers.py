@@ -501,8 +501,7 @@ def reset_default_password():
         with connect('cassandra', 'cassandra') as session:
             hookenv.log('Changing default admin password')
             query(session, 'ALTER USER cassandra WITH PASSWORD %s',
-                  ConsistencyLevel.QUORUM,
-                  (host.pwgen(),))  # pragma: no branch
+                  ConsistencyLevel.QUORUM, (host.pwgen(),))
     except cassandra.AuthenticationFailed:
         hookenv.log('Default admin password already changed')
 
