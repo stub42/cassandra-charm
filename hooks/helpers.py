@@ -981,24 +981,25 @@ def nuke_local_database():
                     'Unable to bootstrap.'.format(keyspaces), ERROR)
         raise SystemExit(1)
 
-    def nuke(d):
-        '''Remove the contents of directory d, leaving d in place.
-
-        We don't remove the top level directory as it may be a mount
-        or symlink we cannot recreate.
-        '''
-        for name in os.listdir(d):
-            path = os.path.join(d, name)
-            if os.path.isdir(path):
-                shutil.rmtree(path)
-            else:
-                os.remove(path)
-
     dirs = get_all_database_directories()
-    nuke(dirs['saved_caches_directory'])
-    nuke(dirs['commitlog_directory'])
+    nuke_directory_contents(dirs['saved_caches_directory'])
+    nuke_directory_contents(dirs['commitlog_directory'])
     for dfd in dirs['data_file_directories']:
-        nuke(dfd)
+        nuke_directory_contents(dfd)
+
+
+def nuke_directory_contents(d):
+    '''Remove the contents of directory d, leaving d in place.
+
+    We don't remove the top level directory as it may be a mount
+    or symlink we cannot recreate.
+    '''
+    for name in os.listdir(d):
+        path = os.path.join(d, name)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
 
 
 def unit_number(unit=None):

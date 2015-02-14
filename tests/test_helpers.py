@@ -1438,6 +1438,49 @@ class TestHelpers(TestCaseBase):
             dbdirs.return_value = dict(data_file_directories=[dfd])
             self.assertSetEqual(helpers.non_system_keyspaces(), set(['fred']))
 
+    @patch('helpers.nuke_directory_contents')
+    @patch('helpers.get_all_database_directories')
+    @patch('helpers.non_system_keyspaces')
+    @patch('helpers.unit_number')
+    @patch('helpers.is_bootstrapped')
+    def test_nuke_local_database(self, is_bootstrapped, unit_number,
+                                 non_system_keyspaces, dbdirs, nuke_dir):
+        # Fails if called for a bootstrapped unit.
+        is_bootstrapped.return_value = True
+        self.assertRaises(AssertionError, helpers.nuke_local_database)
+
+        # Fails if called for unit #0.
+        is_bootstrapped.return_value = False
+        unit_number.return_value = 0
+        self.assertRaises(AssertionError, helpers.nuke_local_database)
+
+        # Fails if there are non system keyspaces present, possibly
+        # containing important data.
+        unit_number.return_value = sentinel.unitnum
+        non_system_keyspaces.return_value = set([sentinel.nsk])
+        self.assertRaises(SystemExit, helpers.nuke_local_database)
+
+        non_system_keyspaces.return_value = set()
+        dbdirs.return_value = dict(saved_caches_directory=sentinel.scd,
+                                   commitlog_directory=sentinel.cld,
+                                   data_file_directories=[sentinel.dfd1,
+                                                          sentinel.dfd2])
+        helpers.nuke_local_database()
+        nuke_dir.assert_has_calls([call(sentinel.scd),
+                                   call(sentinel.cld),
+                                   call(sentinel.dfd1),
+                                   call(sentinel.dfd2)], any_order=True)
+
+    def test_nuke_directory_contents(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.mkdir(os.path.join(d, 'subdir'))
+            with open(os.path.join(d, 'subdir', 'file'), 'w') as f:
+                f.write('data')
+            with open(os.path.join(d, 'topfile'), 'w') as f:
+                f.write('data')
+            helpers.nuke_directory_contents(d)
+            self.assertSetEqual(set(os.listdir(d)), set())
+
     def test_unit_number(self):
         hookenv.local_unit.return_value = 'foo/0'
         self.assertEqual(helpers.unit_number(), 0)
