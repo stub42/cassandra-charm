@@ -194,8 +194,8 @@ def get_all_database_directories():
     config = hookenv.config()
     return dict(
         data_file_directories=[get_database_directory(d)
-                               for d in (config['data_file_directories']
-                                         or 'data').split()],
+                               for d in (config['data_file_directories'] or
+                                         'data').split()],
         commitlog_directory=get_database_directory(
             config['commitlog_directory'] or 'commitlog'),
         saved_caches_directory=get_database_directory(
@@ -480,9 +480,9 @@ def remount_cassandra():
 def ensure_database_directories():
     '''Ensure that directories Cassandra expects to store its data in exist.'''
     db_dirs = get_all_database_directories()
-    unpacked_db_dirs = (db_dirs['data_file_directories']
-                        + [db_dirs['commitlog_directory']]
-                        + [db_dirs['saved_caches_directory']])
+    unpacked_db_dirs = (db_dirs['data_file_directories'] +
+                        [db_dirs['commitlog_directory']] +
+                        [db_dirs['saved_caches_directory']])
     for db_dir in unpacked_db_dirs:
         ensure_database_directory(db_dir)
 
@@ -902,8 +902,8 @@ def is_cassandra_running():
 @logged
 def reset_all_io_schedulers():
     dirs = get_all_database_directories()
-    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']]
-            + [dirs['saved_caches_directory']])
+    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']] +
+            [dirs['saved_caches_directory']])
     config = hookenv.config()
     for d in dirs:
         if os.path.isdir(d):  # Directory may not exist yet.

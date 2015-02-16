@@ -109,6 +109,8 @@ venv3: packages .stamp-venv3
 	(echo ${CHARM_DIR}/hooks; echo ${CHARM_DIR}) \
 	    > ${VENV3}/lib/python3.4/site-packages/tests.pth
 
+	echo 'pip: ' `which pip`
+
 	# Pip install packages.
 	pip install -q amulet flake8 bcrypt cassandra-driver blist
 	pip install -qI nose

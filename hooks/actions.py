@@ -625,8 +625,8 @@ def nrpe_external_master_relation():
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
     dirs = helpers.get_all_database_directories()
-    dirs = set(dirs['data_file_directories']
-               + [dirs['commitlog_directory'], dirs['saved_caches_directory']])
+    dirs = set(dirs['data_file_directories'] +
+               [dirs['commitlog_directory'], dirs['saved_caches_directory']])
     for disk in dirs:
         check_name = re.sub('/', '_', disk)
         if cassandra_disk_warn and cassandra_disk_crit:

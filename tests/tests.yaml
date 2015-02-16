@@ -4,3 +4,8 @@ tests: ""
 virtualenv: false
 # sources: []
 # packages: []
+makefile:
+    - clean
+    - deps
+    - lint
+    - test
