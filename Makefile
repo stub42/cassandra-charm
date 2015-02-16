@@ -31,6 +31,9 @@ export PATH:=$(VENV3)/bin:$(PATH)
 
 SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 
+PIP=.venv3/bin/pip3.4
+NOSETESTS=.venv3/bin/nosetests-3.4 -sv
+
 deps: packages venv3
 
 lint: deps
@@ -40,7 +43,7 @@ lint: deps
 	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
 
 unittest: lint
-	nosetests -sv \
+	$(NOSETESTS) \
 	    tests.test_actions        --cover-package=actions \
 	    tests.test_helpers        --cover-package=helpers \
 	    tests.test_rollingrestart --cover-package=rollingrestart \
@@ -50,15 +53,15 @@ unittest: lint
 
 test: unittest
 	AMULET_TIMEOUT=3600 \
-	nosetests -sv tests.test_integration
+	$(NOSETESTS) tests.test_integration
 	
 ftest: unittest
 	AMULET_TIMEOUT=3600 \
-	nosetests -sv tests.test_integration:Test1UnitDeployment
+	$(NOSETESTS) tests.test_integration:Test1UnitDeployment
 
 3test: unittest
 	AMULET_TIMEOUT=3600 \
-	nosetests -sv tests.test_integration:Test3UnitDeployment
+	$(NOSETESTS) tests.test_integration:Test3UnitDeployment
 
 # Set the DSE_SOURCE environment variable for this to work:
 # DSE_SOURCE="deb http://un:pw@debian.datastax.com/enterprise stable main"
@@ -71,10 +74,10 @@ ftest: unittest
 # occasions.
 dsetest: unittest
 	AMULET_TIMEOUT=3600 \
-	nosetests -sv tests.test_integration:TestDSEDeployment
+	$(NOSETESTS) tests.test_integration:TestDSEDeployment
 
 coverage: lint
-	nosetests -sv \
+	$(NOSETESTS) \
 	    tests.test_actions        --cover-package=actions \
 	    tests.test_helpers        --cover-package=helpers \
 	    tests.test_rollingrestart --cover-package=rollingrestart \
@@ -110,13 +113,14 @@ venv3: packages .stamp-venv3
 	    > ${VENV3}/lib/python3.4/site-packages/tests.pth
 
 	echo 'pip: ' `which pip`
-	echo 'nosetests:' `which nosetests`
-	echo 'flake8:' `which flake8`
 
 	# Pip install packages.
-	pip install -q amulet flake8 bcrypt cassandra-driver blist
-	pip install -qI nose
-	pip install -q --upgrade coverage
+	$(PIP) install amulet flake8 bcrypt cassandra-driver blist
+	$(PIP) install -I nose
+	$(PIP) install --upgrade coverage
+
+	echo 'nosetests:' `which nosetests`
+	echo 'flake8:' `which flake8`
 
 	# Create a link for test shebang lines.
 	(cd tests && ln -s ${VENV3} .venv3)
