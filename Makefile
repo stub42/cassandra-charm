@@ -115,9 +115,9 @@ venv3: packages .stamp-venv3
 	echo 'pip: ' `which pip`
 
 	# Pip install packages.
-	$(PIP) install amulet flake8 bcrypt cassandra-driver blist
-	$(PIP) install -I nose
-	$(PIP) install --upgrade coverage
+	$(PIP) install bcrypt cassandra-driver blist
+	$(PIP) install --upgrade -I nose flake8
+	$(PIP) install --upgrade coverage amulet
 
 	echo 'nosetests:' `which nosetests`
 	echo 'flake8:' `which flake8`
