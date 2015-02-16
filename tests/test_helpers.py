@@ -294,7 +294,7 @@ class TestHelpers(TestCaseBase):
         helpers.set_io_scheduler('fnord', '/foo')
 
         write_file.assert_called_once_with('/sys/block/sdq/queue/scheduler',
-                                           'fnord', perms=0o644)
+                                           b'fnord', perms=0o644)
 
         # Some OSErrors we log warnings for, and continue.
         for e in (errno.EACCES, errno.ENOENT):
