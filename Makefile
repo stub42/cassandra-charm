@@ -31,7 +31,7 @@ export PATH:=$(VENV3)/bin:$(PATH)
 
 SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 
-PIP=.venv3/bin/pip3.4
+PIP=.venv3/bin/pip3.4 -q
 NOSETESTS=.venv3/bin/nosetests-3.4 -sv
 
 deps: packages venv3

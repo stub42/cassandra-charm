@@ -5,5 +5,4 @@ virtualenv: false
 # sources: []
 # packages: []
 makefile:
-    - lint
     - test
