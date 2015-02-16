@@ -203,8 +203,8 @@ def cache_oracle_jdk():
     this action copies it to the location that the webupd8 packages
     expect to find it.
     '''
-    src_files = glob.glob(os.path.join(hookenv.charm_dir(),
-                                       'lib', 'jdk-7u*.tar.gz'))
+    src_files = sorted(glob.glob(os.path.join(hookenv.charm_dir(),
+                                              'lib', 'jdk-7u*.tar.gz')))
     if src_files:
         dest_dir = '/var/cache/oracle-jdk7-installer'
         hookenv.log('Mirroring Oracle Java tarballs {} to {}'.format(
