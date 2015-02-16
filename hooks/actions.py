@@ -220,7 +220,7 @@ def reset_sysctl():
     else:
         cassandra_sysctl_file = os.path.join('/', 'etc', 'sysctl.d',
                                              '99-cassandra.conf')
-        contents = "vm.max_map_count = 131072\n"
+        contents = b"vm.max_map_count = 131072\n"
         try:
             host.write_file(cassandra_sysctl_file, contents)
             subprocess.check_call(['sysctl', '-p', cassandra_sysctl_file])

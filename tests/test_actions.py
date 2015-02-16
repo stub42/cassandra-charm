@@ -266,7 +266,7 @@ class TestsActions(TestCaseBase):
         ctl_file = '/etc/sysctl.d/99-cassandra.conf'
         # Magic value per Cassandra best practice.
         write_file.assert_called_once_with(ctl_file,
-                                           "vm.max_map_count = 131072\n")
+                                           b"vm.max_map_count = 131072\n")
         check_call.assert_called_once_with(['sysctl', '-p',
                                             '/etc/sysctl.d/99-cassandra.conf'])
 
