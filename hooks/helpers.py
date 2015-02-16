@@ -218,7 +218,8 @@ def set_io_scheduler(io_scheduler, directory):
     # The block device regex may be a tad simplistic.
     block_regex = re.compile('\/dev\/([a-z]*)', re.IGNORECASE)
 
-    output = subprocess.check_output(['df', directory])
+    output = subprocess.check_output(['df', directory],
+                                     universal_newlines=True)
 
     if not is_lxc():
         hookenv.log("Setting block device of {} to IO scheduler {}"
@@ -227,7 +228,8 @@ def set_io_scheduler(io_scheduler, directory):
         sys_file = os.path.join("/", "sys", "block", block_dev,
                                 "queue", "scheduler")
         try:
-            host.write_file(sys_file, io_scheduler, perms=0o644)
+            host.write_file(sys_file, io_scheduler.encode('ascii'),
+                            perms=0o644)
         except Exception as e:
             if e.errno == errno.EACCES:
                 hookenv.log("Got Permission Denied trying to set the "
