@@ -110,6 +110,8 @@ venv3: packages .stamp-venv3
 	    > ${VENV3}/lib/python3.4/site-packages/tests.pth
 
 	echo 'pip: ' `which pip`
+	echo 'nosetests:' `which nosetests`
+	echo 'flake8:' `which flake8`
 
 	# Pip install packages.
 	pip install -q amulet flake8 bcrypt cassandra-driver blist
