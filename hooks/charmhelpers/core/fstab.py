@@ -104,7 +104,7 @@ class Fstab(io.FileIO):
 
         found = False
         for index, line in enumerate(lines):
-            if not line.startswith("#"):
+            if line.strip() and not line.startswith("#"):
                 if self._hydrate_entry(line) == entry:
                     found = True
                     break
