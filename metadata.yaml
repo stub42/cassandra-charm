@@ -15,7 +15,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 name: cassandra
-maintainer: David Ames <david.ames@canonical.com>
+maintainer: Stuart Bishop <stuart.bishop@canonical.com>
 summary: distributed storage system for structured data
 description: |
     Cassandra is a distributed (peer-to-peer) system for the management and
