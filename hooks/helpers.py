@@ -182,11 +182,15 @@ def ensure_database_directory(config_path):
     assert not is_cassandra_running()
     absdir = get_database_directory(config_path)
 
+    # Work around Bug #1427150 by ensuring components of the path are
+    # created with the required permissions, if necessary.
+    component = os.sep
+    for p in absdir.split(os.sep)[1:-1]:
+        component = os.path.join(component, p)
+        if not os.path.exists(p):
+            host.mkdir(component)
+    assert component == os.path.split(absdir)[0]
     host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o750)
-    # If this is an existing database being remounted, we need to
-    # ensure ownership is correct due to uid and gid mismatches.
-    # TODO: Confirm ownership of DSE files
-    recursive_chown(absdir, owner='cassandra', group='cassandra')
     return absdir
 
 

@@ -264,23 +264,25 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_cassandra_running')
     def test_ensure_database_directory(self, is_running, get_db_dir, mkdir,
                                        recursive_chown):
+        absdir = '/an/absolute/dir'
         is_running.return_value = False
-        get_db_dir.return_value = sentinel.absolute_dir
+        get_db_dir.return_value = absdir
 
         # ensure_database_directory() returns the absolute path.
-        self.assertIs(
-            helpers.ensure_database_directory(sentinel.some_dir),
-            sentinel.absolute_dir)
+        self.assertEqual(helpers.ensure_database_directory(absdir), absdir)
 
         # The directory will have been made.
-        mkdir.assert_called_once_with(sentinel.absolute_dir,
-                                      owner='cassandra', group='cassandra',
-                                      perms=0o750)
+        mkdir.assert_has_calls([
+            call('/an'),
+            call('/an/absolute'),
+            call('/an/absolute/dir',
+                 owner='cassandra', group='cassandra', perms=0o750)])
 
-        # The ownership of the contents has been reset.
-        recursive_chown.assert_called_once_with(sentinel.absolute_dir,
-                                                owner='cassandra',
-                                                group='cassandra')
+        # The ownership of the contents has not been reset. Rather than
+        # attempting to remount an existing database, which requires
+        # resetting permissions, it is better to use sstableloader to
+        # import the data into the cluster.
+        self.assertFalse(recursive_chown.called)
 
     @patch('charmhelpers.core.host.write_file')
     @patch('os.path.isdir')
