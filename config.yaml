@@ -35,7 +35,6 @@ options:
             If you are using Datastax Enterprise, you will need to
             override one defaults with your own username and password.
         default: |
-            - ppa:webupd8team/java
             - deb http://www.apache.org/dist/cassandra/debian 20x main
         #   - deb http://debian.datastax.com/community stable main
         #   DSE requires you to register and add your username/password here.
@@ -46,7 +45,6 @@ options:
             charm-helpers standard listing of package install source
             signing keys, corresponding to install_sources.
         default: |
-            - null  # PPA keys securly added via Launchpad.
             - null  # Apache package signing key added automatically.
             # - null  # DataStack package signing key added automatically.
     http_proxy:
@@ -62,19 +60,13 @@ options:
         description: >
             One of 'community' or 'dse'. 'community' uses the
             Apache Cassandra packages. 'dse' is for DataStax
-            Enterprise. Selecting 'dse' overrides the jvm setting and
-            constitutes acceptance of the Oracle Java Standard
-            Edition license per
-            http://www.oracle.com/technetwork/java/javase/terms/license/.
-            The Community edition is recommended for use with this charm.
-    jvm:
+            Enterprise. Selecting 'dse' overrides the jvm setting.
+    jre:
         type: string
         default: openjdk
         description: >
             Which Java runtime environment to use. May be 'openjdk' or
-            'oracle'. Choosing 'oracle' constitutes acceptance of the
-            Oracle Java Standard Edition license per
-            http://www.oracle.com/technetwork/java/javase/terms/license/.
+            'oracle'.
             
     # Storage configuration
     wait_for_storage_broker:

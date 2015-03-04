@@ -72,15 +72,6 @@ archive. To avoid this download, place a copy of the packages in a local
 archive and specify its location in the `install_sources` configuration
 option. The signing key is automatically added.
 
-When using the Oracle JDK, by default each unit downloads it from
-[oracle.com](http://www.oracle.com/technetwork/java/javase/downloads/jdk7-downloads-1880260.html).
-To avoid the unit making this download, either:
-- Place a copy of the latest Oracle 7 JDK tarball on the machine or image
-  in the `/var/cache/oracle-jdk7-installer` directory (you will need to
-  create this directory).
-- Make a local copy of this charm, and place a copy of the latest Oracle
-  7 JDK tarball in the `./lib` directory.
-
 When using DataStax Enterprise, you need to specify the archive location
 containing the DataStax Enterprise .deb packages in the
 `install_sources` configuration item, and the signing key in the

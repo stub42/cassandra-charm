@@ -377,62 +377,22 @@ class TestHelpers(TestCaseBase):
         apt_cache.return_value = dict(package=package)
         self.assertIsNone(helpers.get_package_version('package'))
 
-    def test_get_jvm(self):
-        hookenv.config()['jvm'] = 'opEnjdk'  # Case insensitive
-        self.assertEqual(helpers.get_jvm(), 'openjdk')
+    def test_get_jre(self):
+        hookenv.config()['jre'] = 'opEnjdk'  # Case insensitive
+        self.assertEqual(helpers.get_jre(), 'openjdk')
 
-        hookenv.config()['jvm'] = 'oRacle'  # Case insensitive
-        self.assertEqual(helpers.get_jvm(), 'oracle')
+        hookenv.config()['jre'] = 'oRacle'  # Case insensitive
+        self.assertEqual(helpers.get_jre(), 'oracle')
 
-    def test_get_jvm_unknown(self):
-        hookenv.config()['jvm'] = 'OopsJDK'
-        self.assertEqual(helpers.get_jvm(), 'openjdk')
+    def test_get_jre_unknown(self):
+        hookenv.config()['jre'] = 'OopsJDK'
+        self.assertEqual(helpers.get_jre(), 'openjdk')
         # An error was logged.
         hookenv.log.assert_called_once_with(ANY, hookenv.ERROR)
 
-    def test_get_jvm_dse_override(self):
+    def test_get_jre_dse_override(self):
         hookenv.config()['edition'] = 'dse'
-        self.assertEqual(helpers.get_jvm(), 'oracle')
-
-    @patch('subprocess.Popen', autospec=False)
-    def test_accept_oracle_jvm_license(self, popen):
-        popen().communicate.return_value = ('', None)
-        popen.reset_mock()
-
-        # Fails hard unless a config option specifying the Oracle JVM
-        # has been selected.
-        self.assertRaises(AssertionError, helpers.accept_oracle_jvm_license)
-        self.assertFalse(popen.called)
-
-        # When the user selects the Oracle JVM in the charm service
-        # configuration, they are implicitly accepting the Oracle Java
-        # license per the documentation of the option in config.yaml.
-        hookenv.config()['jvm'] = 'oracle'
-
-        # If the selection fails, the charm warns and continues to use
-        # OpenJDK.
-        hookenv.log.reset_mock()
-        popen().returncode = 1
-        self.assertFalse(helpers.accept_oracle_jvm_license())
-        hookenv.log.assert_any_call(ANY, hookenv.ERROR)
-
-        # If selection works, the flag is set in the persistent config.
-        popen().returncode = 0
-        popen.reset_mock()
-        self.assertTrue(helpers.accept_oracle_jvm_license())
-        popen.assert_called_once_with(['debconf-set-selections'],
-                                      stdin=subprocess.PIPE,
-                                      stdout=subprocess.PIPE,
-                                      stderr=subprocess.STDOUT)
-        instructions = (b'oracle-java7-installer '
-                        b'shared/accepted-oracle-license-v1-1 '
-                        b'select true\n')  # trailing newline is required.
-        popen().communicate.assert_called_once_with(instructions)
-
-        # Further calls do nothing.
-        popen.reset_mock()
-        self.assertTrue(helpers.accept_oracle_jvm_license())
-        self.assertFalse(popen.called)  # No need to repeat commands.
+        self.assertEqual(helpers.get_jre(), 'oracle')
 
     def test_get_cassandra_edition(self):
         hookenv.config()['edition'] = 'community'
@@ -522,49 +482,23 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.get_cassandra_pid_file(),
                          '/var/run/dse/dse.pid')
 
-    @patch('helpers.accept_oracle_jvm_license')
-    def test_get_cassandra_packages(self, accept_oracle_jvm_license):
+    def test_get_cassandra_packages(self):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'ntp', 'run-one']))
-        self.assertFalse(accept_oracle_jvm_license.called)
-
-    @patch('helpers.accept_oracle_jvm_license')
-    def test_get_cassandra_packages_oracle_jvm(self,
-                                               accept_oracle_jvm_license):
-        # Oracle JVM
-        hookenv.config()['jvm'] = 'oracle'
-        accept_oracle_jvm_license.return_value = True
-        self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'ntp', 'run-one',
-                                 'oracle-java7-installer',
-                                 'oracle-java7-set-default']))
-        # It was called. We don't care that the mock did nothing, as
-        # we explicitly set the magic config item just before.
-        self.assertTrue(accept_oracle_jvm_license.called)
+                                 'openjdk-7-jre-headless']))
 
-    @patch('helpers.accept_oracle_jvm_license')
-    def test_get_cassandra_packages_oracle_jvm_fail(self,
-                                                    accept_oracle_jvm_license):
-        # If we specified the Oracle JVM, but the license could not be
-        # accepted, we fall back to the default jdk.
-        hookenv.config()['jvm'] = 'oracle'
-        accept_oracle_jvm_license.return_value = False
-
+    def test_get_cassandra_packages_oracle_jre(self):
+        # Oracle JRE
+        hookenv.config()['jre'] = 'oracle'
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'ntp', 'run-one']))
-        self.assertTrue(accept_oracle_jvm_license.called)
 
-    @patch('helpers.accept_oracle_jvm_license')
-    def test_get_cassandra_packages_dse(self, accept_oracle_jvm_license):
-        # DataStax Enterprise, and implicit Oracle JVM.
+    def test_get_cassandra_packages_dse(self):
+        # DataStax Enterprise, and implicit Oracle JRE.
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
-        accept_oracle_jvm_license.return_value = True
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['dse-full', 'ntp', 'run-one',
-                                 'oracle-java7-installer',
-                                 'oracle-java7-set-default']))
-        self.assertTrue(accept_oracle_jvm_license.called)
+                            set(['dse-full', 'ntp', 'run-one']))
 
     @patch('helpers.wait_for_normality')
     @patch('helpers.get_cassandra_service')

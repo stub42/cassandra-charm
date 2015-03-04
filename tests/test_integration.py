@@ -213,7 +213,7 @@ class TestDeploymentBase(unittest.TestCase):
 class Test1UnitDeployment(TestDeploymentBase):
     """Tests run on both a single node cluster and a 3 node cluster."""
     rf = 1
-    test_config = dict(jvm='openjdk')
+    test_config = dict(jre='openjdk')
 
     def test_basics_unit_superuser(self):
         # Basic tests using unit superuser credentials
@@ -430,20 +430,20 @@ class Test3UnitDeployment(Test1UnitDeployment):
     rf = 3
 
 
-class TestOracleJVMDeployment(Test1UnitDeployment):
-    """Basic test with the Oracle JVM.
+class TestOracleJREDeployment(Test1UnitDeployment):
+    """Basic test with the Oracle JRE.
 
-    This test is slow, as downloads of the Oracle JVM have been made
+    This test is slow, as downloads of the Oracle JRE have been made
     deliberately uncachable.
     """
     rf = 1
-    test_config = dict(jvm='Oracle', edition='community')
+    test_config = dict(jre='Oracle', edition='community')
 
 
 class TestDSEDeployment(Test1UnitDeployment):
     """Tests run a single node DataStax Enterprise cluster.
 
-    These are *very slow* tests, due to the DSE and Oracle JVM
+    These are *very slow* tests, due to the DSE and Oracle JRE
     downloads. In addition, the DSE_SOURCE environment variable
     needs to be set as DataStax do not allow unauthenticated
     downloads of their software.
@@ -454,7 +454,7 @@ class TestDSEDeployment(Test1UnitDeployment):
     """
     rf = 1
     test_config = dict(
-        edition='DSE',  # Forces Oracle JVM
+        edition='DSE',  # Forces Oracle JRE
         install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
                                         'ppa:webupd8team/java']),
         install_keys=yaml.safe_dump([None, None]))

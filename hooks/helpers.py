@@ -289,50 +289,18 @@ def get_package_version(package):
     return None
 
 
-def accept_oracle_jvm_license():
-    '''Accept the Oracle JVM license on behalf of the user.
-
-    This method should only be called if the user has explicitly
-    chosen options documented as implicitly accepting the Oracle JVM
-    license.
-    '''
-    ORACLE_JVM_ACCEPT_KEY = 'oracle_jvm_license_accepted'  # config() key.
-    config = hookenv.config()
-    config.setdefault(ORACLE_JVM_ACCEPT_KEY, False)
-    if config[ORACLE_JVM_ACCEPT_KEY] is True:
-        return True
-    # Per documentation in config.yaml, selecting the Oracle JVM or
-    # the dse edition implicitly accepts the Oracle license. Because
-    # if it was easy, it wouldn't be Enterprise.
-    assert get_jvm() == 'oracle', 'No implicit license agreement found'
-    p = subprocess.Popen(['debconf-set-selections'],
-                         stdin=subprocess.PIPE, stderr=subprocess.STDOUT,
-                         stdout=subprocess.PIPE)
-    (out, err) = p.communicate(b'oracle-java7-installer '
-                               b'shared/accepted-oracle-license-v1-1 '
-                               b'select true\n')  # newline required
-    if p.returncode == 0:
-        config[ORACLE_JVM_ACCEPT_KEY] = True
-        hookenv.log('Oracle Java SE licence accepted')
-    else:
-        hookenv.log('Unable to accept Oracle licence. Using OpenJDK',
-                    ERROR)
-        hookenv.log(out, DEBUG)
-    return config[ORACLE_JVM_ACCEPT_KEY]
-
-
-def get_jvm():
-    # DataStax Enterprise requires the Oracle JVM.
+def get_jre():
+    # DataStax Enterprise requires the Oracle JRE.
     if get_cassandra_edition() == 'dse':
         return 'oracle'
 
     config = hookenv.config()
-    jvm = config['jvm'].lower()
-    if jvm not in ('openjdk', 'oracle'):
-        hookenv.log('Unknown jvm {!r} specified. Using OpenJDK'.format(jvm),
+    jre = config['jre'].lower()
+    if jre not in ('openjdk', 'oracle'):
+        hookenv.log('Unknown JRE {!r} specified. Using OpenJDK'.format(jre),
                     ERROR)
-        jvm = 'openjdk'
-    return jvm
+        jre = 'openjdk'
+    return jre
 
 
 def get_cassandra_edition():
@@ -401,15 +369,14 @@ def get_cassandra_packages():
     packages.add('ntp')
     packages.add('run-one')
 
-    jvm = get_jvm()
-    if jvm == 'oracle':
-        if accept_oracle_jvm_license():
-            packages.add('oracle-java7-installer')
-            packages.add('oracle-java7-set-default')
-    else:
-        # Packages pull in OpenJDK, or use what is already installed.
-        # Should this explitly ensure OpenJDK 1.7?
+    jre = get_jre()
+    if jre == 'oracle':
+        # We can't use a packaged version of the Oracle JRE, as we
+        # are not allowed to bypass Oracle's click through license
+        # agreement.
         pass
+    else:
+        packages.add('openjdk-7-jre-headless')
 
     return packages
 

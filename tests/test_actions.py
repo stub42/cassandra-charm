@@ -238,26 +238,6 @@ class TestsActions(TestCaseBase):
                 check_call.assert_any_call(['apt-key', 'add', path],
                                            stdin=subprocess.DEVNULL)
 
-    @patch('subprocess.check_call')
-    def test_cache_oracle_jdk(self, check_call):
-        tarball_paths = [os.path.join(hookenv.charm_dir(),
-                                      'lib', 'jdk-7u1.tar.gz'),
-                         os.path.join(hookenv.charm_dir(),
-                                      'lib', 'jdk-7u2.tar.gz')]
-        os.mkdir(os.path.join(hookenv.charm_dir(), 'lib'))
-        for path in tarball_paths:
-            with open(path, 'w') as f:
-                f.write('fake')
-        actions.cache_oracle_jdk('')
-        check_call.assert_called_once_with(
-            ['install', '-CD', tarball_paths[0], tarball_paths[1],
-             '/var/cache/oracle-jdk7-installer'])
-
-    @patch('subprocess.check_call')
-    def test_cache_oracle_jdk_noop(self, check_call):
-        actions.cache_oracle_jdk('')
-        self.assertFalse(check_call.called)
-
     @patch('charmhelpers.core.host.write_file')
     @patch('subprocess.check_call')
     def test_reset_sysctl(self, check_call, write_file):
@@ -303,13 +283,35 @@ class TestsActions(TestCaseBase):
         ensure_package_status.assert_called_once_with(
             sentinel.cassandra_packages)
 
+    @patch('subprocess.check_call')
+    @patch('helpers.get_jre')
     @patch('helpers.get_cassandra_packages')
     @patch('helpers.install_packages')
     def test_install_cassandra_packages(self, install_packages,
-                                        get_cassandra_packages):
+                                        get_cassandra_packages,
+                                        get_jre, check_call):
         get_cassandra_packages.return_value = sentinel.cassandra_packages
+        get_jre.return_value = 'openjdk'
         actions.install_cassandra_packages('')
         install_packages.assert_called_once_with(sentinel.cassandra_packages)
+        check_call.assert_called_once_with(['update-java-alternatives',
+                                            '--jre-headless', '--set',
+                                            'java-1.7.0-openjdk-amd64'])
+
+    @patch('subprocess.check_call')
+    @patch('helpers.get_jre')
+    @patch('helpers.get_cassandra_packages')
+    @patch('helpers.install_packages')
+    def test_install_cassandra_packages_oracle(self, install_packages,
+                                               get_cassandra_packages,
+                                               get_jre, check_call):
+        get_cassandra_packages.return_value = sentinel.cassandra_packages
+        get_jre.return_value = 'oracle'
+        actions.install_cassandra_packages('')
+        install_packages.assert_called_once_with(sentinel.cassandra_packages)
+        # No alternatives selected, as the Oracle JRE installer method
+        # handles this.
+        self.assertFalse(check_call.called)
 
     @patch('helpers.configure_cassandra_yaml')
     def test_configure_cassandra_yaml(self, configure_cassandra_yaml):

@@ -60,7 +60,7 @@ RESTART_REQUIRED_KEYS = set([
     'stream_throughput_outbound_megabits_per_sec',
     'tombstone_warn_threshold',
     'tombstone_failure_threshold',
-    'jvm'])
+    'jre'])
 
 ALL_CONFIG_KEYS = UNCHANGEABLE_KEYS.union(RESTART_REQUIRED_KEYS)
 
@@ -193,26 +193,6 @@ def add_implicit_package_signing_keys():
 
 
 @action
-def cache_oracle_jdk():
-    '''Put Oracle JDK tarballs included in this charm into the right location.
-
-    Operators use this feature to avoid the Oracle JDK tarball download
-    by branching this charm and placing a copy of the tarball in the
-    lib directory. Deploying from the local charm, the tarball gets
-    pushed to the remove unit along with the rest of the charm and
-    this action copies it to the location that the webupd8 packages
-    expect to find it.
-    '''
-    src_files = sorted(glob.glob(os.path.join(hookenv.charm_dir(),
-                                              'lib', 'jdk-7u*.tar.gz')))
-    if src_files:
-        dest_dir = '/var/cache/oracle-jdk7-installer'
-        hookenv.log('Mirroring Oracle Java tarballs {} to {}'.format(
-            ','.join(src_files), dest_dir))
-        subprocess.check_call(['install', '-CD'] + src_files + [dest_dir])
-
-
-@action
 def reset_sysctl():
     '''Configure sysctl settings for Cassandra'''
     if helpers.is_lxc():
@@ -237,11 +217,75 @@ def reset_sysctl():
 @action
 def install_cassandra_packages():
     helpers.install_packages(helpers.get_cassandra_packages())
+    if helpers.get_jre() != 'oracle':
+        subprocess.check_call(['update-java-alternatives',
+                               '--jre-headless',
+                               '--set', 'java-1.7.0-openjdk-amd64'])
 
 
 @action
 def ensure_cassandra_package_status():
     helpers.ensure_package_status(helpers.get_cassandra_packages())
+
+
+@action
+def install_oracle_jre():
+    if helpers.get_jre() != 'oracle':
+        return
+
+    config = hookenv.config()
+
+    # TODO: Download tarball from config.yaml url
+
+    pattern = 'lib/server-jre-7u*-linux-x64.tar.gz'
+    tarballs = glob.glob(pattern)
+    if not tarballs:
+        hookenv.log('Oracle JRE tarball not found ({})'.format(pattern),
+                    ERROR)
+        # We could fallback to OpenJDK, but the user took the trouble
+        # to specify the Oracle JRE and it is recommended for Cassandra
+        # so lets hard fail instead.
+        raise SystemExit(1)
+
+    # Latest tarball by filename/version num. Lets hope they don't hit
+    # 99 (currently at 76).
+    tarball = sorted(tarballs)[-1]
+
+    # Same directory as webupd8 to avoid surprising people, but it could
+    # be anything.
+    dest = '/usr/lib/jvm/java-7-oracle'
+
+    if not os.path.isdir(dest):
+        host.mkdir(dest)
+
+    jre_exists = os.path.exists(os.path.join(dest, 'bin', 'java'))
+
+    # Unpack the latest tarball if necessary.
+    if config.get('oracle_jre_tarball', '') == tarball and jre_exists:
+        hookenv.log('Already installed {}'.format(tarball))
+    else:
+        hookenv.log('Unpacking {}'.format(tarball))
+        subprocess.check_call(['tar', '-xz', '-C', dest,
+                               '--strip-components=1', '-f', tarball])
+        config['oracle_jre_tarball'] = tarball
+
+    # Set alternatives, so /usr/bin/java does what we want.
+    for tool in ['java', 'javac']:
+        tool_path = os.path.join(dest, 'bin', tool)
+        subprocess.check_call(['update-alternatives', '--install',
+                               os.path.join('/usr/bin', tool),
+                               tool, tool_path, '1'])
+        subprocess.check_call(['update-alternatives',
+                               '--set', tool, tool_path])
+
+
+@action
+def emit_java_version():
+    # Log the version for posterity. Could be useful since Oracle JRE
+    # security updates are not automated.
+    version = subprocess.check_output(['java', '-version'])
+    for line in version.splitlines():
+        hookenv.log('JRE: {}'.format(line))
 
 
 @action
