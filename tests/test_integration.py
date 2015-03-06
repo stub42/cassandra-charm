@@ -496,11 +496,11 @@ class TestOracleJREDeployment(Test1UnitDeployment):
     rf = 1
     test_config = dict(jre='Oracle', edition='community',
                        private_jre_url=get_jre_url())
+
     @classmethod
     @unittest.skipUnless(get_jre_url(), 'No Oracle JRE tarballs available')
     def setUpClass(cls):
         super(TestOracleJREDeployment, cls).setUpClass()
-
 
 
 class TestDSEDeployment(Test1UnitDeployment):
