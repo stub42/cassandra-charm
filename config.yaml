@@ -54,6 +54,18 @@ options:
             This causes pip(1) and other tools to perform downloads via
             the proxy server. eg. http://squid.dc1.lan:8080
         default: ""
+    # TODO: Add JNA
+    # private_jna_url:
+    #     type: string
+    #     default: ""
+    #     description: >
+    #         URL for the private jna tar file. DSE requires JNA >= 3.4
+    private_jre_url:
+        type: string
+        default: ""
+        description: >
+            URL for the private jre tar file. DSE requires
+            Oracle Java SE 7 Server JRE (eg. server-jre-7u76-linux-x64.tar.gz).
     edition:
         type: string
         default: community

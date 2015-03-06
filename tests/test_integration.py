@@ -18,9 +18,14 @@
 
 import configparser
 from functools import wraps
+import glob
+import http.server
 import logging
+import multiprocessing
 import os
+import socket
 import subprocess
+import sys
 import time
 import unittest
 import uuid
@@ -44,13 +49,15 @@ SERIES = os.environ.get('SERIES', 'trusty')
 
 WAIT_TIMEOUT = int(os.environ.get('AMULET_TIMEOUT', 3600))
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+
 
 class TestDeploymentBase(unittest.TestCase):
     rf = 1
     deployment = None
 
-    common_config = dict(max_heap_size='128M',
-                         heap_newsize='32M',
+    common_config = dict(max_heap_size='64M',
+                         heap_newsize='2M',
                          post_bootstrap_delay=120)
     test_config = dict()
 
@@ -430,6 +437,56 @@ class Test3UnitDeployment(Test1UnitDeployment):
     rf = 3
 
 
+_jre_url = None
+
+
+def _serve(cwd, host, port):
+    sys.stderr = open('/dev/null', 'w')
+    os.chdir(cwd)
+    httpd = http.server.HTTPServer((host, port),
+                                   http.server.SimpleHTTPRequestHandler)
+    httpd.serve_forever()
+
+
+def get_jre_url():
+    '''Return the URL to the Oracle Java SE 7 Server Runtime tarball, or None.
+
+    The tarball needs to be placed in ../lib.
+
+    Spawns a web server as a subprocess to serve the file.
+    '''
+    global _jre_url
+    if _jre_url is not None:
+        return _jre_url
+
+    jre_dir = os.path.join(ROOT, 'lib')
+
+    jre_tarballs = glob.glob(os.path.join(jre_dir, 'server-jre-?u*.tar.gz'))
+    if not jre_tarballs:
+        return None
+
+    # Get the local IP address, only available via hackish means and
+    # quite possibly incorrect.
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(('www.canonical.com', 80))
+    host = s.getsockname()[0]
+    s.close()
+
+    # Get a free port.
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind((host, 0))
+    port = s.getsockname()[1]
+    s.close()
+
+    p = multiprocessing.Process(target=_serve, args=(jre_dir, host, port),
+                                daemon=True)
+    p.start()
+
+    _jre_url = 'http://{}:{}/{}'.format(host, port,
+                                        os.path.basename(jre_tarballs[0]))
+    return _jre_url
+
+
 class TestOracleJREDeployment(Test1UnitDeployment):
     """Basic test with the Oracle JRE.
 
@@ -437,7 +494,13 @@ class TestOracleJREDeployment(Test1UnitDeployment):
     deliberately uncachable.
     """
     rf = 1
-    test_config = dict(jre='Oracle', edition='community')
+    test_config = dict(jre='Oracle', edition='community',
+                       private_jre_url=get_jre_url())
+    @classmethod
+    @unittest.skipUnless(get_jre_url(), 'No Oracle JRE tarballs available')
+    def setUpClass(cls):
+        super(TestOracleJREDeployment, cls).setUpClass()
+
 
 
 class TestDSEDeployment(Test1UnitDeployment):
@@ -455,11 +518,12 @@ class TestDSEDeployment(Test1UnitDeployment):
     rf = 1
     test_config = dict(
         edition='DSE',  # Forces Oracle JRE
-        install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
-                                        'ppa:webupd8team/java']),
-        install_keys=yaml.safe_dump([None, None]))
+        install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE')]),
+        install_keys=yaml.safe_dump([None]),
+        private_jre_url=get_jre_url())
 
     @classmethod
+    @unittest.skipUnless(get_jre_url(), 'No Oracle JRE tarballs available')
     @unittest.skipIf('DSE_SOURCE' not in os.environ,
                      'DSE_SOURCE environment variable not configured')
     def setUpClass(cls):
@@ -473,7 +537,6 @@ class Test21Deployment(Test1UnitDeployment):
     test_config = dict(
         edition='community',
         install_sources=yaml.safe_dump([
-            'ppa:webupd8team/java',
             'deb http://www.apache.org/dist/cassandra/debian 21x main']),
         install_keys=yaml.safe_dump([None, None]))
 

@@ -23,6 +23,7 @@ import re
 import shlex
 import subprocess
 from textwrap import dedent
+import urllib.request
 
 from charmhelpers import fetch
 from charmhelpers.contrib.charmsupport import nrpe
@@ -234,10 +235,20 @@ def install_oracle_jre():
         return
 
     config = hookenv.config()
+    url = config.get('private_jre_url', None)
+    if not url:
+        hookenv.log('private_jre_url not set. Unable to continue.', ERROR)
+        raise SystemExit(1)
 
-    # TODO: Download tarball from config.yaml url
+    if config.get('retrieved_jre', None) != url:
+        filename = os.path.join('lib', url.split('/')[-1])
+        if not filename.endswith('-linux-x64.tar.gz'):
+            hookenv.log('Invalid JRE URL {}'.format(url), ERROR)
+            raise SystemExit(1)
+        urllib.request.urlretrieve(url, filename)
+        config['retrieved_jre'] = url
 
-    pattern = 'lib/server-jre-7u*-linux-x64.tar.gz'
+    pattern = 'lib/server-jre-?u*-linux-x64.tar.gz'
     tarballs = glob.glob(pattern)
     if not tarballs:
         hookenv.log('Oracle JRE tarball not found ({})'.format(pattern),
