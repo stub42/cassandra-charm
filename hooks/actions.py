@@ -61,7 +61,8 @@ RESTART_REQUIRED_KEYS = set([
     'stream_throughput_outbound_megabits_per_sec',
     'tombstone_warn_threshold',
     'tombstone_failure_threshold',
-    'jre'])
+    'jre',
+    'private_jre_url'])
 
 ALL_CONFIG_KEYS = UNCHANGEABLE_KEYS.union(RESTART_REQUIRED_KEYS)
 
