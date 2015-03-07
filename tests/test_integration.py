@@ -322,8 +322,8 @@ class Test1UnitDeployment(TestDeploymentBase):
 
     def test_cqlsh(self):
         subprocess.check_output(['juju', 'ssh', 'cassandra/0',
-                              'sudo -H cqlsh -e exit'],
-                              stderr=subprocess.STDOUT)
+                                 'sudo -H cqlsh -e exit'],
+                                stderr=subprocess.STDOUT)
 
     def test_z_add_and_drop_node(self):  # 'z' to run this test last.
         # We need to be able to add a node correctly into the ring,
