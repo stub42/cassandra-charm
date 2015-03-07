@@ -598,7 +598,7 @@ def configure_firewall():
     # Enable SSH from anywhere, relying on Juju and external firewalls
     # to control access.
     ufw.service('ssh', 'open')
-    ufw.service('nrpe', 'open')
+    ufw.service('nrpe', 'open')  # Also NRPE for nagios checks.
 
     # Clients need client access. These protocols are configured to
     # require authentication.
