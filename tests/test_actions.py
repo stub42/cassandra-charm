@@ -976,6 +976,7 @@ class TestsActions(TestCaseBase):
 
         # SSH and the client protocol ports are always fully open.
         ufw.service.assert_has_calls([call('ssh', 'open'),
+                                      call('nrpe', 'open'),
                                       call(9042, 'open'),
                                       call(9160, 'open')])
 
@@ -1015,6 +1016,7 @@ class TestsActions(TestCaseBase):
         # native and Thrift ports does make the later more specific
         # rules meaningless, but we add the specific rules anyway.
         ufw.service.assert_has_calls([call('ssh', 'open'),
+                                      call('nrpe', 'open'),
                                       call(9042, 'close'),
                                       call(7777, 'open'),
                                       call(9160, 'open')], any_order=True)
