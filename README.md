@@ -46,10 +46,10 @@ New nodes can be added to scale up:
     juju remove-unit cassandra/1
 
 It is recommended to deploy at least 3 nodes and configure all your
-keyspaces to have a replication factor of at least three. Using fewer
-nodes or neglecting to set your keyspaces' replication settings means
-your data is at risk and availability lower, as a failed unit may take
-the only copy of data with it.
+keyspaces to have a replication factor of three. Using fewer nodes or
+neglecting to set your keyspaces' replication settings means that your
+data is at risk and availability lower, as a failed unit may take the
+only copy of data with it.
 
 
 ## Planning
@@ -83,6 +83,19 @@ The Cassandra Python driver and some dependencies are installed using
 a proxy server, such as squid or devpi.
 
 
+## Oracle Java SE
+
+Cassandra recommends using Oracle Java SE 7. Unfortunately, this
+software is accessible only after accepting Oracle's click-through
+license making deployments using it much more cumbersome. You will need
+to download the Oracle Java SE 7 Server Runtime for Linux, and place the
+tarball at a URL accessible to your deployed units. The config item
+`private_jre_url` needs to be set to this URL.
+
+The recommended Java version is expected to change, as Java SE 7 public
+releases cease as of April 2015.
+
+
 # Usage
 
 To relate the Cassandra charm to a service that understands how to talk to
@@ -99,7 +112,8 @@ Alternatively, if you require a superuser connection, use the
     juju add-relation admin-service cassandra:database-admin
 
 
-Client charms need to provide nothing. The Cassandra service publishes the following connection settings and cluster information on the client's relation:
+Client charms need to provide nothing. The Cassandra service publishes the
+following connection settings and cluster information on the client's relation:
 
 `username` and `password`:
 
@@ -151,12 +165,6 @@ permissions to the users.
 # Known Limitations and Issues
 
 This is the 'trusty' charm. Upgrade from the 'precise' charm is not supported.
-
-The DataStax Enterprise variant of Cassandra cannot be tested by Juju's
-open automated test environment, due to DataStax's policy of requiring
-registration before downloading their software. While DSE hopefully works
-with this charm, it cannot be fully supported and using standard Open Source
-edition of Cassandra ('community') is recommended wherever possible.
 
 The `system_auth` keyspace replication factor is automatically increased
 but not decreased. If you have a service with three or more units and
