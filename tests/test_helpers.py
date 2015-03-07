@@ -437,7 +437,7 @@ class TestHelpers(TestCaseBase):
         # Return the cassandra version equivalent if using dse.
         hookenv.config()['edition'] = 'dse'
         get_package_version.return_value = '4.5-beta2~88'
-        self.assertEqual(helpers.get_cassandra_version(), '2.1')
+        self.assertEqual(helpers.get_cassandra_version(), '2.0')
         get_package_version.assert_called_with('dse-full')
 
     @patch('helpers.get_package_version')
@@ -958,15 +958,18 @@ class TestHelpers(TestCaseBase):
 
     @patch('helpers.superuser_username')
     @patch('helpers.get_cqlshrc_path')
+    @patch('helpers.get_cassandra_version')
     @patch('charmhelpers.core.host.pwgen')
-    def test_superuser_credentials(self, pwgen,
+    def test_superuser_credentials(self, pwgen, get_cassandra_version,
                                    get_cqlshrc_path, get_username):
+        get_cassandra_version.return_value = '2.0'
         with tempfile.TemporaryDirectory() as dotcassandra_dir:
             cqlshrc_path = os.path.join(dotcassandra_dir, 'cqlshrc')
             get_cqlshrc_path.return_value = cqlshrc_path
             get_username.return_value = 'foo'
             pwgen.return_value = 'secret'
-            hookenv.config()['native_transport_port'] = 666
+            hookenv.config()['rpc_port'] = 666
+            hookenv.config()['native_transport_port'] = 777
 
             # First time generates username & password.
             username, password = helpers.superuser_credentials()
@@ -993,6 +996,40 @@ class TestHelpers(TestCaseBase):
             username, password = helpers.superuser_credentials()
             self.assertEqual(username, 'foo')
             self.assertEqual(password, 'secret')
+            with open(cqlshrc_path, 'r') as f:
+                self.assertEqual(f.read().strip(), expected_cqlshrc)
+
+    @patch('helpers.superuser_username')
+    @patch('helpers.get_cqlshrc_path')
+    @patch('helpers.get_cassandra_version')
+    @patch('charmhelpers.core.host.pwgen')
+    def test_superuser_credentials_21plus(self, pwgen, get_cassandra_version,
+                                          get_cqlshrc_path, get_username):
+        # Cassandra 2.1 or higher uses native protocol in its cqlshrc
+        get_cassandra_version.return_value = '2.1'
+        with tempfile.TemporaryDirectory() as dotcassandra_dir:
+            cqlshrc_path = os.path.join(dotcassandra_dir, 'cqlshrc')
+            get_cqlshrc_path.return_value = cqlshrc_path
+            get_username.return_value = 'foo'
+            pwgen.return_value = 'secret'
+            hookenv.config()['rpc_port'] = 666
+            hookenv.config()['native_transport_port'] = 777
+
+            # First time generates username & password.
+            username, password = helpers.superuser_credentials()
+            self.assertEqual(username, 'foo')
+            self.assertEqual(password, 'secret')
+
+            # Credentials are stored in the cqlshrc file.
+            expected_cqlshrc = dedent('''\
+                                      [authentication]
+                                      username = foo
+                                      password = secret
+
+                                      [connection]
+                                      hostname = 10.30.0.1
+                                      port = 777
+                                      ''').strip()
             with open(cqlshrc_path, 'r') as f:
                 self.assertEqual(f.read().strip(), expected_cqlshrc)
 

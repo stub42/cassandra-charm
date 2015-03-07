@@ -51,6 +51,11 @@ neglecting to set your keyspaces' replication settings means that your
 data is at risk and availability lower, as a failed unit may take the
 only copy of data with it.
 
+Production systems will normally want to set `max_heap_size` and
+`heap_newsize` to the empty string, to enable automatic memory size
+tuning. The defaults have been chosen to be suitable for development
+environments but will perform poorly with real workloads.
+
 
 ## Planning
 

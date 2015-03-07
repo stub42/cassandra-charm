@@ -56,8 +56,8 @@ class TestDeploymentBase(unittest.TestCase):
     rf = 1
     deployment = None
 
-    common_config = dict(max_heap_size='64M',
-                         heap_newsize='2M',
+    common_config = dict(max_heap_size='96M',
+                         heap_newsize='4M',
                          post_bootstrap_delay=120)
     test_config = dict()
 

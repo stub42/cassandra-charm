@@ -168,8 +168,8 @@ options:
 
     # cassandra-env.sh related options
     # The default tuning has been chosen to be suitable for development
-    # and test environments (and will be changed if this is not the
-    # case).
+    # and test environments. The default tunings are expected to change
+    # over time.
     max_heap_size:
         type: string
         default: '384M'

@@ -324,7 +324,7 @@ def get_cassandra_version():
     if get_cassandra_edition() == 'dse':
         # When we support multiple versions, we will need to map
         # DataStax versions to Cassandra versions.
-        return '2.1' if get_package_version('dse-full') else None
+        return '2.0' if get_package_version('dse-full') else None
     return get_package_version('cassandra')
 
 
@@ -398,6 +398,7 @@ def start_cassandra():
         return
 
     actual_seeds = actual_seed_ips()
+    assert actual_seeds, 'Attempting to start cassandra with empty seed list'
     hookenv.log('Starting Cassandra with seeds {!r}'.format(actual_seeds))
     host.service_start(get_cassandra_service())
 
@@ -666,7 +667,10 @@ def superuser_credentials():
     cqlshrc['authentication']['password'] = password
     cqlshrc.setdefault('connection', {})
     cqlshrc['connection']['hostname'] = hookenv.unit_public_ip()
-    cqlshrc['connection']['port'] = str(config['native_transport_port'])
+    if get_cassandra_version().startswith('2.0'):
+        cqlshrc['connection']['port'] = str(config['rpc_port'])
+    else:
+        cqlshrc['connection']['port'] = str(config['native_transport_port'])
 
     ini = io.StringIO()
     cqlshrc.write(ini)
@@ -802,6 +806,7 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml.update((k, config[k]) for k in simple_config_keys)
 
     seeds = ','.join(seeds or seed_ips())  # Don't include whitespace!
+    assert seeds, 'Attempting to configure cassandra with empty seed list'
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
@@ -1034,6 +1039,10 @@ def pre_bootstrap():
         hookenv.log("No peers, no cluster, no bootstrapping")
         return
 
+    if not seed_ips():
+        hookenv.log("No seeds available. Deferring.")
+        raise rollingrestart.DeferRestart()
+
     # Don't attempt to bootstrap until all lower numbered units have
     # bootstrapped. We need to do this as the rollingrestart algorithm
     # fails during initial cluster setup, where two or more newly joined
@@ -1048,7 +1057,7 @@ def pre_bootstrap():
     # Bootstrap fail if we haven't yet opened our ports to all
     # the bootstrapped nodes. This is the case if we have not yet
     # joined the peer relationship with the node's unit.
-    missing = node_ips() - peer_ips()
+    missing = node_ips() - peer_ips() - set([hookenv.unit_private_ip()])
     if missing:
         hookenv.log("Not yet in a peer relationship with {!r}. "
                     "Deferring bootstrap".format(missing))
