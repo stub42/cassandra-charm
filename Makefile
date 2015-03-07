@@ -62,15 +62,19 @@ ftest: unittest
 	AMULET_TIMEOUT=3600 \
 	$(NOSETESTS) tests.test_integration:Test3UnitDeployment
 
-# Set the DSE_SOURCE environment variable for this to work:
-# DSE_SOURCE="deb http://un:pw@debian.datastax.com/enterprise stable main"
+# Place a copy of the Oracle Java SE 7 Server Runtime tarball in ./lib
+# to run these tests.
+jretest: unittest
+	AMULET_TIMEOUT=3600 \
+	$(NOSETESTS) tests.test_integration:TestOracleJREDeployment
+
+# You need the Oracle JRE (per jretest) and set the DSE_SOURCE environment
+# variable for this to work:
+#     DSE_SOURCE="deb http://un:pw@debian.datastax.com/enterprise stable main"
 # You will also need a cache like squid-deb-proxy and have tweaked it to
 # cache the authenticated files, or the tests will likely timeout waiting
 # for huge downloads to complete. Alternatively, mirror the DataStax
-# packages into your own private archive. Due to the authentication
-# requirement, this test will not be run by the automatic test runners
-# and we can accordingly expect DSE support in this charm to break on
-# occasions.
+# packages into your own private archive.
 dsetest: unittest
 	AMULET_TIMEOUT=3600 \
 	$(NOSETESTS) tests.test_integration:TestDSEDeployment

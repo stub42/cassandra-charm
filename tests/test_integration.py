@@ -97,7 +97,6 @@ class TestDeploymentBase(unittest.TestCase):
                           'nrpe:nrpe-external-master')
 
         deployment.deploy(timeout=WAIT_TIMEOUT)
-        deployment.sentry.wait(timeout=WAIT_TIMEOUT)
 
         # Silence noise - we are testing the charm, not the Cassandra
         # driver.
@@ -183,9 +182,38 @@ class TestDeploymentBase(unittest.TestCase):
         self.addCleanup(session.shutdown)
         return session
 
-    def wait(self):
-        # Work around Bug #1421195 by retrying failed waits.
+    def wait(self, nodes=None):
+        if nodes is None:
+            nodes = self.rf
+
         until = time.time() + WAIT_TIMEOUT
+
+        # Wait until the cassandra cluster has the expected
+        # number of nodes.
+        while True:
+            try:
+                up_nodes = 0
+                cluster_status = subprocess.check_output([
+                    'juju', 'run', '--unit=cassandra/0',
+                    'nodetool status'], universal_newlines=True)
+                for line in cluster_status.splitlines():
+                    if line.startswith('UN'):
+                        up_nodes += 1
+                if up_nodes >= nodes:
+                    break
+            except subprocess.CalledProcessError:
+                if time.time() > until:
+                    raise
+
+            if time.time() > until:
+                raise amulet.helpers.TimeoutError()
+
+            time.sleep(1)
+
+        # Now wait for any remaining hooks to complete. This is
+        # possibly unnecessary due to the previous juju runs.
+        # Work around Bug #1421195 by retrying failed waits.
+        # self.deployment.sentry.wait(max(0, int(until - time.time())))
         while True:
             timeout = int(min(max(until - time.time(), 0), 300))
             try:
@@ -366,15 +394,11 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertEqual(count(), total)
 
         self.deployment.add_unit('cassandra')
-        self.wait()
+        self.wait(nodes=self.rf + 1)
         status = self.juju_status()
         unit = sorted(status['services']['cassandra']['units'].keys())[-1]
         try:
-            # Ensure we have reached the necessary state.
-            # self._wait_for_nodecount(self.rf + 1)
-
             self.assertEqual(count(), total)
-
         finally:
             # When a node is dropped, it needs to decommission itself and
             # move its data to the remaining nodes so no data is lost.
@@ -382,31 +406,10 @@ class Test1UnitDeployment(TestDeploymentBase):
             # First, the node must be manually decommissioned before we
             # remove the unit.
             self._decommission(unit)
-            # self._wait_for_nodecount(self.rf)
             self.deployment.remove_unit(unit)
             self.wait()
 
         self.assertEqual(count(), total)
-
-    def _wait_for_nodecount(self, num_nodes):
-        until = time.time() + WAIT_TIMEOUT
-        while True:
-            try:
-                cmd = ['juju', 'run', '--unit=cassandra/0',
-                       'nodetool describecluster']
-                raw = subprocess.check_output(cmd, stderr=subprocess.STDOUT,
-                                              universal_newlines=True)
-                desc = yaml.load(raw.expandtabs())  # Almost yaml
-                schemas = desc['Cluster Information']['Schema versions'] or {}
-                for schema, ips in schemas.items():
-                    if len(ips) == num_nodes:
-                        return
-                if time.time() > until:
-                    raise subprocess.TimeoutExpired(cmd, WAIT_TIMEOUT, raw)
-            except subprocess.CalledProcessError:
-                if time.time() > until:
-                    raise
-            time.sleep(3)
 
     def _decommission(self, unit):
         until = time.time() + WAIT_TIMEOUT

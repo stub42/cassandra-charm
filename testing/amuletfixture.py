@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 
 import amulet
 import yaml
@@ -67,16 +68,23 @@ class AmuletFixture(amulet.Deployment):
         '''
         if timeout is None:
             timeout = int(os.environ.get('AMULET_TIMEOUT', 900))
-        try:
-            # If setUp fails, tearDown is never called leaving the
-            # environment setup. This is useful for debugging.
-            self.setup(timeout=timeout)
-            self.sentry.wait(timeout=timeout)
-        except amulet.helpers.TimeoutError:
-            # Don't skip tests on timeout. This hides real failures,
-            # such as deadlocks between peers.
-            # raise unittest.SkipTest("Environment wasn't stood up in time")
-            raise
+
+        until = time.time() + timeout
+
+        # If setUp fails, tearDown is never called leaving the
+        # environment setup. This is useful for debugging.
+        self.setup(timeout=timeout)
+
+        # Work around Bug #1421195 by retrying failed waits.
+        # self.sentry.wait(timeout=timeout)
+        while True:
+            timeout = int(min(max(until - time.time(), 0), 300))
+            try:
+                self.sentry.wait(timeout=timeout)
+                break
+            except (OSError, amulet.helpers.TimeoutError):
+                if time.time() > until:
+                    raise
 
     def __del__(self):
         for temp_dir in self._temp_dirs:
