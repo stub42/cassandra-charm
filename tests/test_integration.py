@@ -538,7 +538,7 @@ class Test21Deployment(Test1UnitDeployment):
         edition='community',
         install_sources=yaml.safe_dump([
             'deb http://www.apache.org/dist/cassandra/debian 21x main']),
-        install_keys=yaml.safe_dump([None, None]))
+        install_keys=yaml.safe_dump([None]))
 
 
 # Bug #1417097 means we need to monkey patch Amulet for now.
