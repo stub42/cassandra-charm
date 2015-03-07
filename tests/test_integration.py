@@ -321,10 +321,9 @@ class Test1UnitDeployment(TestDeploymentBase):
                 self.assertIsInstance(fail, AuthenticationFailed)
 
     def test_cqlsh(self):
-        p = subprocess.Popen(['juju', 'ssh', 'cassandra/0', 'sudo -H cqlsh'],
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        p.communicate('exit')
-        self.assertEqual(p.returncore, 0)
+        subprocess.check_output(['juju', 'ssh', 'cassandra/0',
+                              'sudo -H cqlsh -e exit'],
+                              stderr=subprocess.STDOUT)
 
     def test_z_add_and_drop_node(self):  # 'z' to run this test last.
         # We need to be able to add a node correctly into the ring,
