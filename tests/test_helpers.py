@@ -1467,6 +1467,7 @@ class TestHelpers(TestCaseBase):
         helpers.set_bootstrapped(False)
         self.assertFalse(helpers.is_bootstrapped())
 
+    @patch('helpers.seed_ips')
     @patch('helpers.peer_ips')
     @patch('helpers.node_ips')
     @patch('helpers.nuke_local_database')
@@ -1475,12 +1476,13 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap(self, is_bootstrapped, num_peers,
                            are_nodes_responding, nuke_all,
-                           node_ips, peer_ips):
+                           node_ips, peer_ips, seed_ips):
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
         are_nodes_responding.return_value = True
         node_ips.return_value = set(['1.1.1.1'])
         peer_ips.return_value = set(['1.1.1.1'])
+        seed_ips.return_value = set(['1.1.1.1'])
 
         helpers.pre_bootstrap()
 
