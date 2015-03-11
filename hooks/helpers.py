@@ -62,7 +62,7 @@ def backoff(what_for, max_pause=60):
     while True:
         yield True
         i += 1
-        pause = min(max_pause, 2**i)
+        pause = min(max_pause, 2 ** i)
         time.sleep(pause)
         if pause > 10:
             hookenv.log('Recheck {} for {}'.format(i, what_for))

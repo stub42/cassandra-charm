@@ -182,47 +182,6 @@ class TestDeploymentBase(unittest.TestCase):
         self.addCleanup(session.shutdown)
         return session
 
-    def wait(self, nodes=None):
-        if nodes is None:
-            nodes = self.rf
-
-        until = time.time() + WAIT_TIMEOUT
-
-        # Wait until the cassandra cluster has the expected
-        # number of nodes.
-        while True:
-            try:
-                up_nodes = 0
-                cluster_status = subprocess.check_output([
-                    'juju', 'run', '--unit=cassandra/0',
-                    'nodetool status'], universal_newlines=True)
-                for line in cluster_status.splitlines():
-                    if line.startswith('UN'):
-                        up_nodes += 1
-                if up_nodes >= nodes:
-                    break
-            except subprocess.CalledProcessError:
-                if time.time() > until:
-                    raise
-
-            if time.time() > until:
-                raise amulet.helpers.TimeoutError()
-
-            time.sleep(1)
-
-        # Now wait for any remaining hooks to complete. This is
-        # possibly unnecessary due to the previous juju runs.
-        # Work around Bug #1421195 by retrying failed waits.
-        # self.deployment.sentry.wait(max(0, int(until - time.time())))
-        while True:
-            timeout = int(min(max(until - time.time(), 0), 300))
-            try:
-                self.deployment.sentry.wait(timeout=timeout)
-                break
-            except (OSError, amulet.helpers.TimeoutError):
-                if time.time() > until:
-                    raise
-
     def get_client_relinfo(self, relname):
         # We only need one unit, even if rf > 1
         s = self.deployment.sentry['cassandra/0']
@@ -242,7 +201,7 @@ class TestDeploymentBase(unittest.TestCase):
         config.update(self.test_config)
         config.update(overrides)
         self.deployment.configure('cassandra', config)
-        self.wait()
+        self.deployment.wait()
 
 
 class Test1UnitDeployment(TestDeploymentBase):
@@ -300,7 +259,7 @@ class Test1UnitDeployment(TestDeploymentBase):
         # cluster-relation-changed hook once the unit has determined
         # that it is its turn to restart.
         self.deployment.relate('cassandra:data', 'storage:data')
-        self.wait()
+        self.deployment.wait()
         # Per Bug #1254766 and Bug #1254766, the sentry.wait() above
         # will return before the hooks have actually finished running
         # and data migrated. Instead, keep checking until our condition
@@ -394,7 +353,7 @@ class Test1UnitDeployment(TestDeploymentBase):
         self.assertEqual(count(), total)
 
         self.deployment.add_unit('cassandra')
-        self.wait(nodes=self.rf + 1)
+        self.deployment.wait()
         status = self.juju_status()
         unit = sorted(status['services']['cassandra']['units'].keys())[-1]
         try:
@@ -407,7 +366,7 @@ class Test1UnitDeployment(TestDeploymentBase):
             # remove the unit.
             self._decommission(unit)
             self.deployment.remove_unit(unit)
-            self.wait()
+            self.deployment.wait()
 
         self.assertEqual(count(), total)
 

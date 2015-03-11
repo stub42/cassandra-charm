@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+from functools import wraps
+import json
 import os
 import shutil
 import subprocess
@@ -25,10 +27,20 @@ import yaml
 
 
 class AmuletFixture(amulet.Deployment):
+    def __init__(self, series='precise'):
+        # We use a wrapper around juju-deployer so we can fix how it is
+        # invoked. In particular, turn off all the noise so we can
+        # actually read our test output.
+        juju_deployer = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), os.pardir, 'lib',
+            'juju-deployer-wrapper.py'))
+        super(AmuletFixture, self).__init__(series=series,
+                                            juju_deployer=juju_deployer)
+
     def setUp(self):
         self._temp_dirs = []
 
-        self.reset_environment()
+        self.reset_environment(force=True)
 
         # Repackage our charm to a temporary directory, allowing us
         # to strip our virtualenv symlinks that would otherwise cause
@@ -47,10 +59,10 @@ class AmuletFixture(amulet.Deployment):
         # Explicitly reset $JUJU_REPOSITORY to ensure amulet and
         # juju-deployer does not mess with the real one, per Bug #1393792
         self.org_repo = os.environ.get('JUJU_REPOSITORY', None)
-        temp_repo = tempfile.TemporaryDirectory(suffix='.repo')
+        temp_repo = tempfile.mkdtemp(suffix='.repo')
         self._temp_dirs.append(temp_repo)
-        os.environ['JUJU_REPOSITORY'] = temp_repo.name
-        os.makedirs(os.path.join(temp_repo.name, self.series), mode=0o700)
+        os.environ['JUJU_REPOSITORY'] = temp_repo
+        os.makedirs(os.path.join(temp_repo, self.series), mode=0o700)
 
     def tearDown(self, reset_environment=True):
         if reset_environment:
@@ -69,30 +81,64 @@ class AmuletFixture(amulet.Deployment):
         if timeout is None:
             timeout = int(os.environ.get('AMULET_TIMEOUT', 900))
 
-        until = time.time() + timeout
-
         # If setUp fails, tearDown is never called leaving the
         # environment setup. This is useful for debugging.
         self.setup(timeout=timeout)
-
-        # Work around Bug #1421195 by retrying failed waits.
-        # self.sentry.wait(timeout=timeout)
-        while True:
-            timeout = int(min(max(until - time.time(), 0), 300))
-            try:
-                self.sentry.wait(timeout=timeout)
-                break
-            except (OSError, amulet.helpers.TimeoutError):
-                if time.time() > until:
-                    raise
+        self.wait(timeout=timeout)
 
     def __del__(self):
         for temp_dir in self._temp_dirs:
-            if os.path.exists(temp_dir.name):
-                temp_dir.cleanup()
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def reset_environment(self):
-        subprocess.check_call(['juju-deployer', '-T'])
+    def get_status(self):
+        raw = subprocess.check_output(['juju', 'status', '--format=json'],
+                                      universal_newlines=True)
+        if raw:
+            return json.loads(raw)
+        return None
+
+    def wait(self, timeout=None):
+        '''Wait until the environment has reached a stable state.'''
+        cmd = ['juju', 'wait']
+        if timeout:
+            cmd = ['timeout', str(timeout)] + cmd
+        subprocess.check_output(cmd)
+
+    def reset_environment(self, force=False):
+        fails = dict()
+        while True:
+            status = self.get_status()
+            service_items = status.get('services', {}).items()
+            if not service_items:
+                break
+            for service_name, service in service_items:
+                if service.get('life', '') not in ('dying', 'dead'):
+                    subprocess.check_output(['juju', 'destroy-service',
+                                             service_name],
+                                            stderr=subprocess.STDOUT)
+                for unit_name, unit in service.get('units', {}).items():
+                    if unit.get('agent-state', None) == 'error':
+                        if force:
+                            # If any units have failed hooks, unstick them.
+                            try:
+                                subprocess.check_output(
+                                    ['juju', 'resolved', unit_name],
+                                    stderr=subprocess.STDOUT)
+                            except subprocess.CalledProcessError:
+                                # A previous 'resolved' call make cause a
+                                # subsequent one to fail if it is still
+                                # being processed. However, we need to keep
+                                # retrying because after a successful
+                                # resolution a subsequent hook may cause an
+                                # error state.
+                                pass
+                        else:
+                            fails[unit_name] = unit
+            time.sleep(1)
+
+        if fails:
+            raise Exception("Teardown failed", fails)
 
     def repackage_charm(self):
         """Mirror the charm into a staging area.
@@ -119,10 +165,10 @@ class AmuletFixture(amulet.Deployment):
         with open(os.path.join(src_charm_dir, 'metadata.yaml'), 'r') as s:
             self.charm_name = yaml.safe_load(s)['name']
 
-        repack_root = tempfile.TemporaryDirectory(suffix='.charm')
+        repack_root = tempfile.mkdtemp(suffix='.charm')
         self._temp_dirs.append(repack_root)
 
-        self.charm_dir = os.path.join(repack_root.name, self.charm_name)
+        self.charm_dir = os.path.join(repack_root, self.charm_name)
 
         # Ignore .bzr to work around weird bzr interactions with
         # juju-deployer, per Bug #1394078, and ignore .venv
@@ -130,3 +176,16 @@ class AmuletFixture(amulet.Deployment):
         # infinite recursion.
         shutil.copytree(src_charm_dir, self.charm_dir, symlinks=True,
                         ignore=shutil.ignore_patterns('.venv?', '.bzr'))
+
+
+# Bug #1417097 means we need to monkey patch Amulet for now.
+real_juju = amulet.helpers.juju
+
+
+@wraps(real_juju)
+def patched_juju(args, env=None):
+    args = [str(a) for a in args]
+    return real_juju(args, env)
+
+amulet.helpers.juju = patched_juju
+amulet.deployer.juju = patched_juju

@@ -98,10 +98,12 @@ packages: .stamp-packages
 .stamp-packages:
 	# Install bootstrap debs, and Python packages not available
 	# via pip.
+	sudo add-apt-repository -y ppa:stub/juju
+	sudo apt-get update
 	sudo apt-get install -y \
 	    python3 python3-pip python3-apt python3-dev python-virtualenv \
 	    charm-tools build-essential libev4 libev-dev libffi-dev \
-	    netcat python3-jinja2
+	    netcat python3-jinja2 juju-wait
 	touch .stamp-packages
 
 venv3: packages .stamp-venv3
