@@ -137,6 +137,15 @@ class AmuletFixture(amulet.Deployment):
                             fails[unit_name] = unit
             time.sleep(1)
 
+        harvest_machines = []
+        for machine, state in status.get('machines', {}).items():
+            if machine != "0" and state.get('life') not in ('dying', 'dead'):
+                harvest_machines.append(machine)
+
+        if harvest_machines:
+            cmd = ['juju', 'remove-machine', '--force'] + harvest_machines
+            subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
         if fails:
             raise Exception("Teardown failed", fails)
 
