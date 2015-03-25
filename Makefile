@@ -34,7 +34,7 @@ SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 PIP=.venv3/bin/pip3.4 -q
 NOSETESTS=.venv3/bin/nosetests-3.4 -sv
 
-deps: packages venv3
+deps: debug packages venv3
 
 lint: deps
 	charm proof $(CHARM_DIR)
@@ -93,6 +93,18 @@ coverage: lint
 clean:
 	rm -rf .venv? tests/.venv? .stamp-* coverage .coverage
 	find . -name __pycache__ -type d | xargs rm -rf
+
+
+# Attempt to diagnose environment for test failures.
+debug:
+	-which virtualenv
+	-which python
+	-which python2
+	-which python3
+	-which pip
+	-which pip3
+	-env
+
 
 packages: .stamp-packages
 .stamp-packages:
