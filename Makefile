@@ -103,7 +103,7 @@ debug:
 	-which python3
 	-which pip
 	-which pip3
-	-head -1 `which virtualenv | echo nothere`
+	-head -1 `which virtualenv || echo nothere`
 	-python -c 'import sys; print(sys.version); print(sys.path);'
 	-python2 -c 'import sys; print(sys.version); print(sys.path);'
 	-python3 -c 'import sys; print(sys.version); print(sys.path);'
