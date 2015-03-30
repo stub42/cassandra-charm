@@ -972,7 +972,7 @@ class TestsActions(TestCaseBase):
         # Confirm our mock provided the expected data.
         rel_of_type.assert_called_once_with('cluster')
 
-        ufw.enable.assert_called_once_with()  # Always enabled.
+        ufw.enable.assert_called_once_with(soft_fail=True)  # Always enabled.
 
         # SSH and the client protocol ports are always fully open.
         ufw.service.assert_has_calls([call('ssh', 'open'),
