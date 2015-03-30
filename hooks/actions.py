@@ -593,7 +593,7 @@ def configure_firewall():
     allow access to the entire environment.
     '''
     config = hookenv.config()
-    ufw.enable()
+    ufw.enable(soft_fail=True)
 
     # Enable SSH from anywhere, relying on Juju and external firewalls
     # to control access.
