@@ -34,7 +34,7 @@ SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 PIP=.venv3/bin/pip3.4 -q
 NOSETESTS=.venv3/bin/nosetests-3.4 -sv
 
-deps: debug packages venv3
+deps: packages venv3
 
 lint: deps
 	charm proof $(CHARM_DIR)
