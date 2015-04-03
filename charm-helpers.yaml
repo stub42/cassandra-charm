@@ -25,3 +25,4 @@ include:
     - contrib.templating.jinja
     - contrib.peerstorage
     - contrib.network.ufw
+    - contrib.unison
