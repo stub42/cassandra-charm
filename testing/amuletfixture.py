@@ -27,7 +27,7 @@ import yaml
 
 
 class AmuletFixture(amulet.Deployment):
-    def __init__(self, series='precise'):
+    def __init__(self, series):
         # We use a wrapper around juju-deployer so we can fix how it is
         # invoked. In particular, turn off all the noise so we can
         # actually read our test output.

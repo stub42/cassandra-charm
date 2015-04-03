@@ -300,14 +300,15 @@ class TestHelpers(TestCaseBase):
 
         # Some OSErrors we log warnings for, and continue.
         for e in (errno.EACCES, errno.ENOENT):
-            write_file.side_effect = OSError(e, 'Whoops')
-            hookenv.log.reset_mock()
-            helpers.set_io_scheduler('fnord', '/foo')
-            hookenv.log.assert_has_calls([call(ANY),
-                                          call(ANY, hookenv.WARNING)])
+            with self.subTest(errno=e):
+                write_file.side_effect = repeat(OSError(e, 'Whoops'))
+                hookenv.log.reset_mock()
+                helpers.set_io_scheduler('fnord', '/foo')
+                hookenv.log.assert_has_calls([call(ANY),
+                                              call(ANY, hookenv.WARNING)])
 
         # Other OSErrors just fail hard.
-        write_file.side_effect = OSError(errno.EFAULT, 'Whoops')
+        write_file.side_effect = iter([OSError(errno.EFAULT, 'Whoops')])
         self.assertRaises(OSError, helpers.set_io_scheduler, 'fnord', '/foo')
 
         # If we are not under lxc, nothing happens at all except a log
@@ -580,22 +581,21 @@ class TestHelpers(TestCaseBase):
         # An error was logged.
         hookenv.log.assert_has_calls([call(ANY, hookenv.ERROR)])
 
-    @patch('helpers.nodetool')
+    @patch('helpers.is_responding')
     @patch('helpers.node_ips')
-    def test_are_all_nodes_responding(self, node_ips, nodetool):
+    def test_are_all_nodes_responding(self, node_ips, is_responding):
         node_ips.return_value = set([sentinel.ip1, sentinel.ip2])
-        nodetool.return_value = sentinel.success
+        is_responding.return_value = sentinel.success
         self.assertTrue(helpers.are_all_nodes_responding())
-        nodetool.assert_has_calls([call(ANY, ip=sentinel.ip1, timeout=5),
-                                   call(ANY, ip=sentinel.ip2, timeout=5)],
-                                  any_order=True)
+        is_responding.assert_has_calls([call(ip=sentinel.ip1, timeout=5),
+                                        call(ip=sentinel.ip2, timeout=5)],
+                                       any_order=True)
 
-    @patch('helpers.nodetool')
+    @patch('helpers.is_responding')
     @patch('helpers.node_ips')
-    def test_are_all_nodes_responding_fail(self, node_ips, nodetool):
+    def test_are_all_nodes_responding_fail(self, node_ips, is_responding):
         node_ips.return_value = set([sentinel.ip1, sentinel.ip2])
-        nodetool.side_effect = iter([sentinel.success,
-                                     subprocess.TimeoutExpired([], 0)])
+        is_responding.side_effect = iter([True, False, Exception('only two')])
         self.assertFalse(helpers.are_all_nodes_responding())
 
     @patch('helpers.configure_cassandra_yaml')
@@ -692,7 +692,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.query')
     @patch('helpers.connect')
     def test_reset_default_password_already_done(self, connect, query):
-        connect().__enter__.side_effect = AuthenticationFailed()
+        connect().__enter__.side_effect = repeat(AuthenticationFailed())
         connect().__exit__.return_value = False
         helpers.reset_default_password()
         self.assertFalse(query.called)  # Nothing happened.
@@ -834,7 +834,7 @@ class TestHelpers(TestCaseBase):
         class Whoops(Exception):
             pass
 
-        session.execute.side_effect = Whoops('Fail')
+        session.execute.side_effect = repeat(Whoops('Fail'))
         self.assertRaises(Whoops, helpers.query, session, sentinel.statement,
                           sentinel.consistency, sentinel.args)
         self.assertEqual(session.execute.call_count, 4)
@@ -1040,7 +1040,7 @@ class TestHelpers(TestCaseBase):
 
         # The expected command was run against the local node.
         check_output.assert_called_once_with(
-            ['nodetool', '--host', '10.20.0.1', 'status', 'system_auth'],
+            ['nodetool', 'status', 'system_auth'],
             universal_newlines=True, stderr=subprocess.STDOUT, timeout=119)
 
         # The output was emitted.
@@ -1230,7 +1230,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.get_pid_from_file')
     def test_is_cassandra_running_invalid_pid(self, get_pid_from_file, exists):
         # get_pid_from_file raises a ValueError if the pid is illegal.
-        get_pid_from_file.side_effect = ValueError('Whoops')
+        get_pid_from_file.side_effect = repeat(ValueError('Whoops'))
         exists.return_value = True  # The pid file is there, just insane.
 
         # is_cassandra_running() fails hard in this case, since we
@@ -1245,7 +1245,7 @@ class TestHelpers(TestCaseBase):
         # get_pid_from_file raises a ValueError if the pid is illegal.
         get_pid_from_file.return_value = sentinel.pid_file
         exists.return_value = True  # The pid file is there
-        kill.side_effect = ProcessLookupError()  # But the process isn't
+        kill.side_effect = repeat(ProcessLookupError())  # The process isn't
         self.assertFalse(helpers.is_cassandra_running())
 
     @patch('os.kill')
@@ -1256,7 +1256,7 @@ class TestHelpers(TestCaseBase):
         # get_pid_from_file raises a ValueError if the pid is illegal.
         get_pid_from_file.return_value = sentinel.pid_file
         exists.return_value = True  # The pid file is there
-        kill.side_effect = PermissionError()  # But the process isn't
+        kill.side_effect = repeat(PermissionError())  # But the process isn't
         self.assertRaises(PermissionError, helpers.is_cassandra_running)
 
     @patch('time.sleep')
@@ -1296,7 +1296,7 @@ class TestHelpers(TestCaseBase):
                                            exists, subprocess_call, kill):
         get_pid_from_file.return_value = sentinel.pid_file
         exists.return_value = True  # The pid file is there
-        subprocess_call.side_effect = RuntimeError('whoops')
+        subprocess_call.side_effect = repeat(RuntimeError('whoops'))
         # Weird errors are reraised.
         self.assertRaises(RuntimeError, helpers.is_cassandra_running)
 
@@ -1467,6 +1467,7 @@ class TestHelpers(TestCaseBase):
         helpers.set_bootstrapped(False)
         self.assertFalse(helpers.is_bootstrapped())
 
+    @patch('charmhelpers.contrib.unison.collect_authed_hosts')
     @patch('helpers.seed_ips')
     @patch('helpers.peer_ips')
     @patch('helpers.node_ips')
@@ -1476,10 +1477,11 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.is_bootstrapped')
     def test_pre_bootstrap(self, is_bootstrapped, num_peers,
                            are_nodes_responding, nuke_all,
-                           node_ips, peer_ips, seed_ips):
+                           node_ips, peer_ips, seed_ips, authed_ips):
         is_bootstrapped.return_value = False
         num_peers.return_value = 1
         are_nodes_responding.return_value = True
+        authed_ips.return_value = ['1.1.1.1']
         node_ips.return_value = set(['1.1.1.1'])
         peer_ips.return_value = set(['1.1.1.1'])
         seed_ips.return_value = set(['1.1.1.1'])

@@ -57,6 +57,7 @@ def get_service_definitions():
                          actions.set_unit_zero_bootstrapped,
                          actions.shutdown_before_joining_peers,
                          actions.configure_firewall,
+                         actions.grant_ssh_access,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
                          actions.publish_cluster_relation,

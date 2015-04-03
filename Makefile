@@ -112,8 +112,8 @@ debug:
 
 packages: .stamp-packages
 .stamp-packages:
-	# Install bootstrap debs, and Python packages not available
-	# via pip.
+	# Install bootstrap debs, and Python packages used by the charm
+	# to ensure versions match.
 	sudo add-apt-repository -y ppa:stub/juju
 	sudo apt-get update
 	sudo apt-get install -y \
@@ -134,10 +134,11 @@ venv3: packages .stamp-venv3
 
 	echo 'pip: ' `which pip`
 
-	# Pip install packages.
+	# Pip install packages needed by the test suite but not used
+	# by the charm.
 	$(PIP) install bcrypt cassandra-driver blist
 	$(PIP) install --upgrade -I nose flake8
-	$(PIP) install --upgrade coverage amulet
+	$(PIP) install --upgrade coverage amulet mock
 
 	echo 'nosetests:' `which nosetests`
 	echo 'flake8:' `which flake8`

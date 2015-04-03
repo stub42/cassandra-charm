@@ -18,6 +18,7 @@
 
 import errno
 import functools
+from itertools import repeat
 import os.path
 import re
 import shutil
@@ -253,7 +254,8 @@ class TestsActions(TestCaseBase):
     @patch('subprocess.check_call')
     @patch('charmhelpers.core.host.write_file')
     def test_reset_sysctl_expected_fails(self, write_file, check_call):
-        check_call.side_effect = OSError(errno.EACCES, 'Permission Denied')
+        check_call.side_effect = repeat(OSError(errno.EACCES,
+                                                'Permission Denied'))
         actions.reset_sysctl('')
         # A warning is generated if permission denied was raised.
         hookenv.log.assert_any_call(ANY, hookenv.WARNING)
@@ -263,7 +265,7 @@ class TestsActions(TestCaseBase):
     def test_reset_sysctl_fails_badly(self, write_file, check_call):
         # Other OSErrors are reraised since we don't know how to handle
         # them.
-        check_call.side_effect = OSError(errno.EFAULT, 'Whoops')
+        check_call.side_effect = repeat(OSError(errno.EFAULT, 'Whoops'))
         self.assertRaises(OSError, actions.reset_sysctl, '')
 
     @patch('subprocess.check_call')
@@ -686,7 +688,8 @@ class TestsActions(TestCaseBase):
         # unpredictably.
         get_peers.return_value = ['service/1', 'service/2']
         hookenv.local_unit.return_value = 'service/99'
-        hookenv.relation_get.side_effect = subprocess.CalledProcessError(1, '')
+        hookenv.relation_get.side_effect = repeat(
+            subprocess.CalledProcessError(1, ''))
         actions._publish_database_relation('database:1', sentinel.superuser)
         self.assertFalse(hookenv.relation_set.called)
 
@@ -694,7 +697,8 @@ class TestsActions(TestCaseBase):
         # us, something is very wrong and the exception propagated.
         get_peers.return_value = ['service/1', 'service/2']
         hookenv.local_unit.return_value = 'service/0'
-        hookenv.relation_get.side_effect = subprocess.CalledProcessError(1, '')
+        hookenv.relation_get.side_effect = repeat(
+            subprocess.CalledProcessError(1, ''))
         self.assertRaises(subprocess.CalledProcessError,
                           actions._publish_database_relation,
                           'database:1', sentinel.superuser)

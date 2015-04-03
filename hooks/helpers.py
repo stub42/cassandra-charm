@@ -37,6 +37,7 @@ import cassandra.cluster
 import cassandra.query
 import yaml
 
+from charmhelpers.contrib import unison
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
@@ -146,8 +147,7 @@ def seed_ips():
 
     relid = rollingrestart.get_peer_relation_id()
     return set(hookenv.relation_get('private-address', seed, relid)
-               for seed in seeds
-               if is_bootstrapped(seed))
+               for seed in seeds if is_bootstrapped(seed))
 
 
 def actual_seed_ips():
@@ -234,7 +234,7 @@ def set_io_scheduler(io_scheduler, directory):
         try:
             host.write_file(sys_file, io_scheduler.encode('ascii'),
                             perms=0o644)
-        except Exception as e:
+        except OSError as e:
             if e.errno == errno.EACCES:
                 hookenv.log("Got Permission Denied trying to set the "
                             "IO scheduler at {}. We may be in an LXC. "
@@ -412,14 +412,26 @@ def start_cassandra():
     raise SystemExit(1)
 
 
+def is_responding(ip, port=None, timeout=5):
+    if port is None:
+        port = hookenv.config()['storage_port']
+    try:
+        subprocess.check_output(['nc', '-zw', str(timeout), ip, str(port)],
+                                stderr=subprocess.STDOUT)
+        hookenv.log('{} listening on port {}'.format(ip, port), DEBUG)
+        return True
+    except subprocess.TimeoutExpired:
+        hookenv.log('{} not listening on port {}'.format(ip, port), DEBUG)
+        return False
+
+
 @logged
 def are_all_nodes_responding():
     all_contactable = True
     for ip in node_ips():
-        try:
-            nodetool('status', ip=ip, timeout=5)
+        if is_responding(ip, timeout=5):
             hookenv.log('{} is responding'.format(ip))
-        except subprocess.TimeoutExpired:
+        else:
             all_contactable = False
             hookenv.log('{} is not responding'.format(ip))
     return all_contactable
@@ -687,9 +699,11 @@ def emit(*args, **kw):
 
 
 def nodetool(*cmd, ip=None, timeout=120):
-    if ip is None:
-        ip = hookenv.unit_private_ip()
-    cmd = ['nodetool', '--host', ip, ] + [str(i) for i in cmd]
+    cmd = ['nodetool'] + [str(i) for i in cmd]
+    if ip is not None:
+        assert ip in unison.collect_authed_hosts(
+            rollingrestart.get_peer_relation_name())
+        cmd = ['sudo', '-Hsu', 'juju_ssh', 'ssh', ip] + cmd
     i = 0
     until = time.time() + timeout
     for _ in backoff('nodetool to work'):
@@ -716,29 +730,18 @@ def nodetool(*cmd, ip=None, timeout=120):
 
 
 def node_ips():
-    '''IP addresses of all nodes in the Cassandra cluster.
-
-    Returns an empty set if the seeds are not responding.
-    '''
+    '''IP addresses of all nodes in the Cassandra cluster.'''
     if is_bootstrapped() or num_peers() == 0:
-        seeds = set([hookenv.unit_private_ip()])
+        # If bootstrapped, or standalone, we trust our local info.
+        raw = nodetool('status', 'system_auth')
     else:
-        # Not bootstrapped and not standalone, so we need to query the
-        # seed for the list of nodes.
-        seeds = set(seed_ips())
-        if len(seeds) > 1:
-            seeds.discard(hookenv.unit_private_ip())
+        # If not bootstrapped, we query a seed.
+        authed_ips = unison.collect_authed_hosts(
+            rollingrestart.get_peer_relation_name())
+        seeds = [ip for ip in seed_ips() if ip in authed_ips]
+        assert seeds, 'No seeds'
+        raw = nodetool('status', 'system_auth', ip=seeds[0])
 
-    raw = None
-    for seed_ip in seeds:
-        try:
-            raw = nodetool('status', 'system_auth', ip=seed_ip, timeout=10)
-            break
-        except subprocess.TimeoutExpired:
-            hookenv.log('Seed {} is not responding.'.format(seed_ip))
-    if raw is None:
-        hookenv.log('No seeds responding. There is no cluster, no nodes')
-        return set()
     ips = set()
     for line in raw.splitlines():
         match = re.search(r'^(\w)([NLJM])\s+([\d\.]+)\s', line)
@@ -856,8 +859,7 @@ def is_cassandra_running():
             # is not running.
             os.kill(pid, 0)
 
-            if subprocess.call(["nodetool", "-h", hookenv.unit_private_ip(),
-                                "status", "system_auth"],
+            if subprocess.call(["nodetool", "status", "system_auth"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
                 hookenv.log(
@@ -1008,6 +1010,13 @@ def set_bootstrapped(flag):
         hookenv.relation_set(relid, bootstrapped=None)
 
 
+def bootstrapped_peers():
+    '''Return the ordered list of bootstrapped peers'''
+    peer_relid = rollingrestart.get_peer_relation_id()
+    return [peer for peer in rollingrestart.get_peers()
+            if hookenv.relation_get('bootstrapped', peer, peer_relid) == '1']
+
+
 def unbootstrapped_peers():
     '''Return the ordered list of unbootstrapped peers'''
     peer_relid = rollingrestart.get_peer_relation_id()
@@ -1051,7 +1060,18 @@ def pre_bootstrap():
     # simultaneously.
     for peer in unbootstrapped_peers():
         if unit_number(peer) < unit_number():
-            hookenv.log("{} is not bootstrapped. Deferring.")
+            hookenv.log("{} is not bootstrapped. Deferring.".format(peer))
+            raise rollingrestart.DeferRestart()
+
+    # Don't attempt to bootstrap until all bootstrapped peers have
+    # authorized us.
+    peer_relname = rollingrestart.get_peer_relation_name()
+    peer_relid = rollingrestart.get_peer_relation_id()
+    authed_ips = unison.collect_authed_hosts(peer_relname)
+    for peer in bootstrapped_peers():
+        peer_ip = hookenv.relation_get('private-address', peer, peer_relid)
+        if peer_ip not in authed_ips:
+            hookenv.log("{} has not authorized us. Deferring.".format(peer))
             raise rollingrestart.DeferRestart()
 
     # Bootstrap fail if we haven't yet opened our ports to all

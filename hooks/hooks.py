@@ -9,6 +9,7 @@ from charmhelpers.core import hookenv
 def bootstrap():
     try:
         import bcrypt  # NOQA: flake8
+        import pip     # NOQA: flake8
     except ImportError:
         packages = ['python3-bcrypt',
                     # These packages are only required for the pip
@@ -17,14 +18,14 @@ def bootstrap():
                     'libev4', 'libev-dev']
         fetch.apt_install(packages, fatal=True)
         import bcrypt  # NOQA: flake8
+        import pip     # NOQA: flake8
 
     try:
         import cassandra  # NOQA: flake8
     except ImportError:
         # Alas, the Cassandra driver isn't packaged in Ubuntu so we need
         # to install it via pip.
-        subprocess.check_call(['pip3', 'install',
-                               'cassandra-driver', 'blist'])
+        subprocess.check_call(['pip3', 'install', 'cassandra-driver', 'blist'])
         import cassandra  # NOQA: flake8
 
 

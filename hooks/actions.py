@@ -27,8 +27,9 @@ import urllib.request
 
 from charmhelpers import fetch
 from charmhelpers.contrib.charmsupport import nrpe
-from charmhelpers.contrib.templating import jinja
 from charmhelpers.contrib.network import ufw
+from charmhelpers.contrib.templating import jinja
+from charmhelpers.contrib import unison
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
 from charmhelpers.core.hookenv import ERROR, WARNING
@@ -585,6 +586,16 @@ def shutdown_before_joining_peers():
 
 
 @action
+def grant_ssh_access():
+    '''Grant SSH access to run nodetool on remote nodes.
+
+    This is easier than setting up remote JMX access, and more secure.
+    '''
+    unison.ssh_authorized_peers(rollingrestart.get_peer_relation_name(),
+                                'juju_ssh', ensure_local_user=True)
+
+
+@action
 def configure_firewall():
     '''Configure firewall rules using ufw.
 
@@ -605,10 +616,9 @@ def configure_firewall():
     client_keys = ['native_transport_port', 'rpc_port']
     client_ports = [config[key] for key in client_keys]
 
-    # Peers need replication and JMX access. These protocols do not
-    # require authentication.
-    JMX_PORT = 7199
-    peer_ports = [config['storage_port'], config['ssl_storage_port'], JMX_PORT]
+    # Peers need replication access. This protocols does not
+    # require authentication, so firewall it from other nodes.
+    peer_ports = [config['storage_port'], config['ssl_storage_port']]
 
     # Enable client access from anywhere. Juju and external firewalls
     # can still restrict this further of course (ie. 'juju expose').
