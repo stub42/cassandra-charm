@@ -992,15 +992,12 @@ class TestsActions(TestCaseBase):
         # addresses are clients, getting just Thrift and native.
         ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7000),
                                            call('1.1.0.1', 'any', 7001),
-                                           call('1.1.0.1', 'any', 7199),
 
                                            call('1.1.0.2', 'any', 7000),
                                            call('1.1.0.2', 'any', 7001),
-                                           call('1.1.0.2', 'any', 7199),
 
                                            call('10.20.0.1', 'any', 7000),
-                                           call('10.20.0.1', 'any', 7001),
-                                           call('10.20.0.1', 'any', 7199)],
+                                           call('10.20.0.1', 'any', 7001)],
                                           any_order=True)
 
         # If things change in a later hook, unwanted rules are removed
@@ -1027,15 +1024,12 @@ class TestsActions(TestCaseBase):
         ufw.revoke_access.assert_has_calls([call('1.1.0.1', 'any', 7000),
                                             call('1.1.0.2', 'any', 7000),
                                             call('10.20.0.1', 'any', 7000),
-                                            call('10.20.0.1', 'any', 7001),
-                                            call('10.20.0.1', 'any', 7199)],
+                                            call('10.20.0.1', 'any', 7001)],
                                            any_order=True)
         ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7001),
                                            call('1.1.0.1', 'any', 7002),
-                                           call('1.1.0.1', 'any', 7199),
                                            call('1.1.0.2', 'any', 7001),
-                                           call('1.1.0.2', 'any', 7002),
-                                           call('1.1.0.2', 'any', 7199)],
+                                           call('1.1.0.2', 'any', 7002)],
                                           any_order=True)
 
     @patch('charmhelpers.core.host.write_file')
