@@ -67,7 +67,8 @@ class TestDeploymentBase(unittest.TestCase):
         deployment.setUp()
         cls.deployment = deployment
 
-        deployment.add('cassandra', units=cls.rf)
+        deployment.add('cassandra', units=cls.rf,
+                       constraints=dict(mem="2G"))
         deployment.expose('cassandra')  # Tests need client access.
         config = dict()
         config.update(cls.common_config)
