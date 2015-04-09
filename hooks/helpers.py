@@ -429,7 +429,9 @@ def is_responding(ip, port=None, timeout=5):
 def are_all_nodes_responding():
     all_contactable = True
     for ip in node_ips():
-        if is_responding(ip, timeout=5):
+        if ip == hookenv.unit_private_ip():
+            pass
+        elif is_responding(ip, timeout=5):
             hookenv.log('{} is responding'.format(ip))
         else:
             all_contactable = False
@@ -727,6 +729,8 @@ def nodetool(*cmd, ip=None, timeout=120):
         except subprocess.CalledProcessError as x:
             if i > 1:
                 emit(x.output.expandtabs())  # Expand tabs for juju debug-log.
+            if time.time() >= until:
+                raise
 
 
 def node_ips():
@@ -745,7 +749,8 @@ def node_ips():
     ips = set()
     for line in raw.splitlines():
         match = re.search(r'^(\w)([NLJM])\s+([\d\.]+)\s', line)
-        if match is not None and match.group(2) != 'L':  # Node is not leaving
+        if match is not None and (match.group(1) == 'U'
+                                  or match.group(2) != 'L'):
             ips.add(match.group(3))
     return ips
 
@@ -927,7 +932,10 @@ def set_auth_keyspace_replication(session, settings):
 
 @logged
 def repair_auth_keyspace():
-    nodetool('repair', 'system_auth', timeout=600)
+    # We don't use the nodetool helper here, as we only want one attempt
+    # without a timeout.
+    subprocess.check_call(['nodetool', 'repair', 'system_auth'],
+                          universal_newlines=True, stderr=subprocess.STDOUT)
 
 
 def non_system_keyspaces():
@@ -1171,7 +1179,7 @@ def is_all_normal(timeout=120):
     '''
     is_all_normal = True
     try:
-        raw = nodetool('status', timeout=timeout)
+        raw = nodetool('status', 'system_auth', timeout=timeout)
     except subprocess.TimeoutExpired:
         return False
     node_status_re = re.compile('^(.)([NLJM])\s+([\d\.]+)\s')

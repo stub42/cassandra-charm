@@ -1397,10 +1397,13 @@ class TestHelpers(TestCaseBase):
                                       'WITH REPLICATION = %s',
                                       ConsistencyLevel.QUORUM, (settings,))
 
-    @patch('helpers.nodetool')
-    def test_repair_auth_keyspace(self, nodetool):
+    @patch('subprocess.check_call')
+    def test_repair_auth_keyspace(self, check_call):
         helpers.repair_auth_keyspace()
-        nodetool.assert_called_once_with('repair', 'system_auth', timeout=600)
+        # One attempt, no timeout. Repair can take ages.
+        check_call.assert_called_once_with(
+            ['nodetool', 'repair', 'system_auth'], universal_newlines=True,
+            stderr=subprocess.STDOUT)
 
     @patch('helpers.get_all_database_directories')
     def test_non_system_keyspaces(self, dbdirs):
@@ -1628,7 +1631,7 @@ class TestHelpers(TestCaseBase):
             ''')
         self.assertTrue(helpers.is_all_normal())
 
-        nodetool.assert_called_once_with('status', timeout=ANY)
+        nodetool.assert_called_once_with('status', 'system_auth', timeout=ANY)
 
         nodetool.return_value = 'UN  10.0.3.197 ...'
         self.assertTrue(helpers.is_all_normal())
