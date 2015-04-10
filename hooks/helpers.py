@@ -368,6 +368,7 @@ def get_cassandra_packages():
 
     packages.add('ntp')
     packages.add('run-one')
+    packages.add('netcat')
 
     jre = get_jre()
     if jre == 'oracle':
