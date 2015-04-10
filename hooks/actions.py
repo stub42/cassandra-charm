@@ -296,14 +296,16 @@ def install_oracle_jre():
 def emit_java_version():
     # Log the version for posterity. Could be useful since Oracle JRE
     # security updates are not automated.
-    version = subprocess.check_output(['java', '-version'])
+    version = subprocess.check_output(['java', '-version'],
+                                      universal_newlines=True)
     for line in version.splitlines():
         hookenv.log('JRE: {}'.format(line))
 
 
 @action
 def emit_meminfo():
-    helpers.emit(subprocess.check_output(['free', '--human']))
+    helpers.emit(subprocess.check_output(['free', '--human'],
+                                         universal_newlines=True))
 
 
 @action
