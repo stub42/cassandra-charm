@@ -52,6 +52,7 @@ def get_service_definitions():
              provided_data=[relations.StorageRelation()],
              data_ready=[actions.set_proxy,
                          actions.preinstall,
+                         actions.emit_meminfo,
                          actions.revert_unchangeable_config,
                          actions.store_unit_private_ip,
                          actions.set_unit_zero_bootstrapped,

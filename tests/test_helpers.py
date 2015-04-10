@@ -487,19 +487,19 @@ class TestHelpers(TestCaseBase):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'ntp', 'run-one',
-                                 'openjdk-7-jre-headless']))
+                                 'netcat', 'openjdk-7-jre-headless']))
 
     def test_get_cassandra_packages_oracle_jre(self):
         # Oracle JRE
         hookenv.config()['jre'] = 'oracle'
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'ntp', 'run-one']))
+                            set(['cassandra', 'ntp', 'run-one', 'netcat']))
 
     def test_get_cassandra_packages_dse(self):
         # DataStax Enterprise, and implicit Oracle JRE.
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['dse-full', 'ntp', 'run-one']))
+                            set(['dse-full', 'ntp', 'run-one', 'netcat']))
 
     @patch('helpers.wait_for_normality')
     @patch('helpers.get_cassandra_service')

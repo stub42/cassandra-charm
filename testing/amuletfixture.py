@@ -110,8 +110,9 @@ class AmuletFixture(amulet.Deployment):
             status = self.get_status()
             machines = [m for m in status.get('machines', {}).keys()
                         if m != '0']
-            subprocess.check_output(['juju', 'destroy-machine', '--force']
-                                    + machines, stderr=subprocess.STDOUT)
+            if machines:
+                subprocess.check_output(['juju', 'destroy-machine', '--force']
+                                        + machines, stderr=subprocess.STDOUT)
         fails = dict()
         while True:
             status = self.get_status()

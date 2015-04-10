@@ -302,6 +302,11 @@ def emit_java_version():
 
 
 @action
+def emit_meminfo():
+    helpers.emit(subprocess.check_output(['free', '--human']))
+
+
+@action
 def configure_cassandra_yaml():
     helpers.configure_cassandra_yaml()
 
