@@ -16,7 +16,7 @@
 
 from charmhelpers.core import hookenv
 from charmhelpers.core.hookenv import ERROR
-from charmhelpers.core.services import ServiceManager
+from charmhelpers.core import services
 
 import actions
 import helpers
@@ -61,7 +61,7 @@ def get_service_definitions():
                          actions.grant_ssh_access,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
-                         actions.publish_cluster_relation,
+                         # actions.publish_cluster_relation,
                          actions.swapoff,
                          actions.reset_sysctl,
                          actions.install_oracle_jre,
@@ -74,7 +74,8 @@ def get_service_definitions():
                          actions.reset_all_io_schedulers,
                          actions.nrpe_external_master_relation,
                          actions.maybe_schedule_restart],
-             stop=[actions.stop_cassandra], start=[]),
+             start=[services.open_ports],
+             stop=[actions.stop_cassandra, services.close_ports]),
 
         # Rolling restart. This service will call the restart hook when
         # it is this units turn to restart. This is also where we do
@@ -128,4 +129,4 @@ class RequiresLiveNode:
 
 
 def get_service_manager():
-    return ServiceManager(get_service_definitions())
+    return services.ServiceManager(get_service_definitions())

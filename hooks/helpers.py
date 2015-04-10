@@ -507,7 +507,9 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     # yaml, rather than the service configuration, as it may have been
     # overridden.
     cassandra_yaml = read_cassandra_yaml()
-    addresses = [cassandra_yaml['rpc_address']]
+    address = cassandra_yaml['rpc_address']
+    if address == '0.0.0.0':
+        address = 'localhost'
     port = cassandra_yaml['native_transport_port']
 
     if username is None or password is None:
@@ -522,7 +524,7 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     until = start + timeout
     auth_until = start + auth_timeout
     while True:
-        cluster = cassandra.cluster.Cluster(sorted(addresses), port=port,
+        cluster = cassandra.cluster.Cluster([address], port=port,
                                             auth_provider=auth_provider)
         try:
             session = cluster.connect()
@@ -613,7 +615,7 @@ def create_unit_superuser():
     # Restart cassandra without authentication & listening on localhost.
     wait_for_normality()
     reconfigure_and_restart_cassandra(
-        dict(authenticator='AllowAllAuthenticator', rpc_address='127.0.0.1'))
+        dict(authenticator='AllowAllAuthenticator', rpc_address='localhost'))
     wait_for_normality()
     emit_cluster_info()
     for _ in backoff('superuser creation'):
@@ -681,7 +683,7 @@ def superuser_credentials():
     cqlshrc['authentication']['username'] = username
     cqlshrc['authentication']['password'] = password
     cqlshrc.setdefault('connection', {})
-    cqlshrc['connection']['hostname'] = hookenv.unit_public_ip()
+    cqlshrc['connection']['hostname'] = 'localhost'
     if get_cassandra_version().startswith('2.0'):
         cqlshrc['connection']['port'] = str(config['rpc_port'])
     else:
@@ -819,7 +821,7 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
-    cassandra_yaml['rpc_address'] = hookenv.unit_public_ip()
+    cassandra_yaml['rpc_address'] = '0.0.0.0'
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)

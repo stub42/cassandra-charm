@@ -624,16 +624,16 @@ class TestsActions(TestCaseBase):
             with self.subTest(key=key):
                 self.assertIn(key, combined)
 
-    def test_publish_cluster_relation(self):
-        actions.publish_cluster_relation('')
-        hookenv.relation_set.assert_called_once_with(
-            'cluster:1', {'public-address': '10.30.0.1'})
+    # def test_publish_cluster_relation(self):
+    #     actions.publish_cluster_relation('')
+    #     hookenv.relation_set.assert_called_once_with(
+    #         'cluster:1', {'public-address': '10.30.0.1'})
 
-    @patch('rollingrestart.get_peer_relation_id')
-    def test_publish_cluster_relation_not_yet(self, get_relid):
-        get_relid.return_value = None  # Peer relation not yet joined.
-        actions.publish_cluster_relation('')  # Noop
-        self.assertFalse(hookenv.relation_set.called)
+    # @patch('rollingrestart.get_peer_relation_id')
+    # def test_publish_cluster_relation_not_yet(self, get_relid):
+    #     get_relid.return_value = None  # Peer relation not yet joined.
+    #     actions.publish_cluster_relation('')  # Noop
+    #     self.assertFalse(hookenv.relation_set.called)
 
     @patch('actions._publish_database_relation')
     def test_publish_database_relations(self, publish_db_rel):
