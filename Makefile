@@ -37,6 +37,7 @@ NOSETESTS=.venv3/bin/nosetests-3.4 -sv
 deps: packages venv3
 
 lint: deps
+	date
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402 \
