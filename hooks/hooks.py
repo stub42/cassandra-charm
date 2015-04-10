@@ -8,8 +8,9 @@ from charmhelpers.core import hookenv
 
 def bootstrap():
     try:
-        import bcrypt  # NOQA: flake8
-        import pip     # NOQA: flake8
+        import bcrypt     # NOQA: flake8
+        import pip        # NOQA: flake8
+        import cassandra  # NOQA: flake8
     except ImportError:
         packages = ['python3-bcrypt',
                     # These packages are only required for the pip
@@ -33,6 +34,11 @@ def default_hook():
     # These need to be imported after bootstrap() or required Python
     # packages may not have been installed.
     import definitions
+    from loglog import loglog
+
+    # Only useful for debugging, or perhaps have this enabled with a config
+    # option?
+    loglog('/var/log/cassandra/system.log', prefix='C*: ')
 
     hookenv.log('*** {} Hook Start'.format(hookenv.hook_name()))
     sm = definitions.get_service_manager()

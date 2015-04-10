@@ -106,6 +106,12 @@ class AmuletFixture(amulet.Deployment):
         subprocess.check_output(cmd)
 
     def reset_environment(self, force=False):
+        if force:
+            status = self.get_status()
+            machines = [m for m in status.get('machines', {}).keys()
+                        if m != '0']
+            subprocess.check_output(['juju', 'destroy-machine', '--force']
+                                    + machines, stderr=subprocess.STDOUT)
         fails = dict()
         while True:
             status = self.get_status()
@@ -121,6 +127,9 @@ class AmuletFixture(amulet.Deployment):
                     if unit.get('agent-state', None) == 'error':
                         if force:
                             # If any units have failed hooks, unstick them.
+                            # This should no longer happen now we are
+                            # using the 'destroy-machine --force' command
+                            # earlier.
                             try:
                                 subprocess.check_output(
                                     ['juju', 'resolved', unit_name],

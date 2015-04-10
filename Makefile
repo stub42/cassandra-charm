@@ -38,6 +38,7 @@ deps: packages venv3
 
 lint: deps
 	date
+	free --human
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402 \
