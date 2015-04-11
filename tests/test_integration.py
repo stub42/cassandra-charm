@@ -20,6 +20,7 @@ import configparser
 from functools import wraps
 import glob
 import http.server
+from itertools import count
 import logging
 import multiprocessing
 import os
@@ -109,24 +110,6 @@ class TestDeploymentBase(unittest.TestCase):
         cls.deployment.tearDown()
         cls.deployment = None
 
-    def setUp(self):
-        cluster = self.cluster()
-        session = cluster.connect()
-        # We create a keyspace with a replication factor equal
-        # to the number of units. This ensures that all records
-        # are replicated to all nodes, and we can cofirm that
-        # all nodes are working by doing an insert with
-        # ConsistencyLevel.ALL.
-        session.execute(
-            SimpleStatement('DROP KEYSPACE IF EXISTS test',
-                            consistency_level=ConsistencyLevel.ALL))
-        q = SimpleStatement('''
-            CREATE KEYSPACE test WITH REPLICATION = {
-                'class': 'SimpleStrategy', 'replication_factor': %s}
-            ''', consistency_level=ConsistencyLevel.ALL)
-        session.execute(q, (self.rf,))
-        cluster.shutdown()
-
     def juju_status(self):
         status_yaml = subprocess.check_output(['juju', 'status',
                                                '--format=yaml'])
@@ -134,7 +117,7 @@ class TestDeploymentBase(unittest.TestCase):
             return None
         return yaml.safe_load(status_yaml)
 
-    def cluster(self, username=None, password=None, hosts=None):
+    def cluster(self, username=None, password=None, hosts=None, port=9042):
         status = self.juju_status()
 
         if username is None or password is None:
@@ -150,17 +133,18 @@ class TestDeploymentBase(unittest.TestCase):
         auth_provider = PlainTextAuthProvider(username=username,
                                               password=password)
 
-        # Get the IP addresses
         if hosts is None:
+            # Get the IP addresses
             hosts = []
             for unit, d in status['services']['cassandra']['units'].items():
                 hosts.append(d['public-address'])
-        cluster = Cluster(hosts, auth_provider=auth_provider)
+        cluster = Cluster(hosts, auth_provider=auth_provider, port=port)
         self.addCleanup(cluster.shutdown)
         return cluster
 
     def session(self):
-        session = self.cluster().connect('test')
+        '''A session using the server's superuser credentials.'''
+        session = self.cluster().connect()
         self.addCleanup(session.shutdown)
         return session
 
@@ -173,15 +157,32 @@ class TestDeploymentBase(unittest.TestCase):
         '''
         relinfo = self.get_client_relinfo(relname)
         self.assertIn('host', relinfo.keys())
-        hosts = [relinfo['host']]
-        port = int(relinfo['native_transport_port'])
-        auth_provider = PlainTextAuthProvider(username=relinfo['username'],
-                                              password=relinfo['password'])
-        cluster = Cluster(hosts, auth_provider=auth_provider, port=port)
-        self.addCleanup(cluster.shutdown)
-        session = cluster.connect('test')
+        cluster = self.cluster(relinfo['username'],
+                               relinfo['password'],
+                               [relinfo['host']],
+                               int(relinfo['native_transport_port']))
+        session = cluster.connect()
         self.addCleanup(session.shutdown)
         return session
+
+    keyspace_ids = count()
+
+    def new_keyspace(self, session, rf=None):
+        if rf is None:
+            # We create a keyspace with a replication factor equal
+            # to the number of units. This ensures that all records
+            # are replicated to all nodes, and we can cofirm that
+            # all nodes are working by doing an insert with
+            # ConsistencyLevel.ALL.
+            rf = self.rf
+        keyspace = 'test{}'.format(next(TestDeploymentBase.keyspace_ids))
+        q = SimpleStatement(
+            'CREATE KEYSPACE {} WITH REPLICATION ='.format(keyspace) +
+            "{'class': 'SimpleStrategy', 'replication_factor': %s}",
+            consistency_level=ConsistencyLevel.ALL)
+        session.execute(q, (rf,))
+        session.set_keyspace(keyspace)
+        return keyspace
 
     def get_client_relinfo(self, relname):
         # We only need one unit, even if rf > 1
@@ -213,16 +214,23 @@ class Test1UnitDeployment(TestDeploymentBase):
     def test_basics_unit_superuser(self):
         # Basic tests using unit superuser credentials
         session = self.session()
+        self.new_keyspace(session)
         self._test_database_basics(session)
 
     def test_basics_client_relation(self):
+        # Create a keyspace using superuser credentials
+        super_session = self.session()
+        keyspace = self.new_keyspace(super_session)
+
         # Basic tests using standard client relation credentials.
         session = self.client_session('database')
+        session.set_keyspace(keyspace)
         self._test_database_basics(session)
 
     def test_basics_client_admin_relation(self):
         # Basic tests using administrative client relation credentials.
         session = self.client_session('database-admin')
+        self.new_keyspace(session)
         self._test_database_basics(session)
 
     def _test_database_basics(self, session):
@@ -321,19 +329,14 @@ class Test1UnitDeployment(TestDeploymentBase):
         # data in it so each node will have some.
         cluster = self.cluster()
         s = cluster.connect()
-        s.execute('''
-                  CREATE KEYSPACE addndrop WITH REPLICATION = {
-                  'class': 'NetworkTopologyStrategy', 'juju': 1}
-                  ''')
+        self.new_keyspace(s, rf=1)
         s.execute('CREATE TABLE addndrop.dat (x varchar PRIMARY KEY)')
 
         total = self.rf * 50
-        q = SimpleStatement('INSERT INTO addndrop.dat (x) VALUES (%s)',
-                            consistency_level=ConsistencyLevel.QUORUM)
+        q = SimpleStatement('INSERT INTO addndrop.dat (x) VALUES (%s)')
         for _ in range(0, total):
             s.execute(q, (str(uuid.uuid1()),))
         cluster.shutdown()
-        del s
 
         def count():
             until = time.time() + 180

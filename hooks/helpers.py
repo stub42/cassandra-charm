@@ -508,8 +508,6 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     # overridden.
     cassandra_yaml = read_cassandra_yaml()
     address = cassandra_yaml['rpc_address']
-    if address == '0.0.0.0':
-        address = 'localhost'
     port = cassandra_yaml['native_transport_port']
 
     if username is None or password is None:
@@ -683,7 +681,7 @@ def superuser_credentials():
     cqlshrc['authentication']['username'] = username
     cqlshrc['authentication']['password'] = password
     cqlshrc.setdefault('connection', {})
-    cqlshrc['connection']['hostname'] = 'localhost'
+    cqlshrc['connection']['hostname'] = hookenv.unit_public_ip()
     if get_cassandra_version().startswith('2.0'):
         cqlshrc['connection']['port'] = str(config['rpc_port'])
     else:
@@ -821,7 +819,7 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
-    cassandra_yaml['rpc_address'] = '0.0.0.0'
+    cassandra_yaml['rpc_address'] = hookenv.unit_public_ip()
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)

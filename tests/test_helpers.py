@@ -983,7 +983,7 @@ class TestHelpers(TestCaseBase):
                                       password = secret
 
                                       [connection]
-                                      hostname = localhost
+                                      hostname = 10.30.0.1
                                       port = 666
                                       ''').strip()
             with open(cqlshrc_path, 'r') as f:
@@ -1027,7 +1027,7 @@ class TestHelpers(TestCaseBase):
                                       password = secret
 
                                       [connection]
-                                      hostname = localhost
+                                      hostname = 10.30.0.1
                                       port = 777
                                       ''').strip()
             with open(cqlshrc_path, 'r') as f:
@@ -1133,7 +1133,7 @@ class TestHelpers(TestCaseBase):
                 num_tokens: 128
                 partitioner: test_partitioner
                 listen_address: 10.20.0.1
-                rpc_address: 0.0.0.0
+                rpc_address: 10.30.0.1
                 rpc_port: 9160
                 native_transport_port: 9042
                 storage_port: 7000
