@@ -267,6 +267,18 @@ class Test1UnitDeployment(TestDeploymentBase):
         # If rf > 1, the restart will happen in the
         # cluster-relation-changed hook once the unit has determined
         # that it is its turn to restart.
+
+        # First, create a keyspace pre-migration so we can confirm the
+        # data was migrated rather than being reset to an empty system.
+        session = self.session()
+        keyspace = self.new_keyspace(session)
+        session.execute('CREATE TABLE dat (x varchar PRIMARY KEY)')
+        total = self.rf * 50
+        q = SimpleStatement('INSERT INTO dat (x) VALUES (%s)')
+        for _ in range(0, total):
+            session.execute(q, (str(uuid.uuid1()),))
+        session.shutdown()
+
         self.deployment.relate('cassandra:data', 'storage:data')
         self.deployment.wait()
         # Per Bug #1254766 and Bug #1254766, the sentry.wait() above
@@ -283,15 +295,24 @@ class Test1UnitDeployment(TestDeploymentBase):
                         contents = s.directory_contents(
                             '/srv/cassandra_{}/cassandra/data'.format(
                                 unit_num))
-                        expected = set(['system_traces', 'test',
-                                        'system', 'system_auth'])
                         found = set(contents['directories'])
-                        self.assertTrue(expected <= found)
+                        self.assertIn(keyspace, found)
+                        self.assertIn('system', found)
+                        self.assertIn('system_auth', found)
                         break
                     except Exception:
                         if time.time() > timeout:
                             raise
                         time.sleep(5)
+
+        # Confirm no data has been lost, which could happen if we badly
+        # shutdown and memtables were not flushed.
+        session = self.session()
+        session.set_keyspace(keyspace)
+        q = SimpleStatement('SELECT COUNT(*) FROM dat',
+                            consistency_level=ConsistencyLevel.QUORUM)
+        results = session.execute(q)
+        self.assertEqual(results[0][0], total)
 
     def test_cluster_ports_closed(self):
         # The internal Cassandra ports are protected by ufw firewall
@@ -329,11 +350,11 @@ class Test1UnitDeployment(TestDeploymentBase):
         # data in it so each node will have some.
         cluster = self.cluster()
         s = cluster.connect()
-        self.new_keyspace(s, rf=1)
-        s.execute('CREATE TABLE addndrop.dat (x varchar PRIMARY KEY)')
+        keyspace = self.new_keyspace(s, rf=1)
+        s.execute('CREATE TABLE dat (x varchar PRIMARY KEY)')
 
         total = self.rf * 50
-        q = SimpleStatement('INSERT INTO addndrop.dat (x) VALUES (%s)')
+        q = SimpleStatement('INSERT INTO dat (x) VALUES (%s)')
         for _ in range(0, total):
             s.execute(q, (str(uuid.uuid1()),))
         cluster.shutdown()
@@ -343,9 +364,9 @@ class Test1UnitDeployment(TestDeploymentBase):
             while True:
                 cluster = self.cluster()
                 try:
-                    s = cluster.connect()
+                    s = cluster.connect(keyspace)
                     results = s.execute(SimpleStatement(
-                        'SELECT count(*) FROM addndrop.dat',
+                        'SELECT count(*) FROM dat',
                         consistency_level=ConsistencyLevel.QUORUM))
                     return results[0][0]
                 except Unavailable:
