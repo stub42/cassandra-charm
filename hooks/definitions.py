@@ -76,7 +76,7 @@ def get_service_definitions():
                          actions.reset_all_io_schedulers,
                          actions.nrpe_external_master_relation,
                          actions.maybe_schedule_restart],
-             start=[services.open_ports],
+             start=[],
              stop=[actions.stop_cassandra, services.close_ports]),
 
         # Rolling restart. This service will call the restart hook when
