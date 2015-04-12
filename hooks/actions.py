@@ -453,16 +453,6 @@ def reset_all_io_schedulers():
     helpers.reset_all_io_schedulers()
 
 
-# @action
-# def publish_cluster_relation():
-#     # Per Bug #1409763, this functionality is an action rather than a
-#     # provided_data item.
-#     relid = rollingrestart.get_peer_relation_id()
-#     if relid:
-#         hookenv.relation_set(relid,
-#                              {'public-address': hookenv.unit_public_ip()})
-
-
 def _publish_database_relation(relid, superuser):
     # Due to Bug #1409763, this functionality is as action rather than a
     # provided_data item.

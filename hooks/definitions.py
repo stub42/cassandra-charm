@@ -57,11 +57,13 @@ def get_service_definitions():
                          actions.store_unit_private_ip,
                          actions.set_unit_zero_bootstrapped,
                          actions.shutdown_before_joining_peers,
+                         # Must open ports before attempting bind to the
+                         # public ip address.
+                         services.open_ports,
                          actions.configure_firewall,
                          actions.grant_ssh_access,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
-                         # actions.publish_cluster_relation,
                          actions.swapoff,
                          actions.reset_sysctl,
                          actions.install_oracle_jre,
