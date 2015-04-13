@@ -819,7 +819,9 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
-    cassandra_yaml['rpc_address'] = hookenv.unit_public_ip()
+    cassandra_yaml['rpc_address'] = '0.0.0.0'
+    if not get_cassandra_version().startswith('2.0'):
+        cassandra_yaml['broadcast_rpc_address'] = hookenv.unit_public_ip()
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)

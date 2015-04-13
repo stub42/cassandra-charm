@@ -59,7 +59,6 @@ def get_service_definitions():
                          actions.shutdown_before_joining_peers,
                          # Must open ports before attempting bind to the
                          # public ip address.
-                         services.open_ports,
                          actions.configure_firewall,
                          actions.grant_ssh_access,
                          actions.add_implicit_package_signing_keys,
@@ -76,7 +75,7 @@ def get_service_definitions():
                          actions.reset_all_io_schedulers,
                          actions.nrpe_external_master_relation,
                          actions.maybe_schedule_restart],
-             start=[],
+             start=[services.open_ports],
              stop=[actions.stop_cassandra, services.close_ports]),
 
         # Rolling restart. This service will call the restart hook when
