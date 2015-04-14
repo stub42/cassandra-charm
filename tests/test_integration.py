@@ -351,7 +351,9 @@ class Test1UnitDeployment(TestDeploymentBase):
         cluster = self.cluster()
         s = cluster.connect()
         keyspace = self.new_keyspace(s, rf=1)
-        s.execute('CREATE TABLE dat (x varchar PRIMARY KEY)')
+        q = SimpleStatement('CREATE TABLE dat (x varchar PRIMARY KEY)',
+                            consistency_level=ConsistencyLevel.ALL)
+        s.execute(q)
 
         total = self.rf * 50
         q = SimpleStatement('INSERT INTO dat (x) VALUES (%s)')

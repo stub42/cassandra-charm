@@ -508,6 +508,8 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     # overridden.
     cassandra_yaml = read_cassandra_yaml()
     address = cassandra_yaml['rpc_address']
+    if address == '0.0.0.0':
+        address = 'localhost'
     port = cassandra_yaml['native_transport_port']
 
     if username is None or password is None:
