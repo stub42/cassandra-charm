@@ -1465,9 +1465,13 @@ class TestHelpers(TestCaseBase):
                                       'WITH REPLICATION = %s',
                                       ConsistencyLevel.QUORUM, (settings,))
 
+    @patch('helpers.wait_for_agreed_schema')
     @patch('subprocess.check_call')
-    def test_repair_auth_keyspace(self, check_call):
+    def test_repair_auth_keyspace(self, check_call, wait_for_schema):
         helpers.repair_auth_keyspace()
+        # First, we waited for schema sync to try to ensure
+        # repair does not explode.
+        wait_for_schema.assert_called_once_with()
         # One attempt, no timeout. Repair can take ages.
         check_call.assert_called_once_with(
             ['nodetool', 'repair', 'system_auth'], universal_newlines=True,

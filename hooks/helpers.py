@@ -937,6 +937,9 @@ def set_auth_keyspace_replication(session, settings):
 
 @logged
 def repair_auth_keyspace():
+    # First, wait for schema agreement. Attempting to repair a keyspace
+    # with inconsistent replication settings will fail.
+    wait_for_agreed_schema()
     # We don't use the nodetool helper here, as we only want one attempt
     # without a timeout.
     subprocess.check_call(['nodetool', 'repair', 'system_auth'],
