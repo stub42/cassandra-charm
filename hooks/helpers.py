@@ -147,7 +147,7 @@ def seed_ips():
 
     relid = rollingrestart.get_peer_relation_id()
     return set(hookenv.relation_get('private-address', seed, relid)
-               for seed in seeds if is_bootstrapped(seed))
+               for seed in seeds)
 
 
 def actual_seed_ips():
@@ -1064,16 +1064,14 @@ def pre_bootstrap():
         hookenv.log("No peers, no cluster, no bootstrapping")
         return
 
-    if not seed_ips():
-        hookenv.log("No seeds available. Deferring.")
-        raise rollingrestart.DeferRestart()
-
     # Don't attempt to bootstrap until all lower numbered units have
     # bootstrapped. We need to do this as the rollingrestart algorithm
     # fails during initial cluster setup, where two or more newly joined
     # units may restart (and bootstrap) at the same time and exceed
     # Cassandra's limits on the number of nodes that may bootstrap
-    # simultaneously.
+    # simultaneously. In addition, this ensures we wait until there is
+    # at least one seed bootstrapped, as the three first units will be
+    # seeds.
     for peer in unbootstrapped_peers():
         if unit_number(peer) < unit_number():
             hookenv.log("{} is not bootstrapped. Deferring.".format(peer))
