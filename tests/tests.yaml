@@ -5,4 +5,8 @@ virtualenv: false
 # sources: []
 # packages: []
 makefile:
-    - test
+    - lint
+    - unittest
+    - Test1UnitDeployment
+    - Test3UnitDeployment
+    - Test21Deployment

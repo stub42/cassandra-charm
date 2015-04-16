@@ -56,11 +56,21 @@ test: unittest
 	AMULET_TIMEOUT=3600 \
 	$(NOSETESTS) tests.test_integration
 	
-ftest: unittest
+ftest: unittest Test1UnitDeployment
+Test1UnitDeployment: deps
+	date
 	AMULET_TIMEOUT=3600 \
 	$(NOSETESTS) tests.test_integration:Test1UnitDeployment
-
-3test: unittest
+	
+21test: unittest Test21Deployment
+Test21Deployment: deps
+	date
+	AMULET_TIMEOUT=3600 \
+	$(NOSETESTS) tests.test_integration:Test21Deployment
+	
+3test: unittest Test3UnitDeployment
+Test3UnitDeployment: deps
+	date
 	AMULET_TIMEOUT=3600 \
 	$(NOSETESTS) tests.test_integration:Test3UnitDeployment
 
