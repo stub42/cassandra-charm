@@ -197,16 +197,6 @@ class TestHelpers(TestCaseBase):
                                                      '10.20.0.2',
                                                      '10.20.0.3']))
 
-    @patch('helpers.is_bootstrapped')
-    @patch('rollingrestart.get_peers')
-    def test_seed_ips_only_bootstrapped(self, get_peers, is_bootstrapped):
-        hookenv.local_unit.return_value = 'service/1'
-        get_peers.return_value = set(['service/2', 'service/3', 'service/4'])
-        is_bootstrapped.return_value = False
-
-        # The first three units are used as the seed list.
-        self.assertSetEqual(helpers.seed_ips(), set())
-
     @patch('rollingrestart.get_peers')
     def test_seed_ips_alone(self, get_peers):
         hookenv.local_unit.return_value = 'service/1'
@@ -1465,17 +1455,17 @@ class TestHelpers(TestCaseBase):
                                       'WITH REPLICATION = %s',
                                       ConsistencyLevel.QUORUM, (settings,))
 
+    @patch('helpers.nodetool')
     @patch('helpers.wait_for_agreed_schema')
-    @patch('subprocess.check_call')
-    def test_repair_auth_keyspace(self, check_call, wait_for_schema):
+    def test_repair_auth_keyspace(self, wait_for_schema, nodetool):
         helpers.repair_auth_keyspace()
         # First, we waited for schema sync to try to ensure
         # repair does not explode.
         wait_for_schema.assert_called_once_with()
-        # One attempt, no timeout. Repair can take ages.
-        check_call.assert_called_once_with(
-            ['nodetool', 'repair', 'system_auth'], universal_newlines=True,
-            stderr=subprocess.STDOUT)
+        # The repair operation may still fail, and I am currently regularly
+        # seeing 'snapshot creation' errors. Repair also takes ages with
+        # Cassandra 2.0. So retry until success, up to 1 hour.
+        nodetool.assert_called_once_with('repair', 'system_auth', timeout=3600)
 
     @patch('helpers.get_all_database_directories')
     def test_non_system_keyspaces(self, dbdirs):
@@ -1565,18 +1555,6 @@ class TestHelpers(TestCaseBase):
 
         # Existing node destroyed.
         nuke_all.assert_called_once_with()
-
-    @patch('helpers.nuke_local_database')
-    @patch('helpers.are_all_nodes_responding')
-    @patch('helpers.num_peers')
-    @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_uncont(self, is_bootstrapped, num_peers,
-                                  are_nodes_resp, nuke_all):
-        is_bootstrapped.return_value = False
-        num_peers.return_value = 1
-        # A potentially required node is not contactable.
-        are_nodes_resp.return_value = False
-        self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
 
     @patch('helpers.unbootstrapped_peers')
     @patch('helpers.nuke_local_database')

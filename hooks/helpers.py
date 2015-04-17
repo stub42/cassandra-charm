@@ -714,8 +714,10 @@ def nodetool(*cmd, ip=None, timeout=120):
     for _ in backoff('nodetool to work'):
         i += 1
         try:
+            if timeout is not None:
+                timeout = max(0, until - time.time())
             raw = subprocess.check_output(cmd, universal_newlines=True,
-                                          timeout=max(0, until - time.time()),
+                                          timeout=timeout,
                                           stderr=subprocess.STDOUT)
 
             # Work around CASSANDRA-8776.
@@ -746,7 +748,8 @@ def node_ips():
         authed_ips = unison.collect_authed_hosts(
             rollingrestart.get_peer_relation_name())
         seeds = [ip for ip in seed_ips() if ip in authed_ips]
-        assert seeds, 'No seeds'
+        if not seeds:
+            return set()  # Not bootstrapped, and nobody else is either.
         raw = nodetool('status', 'system_auth', ip=seeds[0])
 
     ips = set()
@@ -940,10 +943,10 @@ def repair_auth_keyspace():
     # First, wait for schema agreement. Attempting to repair a keyspace
     # with inconsistent replication settings will fail.
     wait_for_agreed_schema()
-    # We don't use the nodetool helper here, as we only want one attempt
-    # without a timeout.
-    subprocess.check_call(['nodetool', 'repair', 'system_auth'],
-                          universal_newlines=True, stderr=subprocess.STDOUT)
+    # Repair takes a long time, and may need to be retried due to 'snapshot
+    # creation' errors, but should certainly complete within an hour since
+    # the keyspace is tiny.
+    nodetool('repair', 'system_auth', timeout=3600)
 
 
 def non_system_keyspaces():
@@ -1063,6 +1066,10 @@ def pre_bootstrap():
     if num_peers() == 0:
         hookenv.log("No peers, no cluster, no bootstrapping")
         return
+
+    if not seed_ips():
+        hookenv.log("No seeds available. Deferring bootstrap.")
+        raise rollingrestart.DeferRestart()
 
     # Don't attempt to bootstrap until all lower numbered units have
     # bootstrapped. We need to do this as the rollingrestart algorithm
