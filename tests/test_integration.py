@@ -356,7 +356,8 @@ class Test1UnitDeployment(TestDeploymentBase):
         s.execute(q)
 
         total = self.rf * 50
-        q = SimpleStatement('INSERT INTO dat (x) VALUES (%s)')
+        q = SimpleStatement('INSERT INTO dat (x) VALUES (%s)',
+                            consistency_level=ConsistencyLevel.QUORUM)
         for _ in range(0, total):
             s.execute(q, (str(uuid.uuid1()),))
         cluster.shutdown()
@@ -484,8 +485,9 @@ def get_jre_url():
 class TestOracleJREDeployment(Test1UnitDeployment):
     """Basic test with the Oracle JRE.
 
-    This test is slow, as downloads of the Oracle JRE have been made
-    deliberately uncachable.
+    Unfortunately these tests cannot be run by the automatic test runners,
+    as the Oracle JRE is protected from public download by Oracle's
+    click-through license agreement.
     """
     rf = 1
     test_config = dict(jre='Oracle', edition='community',
@@ -500,14 +502,8 @@ class TestOracleJREDeployment(Test1UnitDeployment):
 class TestDSEDeployment(Test1UnitDeployment):
     """Tests run a single node DataStax Enterprise cluster.
 
-    These are *very slow* tests, due to the DSE and Oracle JRE
-    downloads. In addition, the DSE_SOURCE environment variable
-    needs to be set as DataStax do not allow unauthenticated
-    downloads of their software.
-
-    Due to the authentication requirement, these tests will not be run
-    by the automatic test runners and we can accordingly expect DSE
-    support in this charm to break on occasions.
+    Unfortunately these tests cannot be run by the automatic test
+    runners, as the DSE packages are not available for public download.
     """
     rf = 1
     test_config = dict(
