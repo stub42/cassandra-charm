@@ -59,25 +59,25 @@ test: unittest
 ftest: unittest Test1UnitDeployment
 Test1UnitDeployment: deps
 	date
-	AMULET_TIMEOUT=3600 \
+	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:Test1UnitDeployment
 	
 21test: unittest Test21Deployment
 Test21Deployment: deps
 	date
-	AMULET_TIMEOUT=3600 \
+	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:Test21Deployment
 	
 3test: unittest Test3UnitDeployment
 Test3UnitDeployment: deps
 	date
-	AMULET_TIMEOUT=3600 \
+	AMULET_TIMEOUT=7200 \
 	$(NOSETESTS) tests.test_integration:Test3UnitDeployment
 
 # Place a copy of the Oracle Java SE 7 Server Runtime tarball in ./lib
 # to run these tests.
 jretest: unittest
-	AMULET_TIMEOUT=3600 \
+	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:TestOracleJREDeployment
 
 # You need the Oracle JRE (per jretest) and set the DSE_SOURCE environment
@@ -88,7 +88,7 @@ jretest: unittest
 # for huge downloads to complete. Alternatively, mirror the DataStax
 # packages into your own private archive.
 dsetest: unittest
-	AMULET_TIMEOUT=3600 \
+	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:TestDSEDeployment
 
 coverage: lint
