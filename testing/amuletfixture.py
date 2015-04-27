@@ -108,7 +108,7 @@ class AmuletFixture(amulet.Deployment):
         if timeout:
             cmd = ['timeout', str(timeout)] + cmd
         try:
-            subprocess.check_output(cmd)
+            subprocess.check_output(cmd, universal_newlines=True)
         except subprocess.CalledProcessError as x:
             print(x.output)
             raise
