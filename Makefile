@@ -32,7 +32,7 @@ export PATH:=$(VENV3)/bin:$(PATH)
 SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 
 PIP=.venv3/bin/pip3.4 -q
-NOSETESTS=ts .venv3/bin/nosetests-3.4 -sv
+NOSETESTS=.venv3/bin/nosetests-3.4 -sv
 
 deps: packages venv3
 
@@ -60,25 +60,25 @@ ftest: unittest Test1UnitDeployment
 Test1UnitDeployment: deps
 	date
 	AMULET_TIMEOUT=5400 \
-	$(NOSETESTS) tests.test_integration:Test1UnitDeployment
+	$(NOSETESTS) tests.test_integration:Test1UnitDeployment 2>&1 | ts
 	
 21test: unittest Test21Deployment
 Test21Deployment: deps
 	date
 	AMULET_TIMEOUT=5400 \
-	$(NOSETESTS) tests.test_integration:Test21Deployment
+	$(NOSETESTS) tests.test_integration:Test21Deployment 2>&1 | ts
 	
 3test: unittest Test3UnitDeployment
 Test3UnitDeployment: deps
 	date
 	AMULET_TIMEOUT=7200 \
-	$(NOSETESTS) tests.test_integration:Test3UnitDeployment
+	$(NOSETESTS) tests.test_integration:Test3UnitDeployment 2>&1 | ts
 
 # Place a copy of the Oracle Java SE 7 Server Runtime tarball in ./lib
 # to run these tests.
 jretest: unittest
 	AMULET_TIMEOUT=5400 \
-	$(NOSETESTS) tests.test_integration:TestOracleJREDeployment
+	$(NOSETESTS) tests.test_integration:TestOracleJREDeployment 2>&1 | ts
 
 # You need the Oracle JRE (per jretest) and set the DSE_SOURCE environment
 # variable for this to work:
@@ -89,7 +89,7 @@ jretest: unittest
 # packages into your own private archive.
 dsetest: unittest
 	AMULET_TIMEOUT=5400 \
-	$(NOSETESTS) tests.test_integration:TestDSEDeployment
+	$(NOSETESTS) tests.test_integration:TestDSEDeployment 2>&1 | ts
 
 coverage: lint
 	$(NOSETESTS) \

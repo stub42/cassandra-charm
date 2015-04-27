@@ -92,8 +92,12 @@ class AmuletFixture(amulet.Deployment):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
     def get_status(self):
-        raw = subprocess.check_output(['juju', 'status', '--format=json'],
-                                      universal_newlines=True)
+        try:
+            raw = subprocess.check_output(['juju', 'status', '--format=json'],
+                                          universal_newlines=True)
+        except subprocess.CalledProcessError as x:
+            print(x.output)
+            raise
         if raw:
             return json.loads(raw)
         return None
@@ -103,7 +107,11 @@ class AmuletFixture(amulet.Deployment):
         cmd = ['juju', 'wait']
         if timeout:
             cmd = ['timeout', str(timeout)] + cmd
-        subprocess.check_output(cmd)
+        try:
+            subprocess.check_output(cmd)
+        except subprocess.CalledProcessError as x:
+            print(x.output)
+            raise
 
     def reset_environment(self, force=False):
         if force:
@@ -123,9 +131,9 @@ class AmuletFixture(amulet.Deployment):
                 break
             for service_name, service in service_items:
                 if service.get('life', '') not in ('dying', 'dead'):
-                    subprocess.check_output(['juju', 'destroy-service',
-                                             service_name],
-                                            stderr=subprocess.STDOUT)
+                    subprocess.call(['juju', 'destroy-service', service_name],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT)
                 for unit_name, unit in service.get('units', {}).items():
                     if unit.get('agent-state', None) == 'error':
                         if force:
