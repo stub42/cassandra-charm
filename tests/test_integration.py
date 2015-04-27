@@ -362,7 +362,7 @@ class Test1UnitDeployment(TestDeploymentBase):
             s.execute(q, (str(uuid.uuid1()),))
         cluster.shutdown()
 
-        def count():
+        def count(expected):
             until = time.time() + 180
             while True:
                 cluster = self.cluster()
@@ -371,21 +371,24 @@ class Test1UnitDeployment(TestDeploymentBase):
                     results = s.execute(SimpleStatement(
                         'SELECT count(*) FROM dat',
                         consistency_level=ConsistencyLevel.QUORUM))
-                    return results[0][0]
+                    found = results[0][0]
+                    if found == expected or time.time() > until:
+                        return found
+                    time.sleep(0.2)
                 except Unavailable:
                     if time.time() > until:
                         raise
                 finally:
                     cluster.shutdown()
 
-        self.assertEqual(count(), total)
+        self.assertEqual(count(total), total)
 
         self.deployment.add_unit('cassandra')
         self.deployment.wait()
         status = self.juju_status()
         unit = sorted(status['services']['cassandra']['units'].keys())[-1]
         try:
-            self.assertEqual(count(), total)
+            self.assertEqual(count(total), total)
         finally:
             # When a node is dropped, it needs to decommission itself and
             # move its data to the remaining nodes so no data is lost.
@@ -396,7 +399,7 @@ class Test1UnitDeployment(TestDeploymentBase):
             self.deployment.remove_unit(unit)
             self.deployment.wait()
 
-        self.assertEqual(count(), total)
+        self.assertEqual(count(total), total)
 
     def _decommission(self, unit):
         until = time.time() + WAIT_TIMEOUT
