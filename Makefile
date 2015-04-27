@@ -32,7 +32,7 @@ export PATH:=$(VENV3)/bin:$(PATH)
 SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 
 PIP=.venv3/bin/pip3.4 -q
-NOSETESTS=.venv3/bin/nosetests-3.4 -sv
+NOSETESTS=ts .venv3/bin/nosetests-3.4 -sv
 
 deps: packages venv3
 
@@ -131,7 +131,7 @@ packages: .stamp-packages
 	sudo apt-get install -y \
 	    python3 python3-pip python3-apt python3-dev python-virtualenv \
 	    charm-tools build-essential libev4 libev-dev libffi-dev \
-	    netcat python3-jinja2 juju-wait
+	    netcat python3-jinja2 juju-wait moreutils
 	touch .stamp-packages
 
 venv3: packages .stamp-venv3
