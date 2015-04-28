@@ -1,7 +1,5 @@
 #!/usr/bin/python3
 
-import subprocess
-
 from charmhelpers import fetch
 from charmhelpers.core import hookenv
 
@@ -9,24 +7,13 @@ from charmhelpers.core import hookenv
 def bootstrap():
     try:
         import bcrypt     # NOQA: flake8
-        import pip        # NOQA: flake8
         import cassandra  # NOQA: flake8
     except ImportError:
-        packages = ['python3-bcrypt',
-                    # These packages are only required for the pip
-                    # install of the Cassandra driver.
-                    'python3-pip', 'build-essential', 'python3-dev',
-                    'libev4', 'libev-dev']
+        packages = ['python3-bcrypt', 'python3-cassandra']
+        fetch.add_source('ppa:stub/cassandra')
+        fetch.apt_update(fatal=True)
         fetch.apt_install(packages, fatal=True)
-        import bcrypt  # NOQA: flake8
-        import pip     # NOQA: flake8
-
-    try:
-        import cassandra  # NOQA: flake8
-    except ImportError:
-        # Alas, the Cassandra driver isn't packaged in Ubuntu so we need
-        # to install it via pip.
-        subprocess.check_call(['pip3', 'install', 'cassandra-driver', 'blist'])
+        import bcrypt     # NOQA: flake8
         import cassandra  # NOQA: flake8
 
 
