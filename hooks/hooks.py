@@ -31,7 +31,3 @@ def default_hook():
     sm = definitions.get_service_manager()
     sm.manage()
     hookenv.log('*** {} Hook Done'.format(hookenv.hook_name()))
-
-if __name__ == '__main__':
-    bootstrap()
-    default_hook()
