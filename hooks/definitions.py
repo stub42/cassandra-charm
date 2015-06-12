@@ -21,7 +21,6 @@ from charmhelpers.core import services
 import actions
 import helpers
 import relations
-import rollingrestart
 
 
 def get_service_definitions():
@@ -48,17 +47,15 @@ def get_service_definitions():
                     config['storage_port'],           # Plaintext replication
                     config['ssl_storage_port']],      # Encrypted replication.
 
-             required_data=[relations.StorageRelation()],
-             provided_data=[relations.StorageRelation()],
+             required_data=[RequiresPeers(),
+                            relations.StorageRelation()],
+             provided_data=[relations.StorageRelation(),
+                            relations.PeerRelation()],
              data_ready=[actions.set_proxy,
                          actions.preinstall,
                          actions.emit_meminfo,
                          actions.revert_unchangeable_config,
                          actions.store_unit_private_ip,
-                         actions.set_unit_zero_bootstrapped,
-                         actions.shutdown_before_joining_peers,
-                         # Must open ports before attempting bind to the
-                         # public ip address.
                          actions.configure_firewall,
                          actions.grant_ssh_access,
                          actions.add_implicit_package_signing_keys,
@@ -69,41 +66,28 @@ def get_service_definitions():
                          actions.install_cassandra_packages,
                          actions.emit_java_version,
                          actions.ensure_cassandra_package_status,
+                         actions.maintain_seeds,
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env,
                          actions.configure_cassandra_rackdc,
                          actions.reset_all_io_schedulers,
                          actions.nrpe_external_master_relation,
-                         actions.maybe_schedule_restart],
+                         actions.maybe_restart],
              start=[services.open_ports],
              stop=[actions.stop_cassandra, services.close_ports]),
-
-        # Rolling restart. This service will call the restart hook when
-        # it is this units turn to restart. This is also where we do
-        # actions done while Cassandra is not running, and where we do
-        # actions that should only be done by one node at a time.
-        rollingrestart.make_service([helpers.stop_cassandra,
-                                     helpers.remount_cassandra,
-                                     helpers.ensure_database_directories,
-                                     helpers.pre_bootstrap,
-                                     helpers.start_cassandra,
-                                     helpers.post_bootstrap,
-                                     helpers.wait_for_agreed_schema,
-                                     helpers.wait_for_normality,
-                                     helpers.emit_describe_cluster,
-                                     helpers.reset_default_password,
-                                     helpers.ensure_unit_superuser,
-                                     helpers.reset_auth_keyspace_replication]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresLiveNode()],
-             data_ready=[actions.publish_database_relations,
+             data_ready=[actions.ensure_unit_superuser,
+                         actions.reset_default_password,
+                         actions.publish_database_relations,
                          actions.publish_database_admin_relations,
                          actions.install_maintenance_crontab,
                          actions.emit_describe_cluster,
                          actions.emit_auth_keyspace_status,
-                         actions.emit_netstats],
+                         actions.emit_netstats,
+                         actions.set_active],
              start=[], stop=[])]
 
 
@@ -113,6 +97,7 @@ class RequiresLiveNode:
 
     def is_live(self):
         if helpers.is_cassandra_running():
+            hookenv.log('Cassandra is running')
             if helpers.is_decommissioned():
                 # Node is decommissioned and will refuse to talk.
                 hookenv.log('Node is decommissioned')

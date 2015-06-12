@@ -58,8 +58,7 @@ class TestDeploymentBase(unittest.TestCase):
     deployment = None
 
     common_config = dict(max_heap_size='96M',
-                         heap_newsize='4M',
-                         post_bootstrap_delay=120)
+                         heap_newsize='4M')
     test_config = dict()
 
     @classmethod

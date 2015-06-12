@@ -41,14 +41,13 @@ lint: deps
 	free --human
 	charm proof $(CHARM_DIR)
 	flake8 \
-	    --ignore=E402 \
+	    --ignore=E402,E265 \
 	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
 
 unittest: lint
 	$(NOSETESTS) \
 	    tests.test_actions        --cover-package=actions \
 	    tests.test_helpers        --cover-package=helpers \
-	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    tests.test_definitions    --cover-package=definitions \
 	    --with-coverage --cover-branches
 
@@ -95,7 +94,6 @@ coverage: lint
 	$(NOSETESTS) \
 	    tests.test_actions        --cover-package=actions \
 	    tests.test_helpers        --cover-package=helpers \
-	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    tests.test_definitions    --cover-package=definitions \
 	    --with-coverage --cover-branches \
 	    --cover-html --cover-html-dir=coverage \

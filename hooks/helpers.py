@@ -20,7 +20,7 @@ from datetime import timedelta
 import errno
 from functools import wraps
 import io
-from itertools import chain
+## from itertools import chain
 import json
 import os.path
 import re
@@ -38,15 +38,18 @@ import cassandra.query
 import yaml
 
 from charmhelpers.contrib import unison
+from charmhelpers.coordinator import Serial
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
 
 import relations
-import rollingrestart
 
 
 RESTART_TIMEOUT = 600
+
+
+coordinator = Serial()
 
 
 def logged(func):
@@ -129,25 +132,8 @@ def ensure_package_status(packages):
 
 
 def seed_ips():
-    '''Return the set of seed ip addresses.
-
-    If this is the only unit in the service, then the local unit's IP
-    address is returned as the only seed.
-
-    If there is more than one unit in the service, then the IP addresses
-    of three lowest numbered peers (if bootstrapped) are returned.
-    '''
-    peers = rollingrestart.get_peers()
-    if not peers:
-        return set([hookenv.unit_private_ip()])
-
-    # The three lowest numbered units are seeds & may include this unit.
-    seeds = sorted(list(peers) + [hookenv.local_unit()],
-                   key=lambda x: int(x.split('/')[-1]))[:3]
-
-    relid = rollingrestart.get_peer_relation_id()
-    return set(hookenv.relation_get('private-address', seed, relid)
-               for seed in seeds)
+    '''Return the set of seed ip addresses.'''
+    return set((hookenv.leader_get('seeds') or '').split(','))
 
 
 def actual_seed_ips():
@@ -382,13 +368,21 @@ def get_cassandra_packages():
     return packages
 
 
+## @logged
+## def stop_cassandra(immediate=False):
+##     if is_cassandra_running():
+##         if not immediate:
+##             # If there are cluster operations in progress, wait until
+##             # they are complete before restarting. This might take days.
+##             wait_for_normality()
+##         host.service_stop(get_cassandra_service())
+##     assert not is_cassandra_running()
+
+
 @logged
-def stop_cassandra(immediate=False):
+def stop_cassandra():
     if is_cassandra_running():
-        if not immediate:
-            # If there are cluster operations in progress, wait until
-            # they are complete before restarting. This might take days.
-            wait_for_normality()
+        hookenv.log('Shutting down Cassandra')
         host.service_stop(get_cassandra_service())
     assert not is_cassandra_running()
 
@@ -400,7 +394,16 @@ def start_cassandra():
 
     actual_seeds = actual_seed_ips()
     assert actual_seeds, 'Attempting to start cassandra with empty seed list'
-    hookenv.log('Starting Cassandra with seeds {!r}'.format(actual_seeds))
+
+    if is_bootstrapped():
+        hookenv.status_set('maintenance',
+                           'Starting Cassandra with seeds '
+                           '{!r}'.format(actual_seeds))
+    else:
+        hookenv.status_set('maintenance',
+                           'Bootstrapping Cassandra with seeds '
+                           '{!r}'.format(actual_seeds))
+
     host.service_start(get_cassandra_service())
 
     # Wait for Cassandra to actually start, or abort.
@@ -409,8 +412,11 @@ def start_cassandra():
         if is_cassandra_running():
             return
         time.sleep(1)
-    hookenv.log('Cassandra failed to start.', ERROR)
-    raise SystemExit(1)
+    hookenv.status_set('blocked', 'Cassandra failed to start')
+    if hookenv.has_juju_version('1.24'):
+        raise SystemExit(0)
+    else:
+        raise SystemExit(1)
 
 
 def is_responding(ip, port=None, timeout=5):
@@ -453,6 +459,7 @@ def remount_cassandra():
     assert not is_cassandra_running()  # Guard against data loss.
     storage = relations.StorageRelation()
     if storage.needs_remount():
+        hookenv.status_set('migrating data to new mountpoint')
         hookenv.config()['bootstrapped_into_cluster'] = False
         if storage.mountpoint is None:
             hookenv.log('External storage AND DATA gone. '
@@ -474,27 +481,6 @@ def ensure_database_directories():
                         [db_dirs['saved_caches_directory']])
     for db_dir in unpacked_db_dirs:
         ensure_database_directory(db_dir)
-
-
-@logged
-def reset_default_password():
-    config = hookenv.config()
-    if config.get('default_admin_password_changed', False):
-        hookenv.log('Default admin password changed in an earlier hook')
-        return
-
-    # If we can connect using the default superuser password
-    # 'cassandra', change it to something random. We do this in a loop
-    # to ensure the hook that calls this is idempotent.
-    try:
-        with connect('cassandra', 'cassandra') as session:
-            hookenv.log('Changing default admin password')
-            query(session, 'ALTER USER cassandra WITH PASSWORD %s',
-                  ConsistencyLevel.QUORUM, (host.pwgen(),))
-    except cassandra.AuthenticationFailed:
-        hookenv.log('Default admin password already changed')
-
-    config['default_admin_password_changed'] = True
 
 
 CONNECT_TIMEOUT = 300
@@ -595,6 +581,7 @@ def ensure_unit_superuser():
     except cassandra.AuthenticationFailed:
         pass
 
+    hookenv.status_set('maintenance', 'Creating unit superuser')
     create_unit_superuser()  # Doesn't exist or can't access, so create it.
 
     with connect():
@@ -613,11 +600,11 @@ def create_unit_superuser():
     hookenv.log('Creating unit superuser {}'.format(username))
 
     # Restart cassandra without authentication & listening on localhost.
-    wait_for_normality()
+    ## wait_for_normality()
     reconfigure_and_restart_cassandra(
         dict(authenticator='AllowAllAuthenticator', rpc_address='localhost'))
-    wait_for_normality()
-    emit_cluster_info()
+    ## wait_for_normality()
+    ## emit_cluster_info()
     for _ in backoff('superuser creation'):
         try:
             with connect() as session:
@@ -641,7 +628,7 @@ def create_unit_superuser():
     # Restart Cassandra with regular config.
     nodetool('flush')  # Ensure our backdoor updates are flushed.
     reconfigure_and_restart_cassandra()
-    wait_for_normality()
+    ## wait_for_normality()
 
 
 def get_cqlshrc_path():
@@ -706,8 +693,7 @@ def emit(*args, **kw):
 def nodetool(*cmd, ip=None, timeout=120):
     cmd = ['nodetool'] + [str(i) for i in cmd]
     if ip is not None:
-        assert ip in unison.collect_authed_hosts(
-            rollingrestart.get_peer_relation_name())
+        assert ip in unison.collect_authed_hosts(coordinator.relid)
         cmd = ['sudo', '-Hsu', 'juju_ssh', 'ssh', ip] + cmd
     i = 0
     until = time.time() + timeout
@@ -745,8 +731,7 @@ def node_ips():
         raw = nodetool('status', 'system_auth')
     else:
         # If not bootstrapped, we query a seed.
-        authed_ips = unison.collect_authed_hosts(
-            rollingrestart.get_peer_relation_name())
+        authed_ips = unison.collect_authed_hosts(coordinator.relid)
         seeds = [ip for ip in seed_ips() if ip in authed_ips]
         if not seeds:
             return set()  # Not bootstrapped, and nobody else is either.
@@ -782,7 +767,9 @@ def num_nodes():
 
 
 def num_peers():
-    return len(rollingrestart.get_peers())
+    if coordinator.relid is not None:
+        return len(hookenv.related_units(coordinator.relid))
+    return 0
 
 
 def read_cassandra_yaml():
@@ -820,6 +807,10 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml.update((k, config[k]) for k in simple_config_keys)
 
     seeds = ','.join(seeds or seed_ips())  # Don't include whitespace!
+    if not seeds:
+        hookenv.status_set('waiting', 'Waiting for a seed node')
+        return
+    hookenv.log('Configuring seeds as {!r}'.format(seeds), DEBUG)
     assert seeds, 'Attempting to configure cassandra with empty seed list'
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
@@ -903,7 +894,6 @@ def reset_all_io_schedulers():
             set_io_scheduler(config['io_scheduler'], d)
 
 
-@logged
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
     # the system_auth keyspace, to ensure availability and redundancy.
@@ -931,73 +921,75 @@ def get_auth_keyspace_replication(session):
     return json.loads(r[0][0])
 
 
+@logged
 def set_auth_keyspace_replication(session, settings):
-    wait_for_normality()
-    hookenv.log('Updating system_auth rf={!r}'.format(settings))
+    ## wait_for_normality()
+    hookenv.status_set('maintenance',
+                       'Updating system_auth rf to {!r}'.format(settings))
     statement = 'ALTER KEYSPACE system_auth WITH REPLICATION = %s'
-    query(session, statement, ConsistencyLevel.QUORUM, (settings,))
+    query(session, statement, ConsistencyLevel.ALL, (settings,))
 
 
 @logged
 def repair_auth_keyspace():
-    # First, wait for schema agreement. Attempting to repair a keyspace
-    # with inconsistent replication settings will fail.
-    wait_for_agreed_schema()
+    ## # First, wait for schema agreement. Attempting to repair a keyspace
+    ## # with inconsistent replication settings will fail.
+    ## wait_for_agreed_schema()
     # Repair takes a long time, and may need to be retried due to 'snapshot
     # creation' errors, but should certainly complete within an hour since
     # the keyspace is tiny.
     nodetool('repair', 'system_auth', timeout=3600)
 
 
-def non_system_keyspaces():
-    # If there are only system keyspaces defined, there is no data we
-    # may want to preserve and we can safely proceed with the bootstrap.
-    # This should always be the case, but it is worth checking for weird
-    # situations such as reusing an existing external mount without
-    # clearing its data.
-    dfds = get_all_database_directories()['data_file_directories']
-    keyspaces = set(chain(*[os.listdir(dfd) for dfd in dfds]))
-    hookenv.log('keyspaces={!r}'.format(keyspaces), DEBUG)
-    return keyspaces - set(['system', 'system_auth', 'system_traces',
-                            'dse_system'])
+## def non_system_keyspaces():
+##     # If there are only system keyspaces defined, there is no data we
+##     # may want to preserve and we can safely proceed with the bootstrap.
+##     # This should always be the case, but it is worth checking for weird
+##     # situations such as reusing an existing external mount without
+##     # clearing its data.
+##     dfds = get_all_database_directories()['data_file_directories']
+##     keyspaces = set(chain(*[os.listdir(dfd) for dfd in dfds]))
+##     hookenv.log('keyspaces={!r}'.format(keyspaces), DEBUG)
+##     return keyspaces - set(['system', 'system_auth', 'system_traces',
+##                             'dse_system'])
 
 
-def nuke_local_database():
-    '''Destroy the local database, entirely, so this node may bootstrap.
-
-    This needs to be lower level than just removing selected keyspaces
-    such as 'system', as commitlogs and other crumbs can also cause the
-    bootstrap process to fail disasterously.
-    '''
-    # This function is dangerous enough to warrent a guard.
-    assert not is_bootstrapped()
-    assert unit_number() != 0
-
-    keyspaces = non_system_keyspaces()
-    if keyspaces:
-        hookenv.log('Non-system keyspaces {!r} detected. '
-                    'Unable to bootstrap.'.format(keyspaces), ERROR)
-        raise SystemExit(1)
-
-    dirs = get_all_database_directories()
-    nuke_directory_contents(dirs['saved_caches_directory'])
-    nuke_directory_contents(dirs['commitlog_directory'])
-    for dfd in dirs['data_file_directories']:
-        nuke_directory_contents(dfd)
-
-
-def nuke_directory_contents(d):
-    '''Remove the contents of directory d, leaving d in place.
-
-    We don't remove the top level directory as it may be a mount
-    or symlink we cannot recreate.
-    '''
-    for name in os.listdir(d):
-        path = os.path.join(d, name)
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-        else:
-            os.remove(path)
+## def nuke_local_database():
+##     '''Destroy the local database, entirely, so this node may bootstrap.
+##
+##     This needs to be lower level than just removing selected keyspaces
+##     such as 'system', as commitlogs and other crumbs can also cause the
+##     bootstrap process to fail disasterously.
+##     '''
+##     # This function is dangerous enough to warrent a guard.
+##     assert not is_bootstrapped()
+##     assert unit_number() != 0
+##
+##     keyspaces = non_system_keyspaces()
+##     if keyspaces:
+##         hookenv.log('Non-system keyspaces {!r} detected. '
+##                     'Unable to bootstrap.'.format(keyspaces), ERROR)
+##         raise SystemExit(1)
+##
+##     dirs = get_all_database_directories()
+##     nuke_directory_contents(dirs['saved_caches_directory'])
+##     nuke_directory_contents(dirs['commitlog_directory'])
+##     for dfd in dirs['data_file_directories']:
+##         nuke_directory_contents(dfd)
+##
+##
+## def nuke_directory_contents(d):
+##     '''Remove the contents of directory d, leaving d in place.
+##
+##     We don't remove the top level directory as it may be a mount
+##     or symlink we cannot recreate.
+##     '''
+##     for name in os.listdir(d):
+##         path = os.path.join(d, name)
+##         if os.path.isdir(path):
+##             shutil.rmtree(path)
+##         else:
+##             os.remove(path)
 
 
 def unit_number(unit=None):
@@ -1006,117 +998,107 @@ def unit_number(unit=None):
     return int(unit.split('/')[-1])
 
 
-def is_bootstrapped(unit=None):
+def is_bootstrapped():
     '''Return True if the node has already bootstrapped into the cluster.'''
-    if unit is None:
-        unit = hookenv.local_unit()
-    if unit.endswith('/0'):
-        return True
-    relid = rollingrestart.get_peer_relation_id()
-    if not relid:
-        return False
-    return hookenv.relation_get('bootstrapped', unit, relid) == '1'
+    return hookenv.config().get('bootstrapped', False)
 
 
-def set_bootstrapped(flag):
-    relid = rollingrestart.get_peer_relation_id()
-    if bool(flag) is not is_bootstrapped():
-        hookenv.log('Setting bootstrapped to {}'.format(flag))
+def set_bootstrapped():
+    hookenv.log('Bootstrapped')
+    hookenv.config()['bootstrapped'] = True
 
-    if flag:
-        hookenv.relation_set(relid, bootstrapped="1")
-    else:
-        hookenv.relation_set(relid, bootstrapped=None)
+    if coordinator.relid is not None:
+        hookenv.relation_set(coordinator.relid, bootstrapped="1")
 
 
-def bootstrapped_peers():
-    '''Return the ordered list of bootstrapped peers'''
-    peer_relid = rollingrestart.get_peer_relation_id()
-    return [peer for peer in rollingrestart.get_peers()
-            if hookenv.relation_get('bootstrapped', peer, peer_relid) == '1']
+## def bootstrapped_peers():
+##     '''Return the ordered list of bootstrapped peers'''
+##     relid = coordinator.relid
+##     if relid is None:
+##         return []
+##     else:
+##         return [peer for peer in hookenv.related_units(relid)
+##                 if hookenv.relation_get('bootstrapped', peer, relid) == '1']
 
 
-def unbootstrapped_peers():
-    '''Return the ordered list of unbootstrapped peers'''
-    peer_relid = rollingrestart.get_peer_relation_id()
-    return [peer for peer in rollingrestart.get_peers()
-            if hookenv.relation_get('bootstrapped', peer, peer_relid) != '1']
+## def unbootstrapped_peers():
+##     '''Return the ordered list of unbootstrapped peers'''
+##     peer_relid = rollingrestart.get_peer_relation_id()
+##     return [peer for peer in rollingrestart.get_peers()
+##             if hookenv.relation_get('bootstrapped',
+##                                     peer, peer_relid) != '1']
 
 
-@logged
-def pre_bootstrap():
-    """If we are about to bootstrap a node, prepare.
+## @logged
+## def pre_bootstrap():
+##     """If we are about to bootstrap a node, prepare."""
+##     if not is_bootstrapped():
+##         nuke_local_database()
 
-    Only the first node in the cluster is not bootstrapped. All other
-    nodes added to the cluster need to bootstrap. To bootstrap, the local
-    node needs to be shutdown, the database needs to be completely reset,
-    and the node restarted with a valid seed_node.
 
-    Until juju gains the necessary features, the best we can do is assume
-    that Unit 0 should be the initial seed node. If the service has been
-    running for some time and never had a second unit added, it is almost
-    certain that it is Unit 0 that contains data we want to keep. This
-    assumption is false if you have removed the only unit in the service
-    at some point, so don't do that.
-    """
-    if is_bootstrapped():
-        hookenv.log("Already bootstrapped")
-        return
-
-    if num_peers() == 0:
-        hookenv.log("No peers, no cluster, no bootstrapping")
-        return
-
-    if not seed_ips():
-        hookenv.log("No seeds available. Deferring bootstrap.")
-        raise rollingrestart.DeferRestart()
-
-    # Don't attempt to bootstrap until all lower numbered units have
-    # bootstrapped. We need to do this as the rollingrestart algorithm
-    # fails during initial cluster setup, where two or more newly joined
-    # units may restart (and bootstrap) at the same time and exceed
-    # Cassandra's limits on the number of nodes that may bootstrap
-    # simultaneously. In addition, this ensures we wait until there is
-    # at least one seed bootstrapped, as the three first units will be
-    # seeds.
-    for peer in unbootstrapped_peers():
-        if unit_number(peer) < unit_number():
-            hookenv.log("{} is not bootstrapped. Deferring.".format(peer))
-            raise rollingrestart.DeferRestart()
-
-    # Don't attempt to bootstrap until all bootstrapped peers have
-    # authorized us.
-    peer_relname = rollingrestart.get_peer_relation_name()
-    peer_relid = rollingrestart.get_peer_relation_id()
-    authed_ips = unison.collect_authed_hosts(peer_relname)
-    for peer in bootstrapped_peers():
-        peer_ip = hookenv.relation_get('private-address', peer, peer_relid)
-        if peer_ip not in authed_ips:
-            hookenv.log("{} has not authorized us. Deferring.".format(peer))
-            raise rollingrestart.DeferRestart()
-
-    # Bootstrap fail if we haven't yet opened our ports to all
-    # the bootstrapped nodes. This is the case if we have not yet
-    # joined the peer relationship with the node's unit.
-    missing = node_ips() - peer_ips() - set([hookenv.unit_private_ip()])
-    if missing:
-        hookenv.log("Not yet in a peer relationship with {!r}. "
-                    "Deferring bootstrap".format(missing))
-        raise rollingrestart.DeferRestart()
-
-    # Bootstrap will fail if all the nodes that contain data that needs
-    # to move to the new node are down. If you are storing data in
-    # rf==1, bootstrap can fail if a single node is not contactable. As
-    # far as this charm is concerned, we should not attempt bootstrap
-    # until all the nodes in the cluster and contactable. This also
-    # ensures that peers have run their relation-changed hook and
-    # opened their firewall ports to the new unit.
-    if not are_all_nodes_responding():
-        raise rollingrestart.DeferRestart()
-
-    hookenv.log('Joining cluster and need to bootstrap.')
-
-    nuke_local_database()
+##     Only the first node in the cluster is not bootstrapped. All other
+##     nodes added to the cluster need to bootstrap. To bootstrap, the local
+##     node needs to be shutdown, the database needs to be completely reset,
+##     and the node restarted with a valid seed_node.
+##     """
+##     if is_bootstrapped():
+##         hookenv.log("Already bootstrapped")
+##         return
+##
+##     if num_peers() == 0:
+##         hookenv.log("No peers, no cluster, no bootstrapping")
+##         return
+##
+##     if not seed_ips():
+##         hookenv.log("No seeds available. Deferring bootstrap.")
+##         raise rollingrestart.DeferRestart()
+##
+##     # Don't attempt to bootstrap until all lower numbered units have
+##     # bootstrapped. We need to do this as the rollingrestart algorithm
+##     # fails during initial cluster setup, where two or more newly joined
+##     # units may restart (and bootstrap) at the same time and exceed
+##     # Cassandra's limits on the number of nodes that may bootstrap
+##     # simultaneously. In addition, this ensures we wait until there is
+##     # at least one seed bootstrapped, as the three first units will be
+##     # seeds.
+##     for peer in unbootstrapped_peers():
+##         if unit_number(peer) < unit_number():
+##             hookenv.log("{} is not bootstrapped. Deferring.".format(peer))
+##             raise rollingrestart.DeferRestart()
+##
+##     # Don't attempt to bootstrap until all bootstrapped peers have
+##     # authorized us.
+##     peer_relname = rollingrestart.get_peer_relation_name()
+##     peer_relid = rollingrestart.get_peer_relation_id()
+##     authed_ips = unison.collect_authed_hosts(peer_relname)
+##     for peer in bootstrapped_peers():
+##         peer_ip = hookenv.relation_get('private-address', peer, peer_relid)
+##         if peer_ip not in authed_ips:
+##             hookenv.log("{} has not authorized us. Deferring.".format(peer))
+##             raise rollingrestart.DeferRestart()
+##
+##     # Bootstrap fail if we haven't yet opened our ports to all
+##     # the bootstrapped nodes. This is the case if we have not yet
+##     # joined the peer relationship with the node's unit.
+##     missing = node_ips() - peer_ips() - set([hookenv.unit_private_ip()])
+##     if missing:
+##         hookenv.log("Not yet in a peer relationship with {!r}. "
+##                     "Deferring bootstrap".format(missing))
+##         raise rollingrestart.DeferRestart()
+##
+##     # Bootstrap will fail if all the nodes that contain data that needs
+##     # to move to the new node are down. If you are storing data in
+##     # rf==1, bootstrap can fail if a single node is not contactable. As
+##     # far as this charm is concerned, we should not attempt bootstrap
+##     # until all the nodes in the cluster and contactable. This also
+##     # ensures that peers have run their relation-changed hook and
+##     # opened their firewall ports to the new unit.
+##     if not are_all_nodes_responding():
+##         raise rollingrestart.DeferRestart()
+##
+##     hookenv.log('Joining cluster and need to bootstrap.')
+##
+##     nuke_local_database()
 
 
 @logged
@@ -1126,110 +1108,120 @@ def post_bootstrap():
     Per documented procedure for adding new units to a cluster, wait 2
     minutes if the unit has just bootstrapped to ensure no other.
     '''
-    if num_peers() == 0:
-        # There is no cluster (just us), so we are not bootstrapped into
-        # the cluster.
-        return
-
     if not is_bootstrapped():
-        for _ in backoff('bootstrap to finish'):
-            if not is_cassandra_running():
-                hookenv.log('Bootstrap failed. Retrying')
-                start_cassandra()
-                break
-            if is_all_normal():
-                hookenv.log('Cluster settled after bootstrap.')
-                config = hookenv.config()
-                hookenv.log('Waiting {}s.'.format(
-                    config['post_bootstrap_delay']))
-                time.sleep(config['post_bootstrap_delay'])
-                if is_cassandra_running():
-                    set_bootstrapped(True)
-                    break
+        set_bootstrapped()
+        if coordinator.relid is not None:
+            hookenv.status_set('maintenance', 'Post-bootstrap 2 minute delay')
+            time.sleep(120)  # Must wait 2 minutes between bootstrapping nodes.
+
+##     if num_peers() == 0:
+##         # There is no cluster (just us), so we are not bootstrapped into
+##         # the cluster.
+##         return
+##
+##     if not is_bootstrapped():
+##         for _ in backoff('bootstrap to finish'):
+##             if not is_cassandra_running():
+##                 hookenv.log('Bootstrap failed. Retrying')
+##                 start_cassandra()
+##                 break
+##             if is_all_normal():
+##                 hookenv.log('Cluster settled after bootstrap.')
+##                 config = hookenv.config()
+##                 hookenv.log('Waiting {}s.'.format(
+##                     config['post_bootstrap_delay']))
+##                 time.sleep(config['post_bootstrap_delay'])
+##                 if is_cassandra_running():
+##                     set_bootstrapped(True)
+##                     break
 
 
-def is_schema_agreed():
-    '''Return True if all the nodes that are up agree on a schema.'''
-    up_ips = set(up_node_ips())
-    # Always include ourself since we may be joining just now.
-    up_ips.add(hookenv.unit_private_ip())
-    raw = nodetool('describecluster')
-    # The output of nodetool describe cluster is almost yaml,
-    # so we use that tool once we fix the tabs.
-    description = yaml.load(raw.expandtabs())
-    versions = description['Cluster Information']['Schema versions'] or {}
-
-    for schema, schema_ips in versions.items():
-        schema_ips = set(schema_ips)
-        if up_ips.issubset(schema_ips):
-            hookenv.log('{!r} agree on schema'.format(up_ips), DEBUG)
-            return True
-    hookenv.log('{!r} do not agree on schema'.format(up_ips), DEBUG)
-    return False
-
-
-@logged
-def wait_for_agreed_schema():
-    for _ in backoff('schema agreement'):
-        if is_schema_agreed():
-            return
-
-
-def peer_ips():
-    ips = set()
-    relid = rollingrestart.get_peer_relation_id()
-    if relid is not None:
-        for unit in hookenv.related_units(relid):
-            ip = hookenv.relation_get('private-address', unit, relid)
-            ips.add(ip)
-    return ips
+## def is_schema_agreed():
+##     '''Return True if all the nodes that are up agree on a schema.'''
+##     up_ips = set(up_node_ips())
+##     # Always include ourself since we may be joining just now.
+##     up_ips.add(hookenv.unit_private_ip())
+##     raw = nodetool('describecluster')
+##     # The output of nodetool describe cluster is almost yaml,
+##     # so we use that tool once we fix the tabs.
+##     description = yaml.load(raw.expandtabs())
+##     versions = description['Cluster Information']['Schema versions'] or {}
+##
+##     for schema, schema_ips in versions.items():
+##         schema_ips = set(schema_ips)
+##         if up_ips.issubset(schema_ips):
+##             hookenv.log('{!r} agree on schema'.format(up_ips), DEBUG)
+##             return True
+##     hookenv.log('{!r} do not agree on schema'.format(up_ips), DEBUG)
+##     return False
+##
+##
+## @logged
+## def wait_for_agreed_schema():
+##     for _ in backoff('schema agreement'):
+##         if is_schema_agreed():
+##             return
 
 
-def is_all_normal(timeout=120):
-    '''All nodes in the cluster report status Normal.
-
-    Returns false if a node is joining, leaving or moving in the ring.
-    '''
-    is_all_normal = True
-    try:
-        raw = nodetool('status', 'system_auth', timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return False
-    node_status_re = re.compile('^(.)([NLJM])\s+([\d\.]+)\s')
-    for line in raw.splitlines():
-        match = node_status_re.search(line)
-        if match is not None:
-            updown, mode, address = match.groups()
-            if updown == 'D':
-                # 'Down' is unfortunately just informative. During service
-                # teardown, nodes will disappear without decommissioning
-                # leaving these entries.
-                if address == hookenv.unit_private_ip():
-                    is_all_normal = False
-                    hookenv.log('Node {} (this node) is down'.format(address))
-                else:
-                    hookenv.log('Node {} is down'.format(address))
-            elif updown == '?':  # CASSANDRA-8791
-                is_all_normal = False
-                hookenv.log('Node {} is transitioning'.format(address))
-
-            if mode == 'L':
-                hookenv.log('Node {} is leaving the cluster'.format(address))
-                is_all_normal = False
-            elif mode == 'J':
-                hookenv.log('Node {} is joining the cluster'.format(address))
-                is_all_normal = False
-            elif mode == 'M':
-                hookenv.log('Node {} is moving ring position'.format(address))
-                is_all_normal = False
-    return is_all_normal
-
-
-@logged
-def wait_for_normality():
-    for _ in backoff('cluster operators to complete'):
-        if is_all_normal():
-            return
+## def peer_ips():
+##     ips = set()
+##     relid = rollingrestart.get_peer_relation_id()
+##     if relid is not None:
+##         for unit in hookenv.related_units(relid):
+##             ip = hookenv.relation_get('private-address', unit, relid)
+##             ips.add(ip)
+##     return ips
+##
+##
+## def is_all_normal(timeout=120):
+##     '''All nodes in the cluster report status Normal.
+##
+##     Returns false if a node is joining, leaving or moving in the ring.
+##     '''
+##     is_all_normal = True
+##     try:
+##         raw = nodetool('status', 'system_auth', timeout=timeout)
+##     except subprocess.TimeoutExpired:
+##         return False
+##     node_status_re = re.compile('^(.)([NLJM])\s+([\d\.]+)\s')
+##     for line in raw.splitlines():
+##         match = node_status_re.search(line)
+##         if match is not None:
+##             updown, mode, address = match.groups()
+##             if updown == 'D':
+##                 # 'Down' is unfortunately just informative. During service
+##                 # teardown, nodes will disappear without decommissioning
+##                 # leaving these entries.
+##                 if address == hookenv.unit_private_ip():
+##                     is_all_normal = False
+##                     hookenv.log(
+##                         'Node {} (this node) is down'.format(address))
+##                 else:
+##                     hookenv.log('Node {} is down'.format(address))
+##             elif updown == '?':  # CASSANDRA-8791
+##                 is_all_normal = False
+##                 hookenv.log('Node {} is transitioning'.format(address))
+##
+##             if mode == 'L':
+##                 hookenv.log(
+##                     'Node {} is leaving the cluster'.format(address))
+##                 is_all_normal = False
+##             elif mode == 'J':
+##                 hookenv.log(
+##                     'Node {} is joining the cluster'.format(address))
+##                 is_all_normal = False
+##             elif mode == 'M':
+##                 hookenv.log(
+##                     'Node {} is moving ring position'.format(address))
+##                 is_all_normal = False
+##     return is_all_normal
+##
+##
+## @logged
+## def wait_for_normality():
+##     for _ in backoff('cluster operators to complete'):
+##         if is_all_normal():
+##             return
 
 
 def is_decommissioned():
@@ -1309,3 +1301,10 @@ def week_spread(unit_num):
 # FOR CHARMHELPERS. This should be a constant in nrpe.py
 def local_plugins_dir():
     return '/usr/local/lib/nagios/plugins'
+
+
+def leader_ping():
+    '''Make a change in the leader settings, waking the non-leaders.'''
+    assert hookenv.is_leader()
+    last = int(hookenv.leader_get('ping') or 0)
+    hookenv.leader_set(ping=str(last + 1))

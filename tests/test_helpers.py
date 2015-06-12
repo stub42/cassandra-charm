@@ -1595,7 +1595,6 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.num_nodes')
     def test_post_bootstrap(self, num_nodes, sleep, is_running, is_normal):
         hookenv.local_unit.return_value = 'foo/1'
-        hookenv.config()['post_bootstrap_delay'] = 42
         num_nodes.return_value = 3
         is_running.return_value = True
         is_normal.return_value = True
@@ -1603,7 +1602,7 @@ class TestHelpers(TestCaseBase):
         helpers.post_bootstrap()
         # Wait 2 minutes between nodes when initializing new nodes into
         # the cluster.
-        sleep.assert_called_once_with(42)
+        sleep.assert_called_once_with(120)
         self.assertTrue(helpers.is_bootstrapped())
 
     @patch('helpers.unit_number')

@@ -23,6 +23,18 @@ from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
 
+class PeerRelation(RelationContext):
+    interface = 'cassandra-cluster'
+    name = 'cluster'
+
+    def provide_data(self):
+        # Mirror the bootstrapped config item onto the peer relation,
+        # as when setting up the service the standalone leader will
+        # have bootstrapped before joining the peer relation.
+        flag = "1" if hookenv.config().get('bootstrapped') else None
+        return dict(bootstrapped=flag)
+
+
 # FOR CHARMHELPERS
 class StorageRelation(RelationContext):
     '''Wait for the block storage mount to become available.

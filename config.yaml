@@ -313,10 +313,10 @@ options:
             the thresholds here if you understand the dangers and want
             to scan more tombstones anyway.
             
-    post_bootstrap_delay:
-        type: int
-        default: 120
-        description: >
-            Testing option - do not change. When adding multiple new
-            nodes to a cluster, you are supposed to wait two minutes
-            between nodes. I set this to zero to speed up test runs.
+    ##     post_bootstrap_delay:
+    ##         type: int
+    ##         default: 120
+    ##         description: >
+    ##             Testing option - do not change. When adding multiple new
+    ##             nodes to a cluster, you are supposed to wait two minutes
+    ##             between nodes. I set this to zero to speed up test runs.
