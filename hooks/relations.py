@@ -22,10 +22,19 @@ from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
+from coordinator import coordinator
+
 
 class PeerRelation(RelationContext):
     interface = 'cassandra-cluster'
     name = 'cluster'
+
+    def is_ready(self):
+        # All units except the leader need to wait until the peer
+        # relation is available.
+        if coordinator.relid is not None or hookenv.is_leader():
+            return True
+        return False
 
     def provide_data(self):
         # Mirror the bootstrapped config item onto the peer relation,

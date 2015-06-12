@@ -34,7 +34,24 @@ def get_service_definitions():
     config = hookenv.config()
 
     return [
-        # Actions done before or while the Cassandra service is running.
+        # Prepare for the Cassandra service.
+        dict(service='install',
+             data_ready=[actions.set_proxy,
+                         actions.preinstall,
+                         actions.emit_meminfo,
+                         actions.revert_unchangeable_config,
+                         actions.store_unit_private_ip,
+                         actions.add_implicit_package_signing_keys,
+                         actions.configure_sources,
+                         actions.swapoff,
+                         actions.reset_sysctl,
+                         actions.install_oracle_jre,
+                         actions.install_cassandra_packages,
+                         actions.emit_java_version,
+                         actions.ensure_cassandra_package_status],
+             start=[], stop=[]),
+
+        # Get Cassandra running.
         dict(service=helpers.get_cassandra_service(),
 
              # Open access to client and replication ports. Client
@@ -47,31 +64,17 @@ def get_service_definitions():
                     config['storage_port'],           # Plaintext replication
                     config['ssl_storage_port']],      # Encrypted replication.
 
-             required_data=[RequiresPeers(),
-                            relations.StorageRelation()],
+             required_data=[relations.StorageRelation(),
+                            relations.PeerRelation()],
              provided_data=[relations.StorageRelation(),
                             relations.PeerRelation()],
-             data_ready=[actions.set_proxy,
-                         actions.preinstall,
-                         actions.emit_meminfo,
-                         actions.revert_unchangeable_config,
-                         actions.store_unit_private_ip,
-                         actions.configure_firewall,
+             data_ready=[actions.configure_firewall,
                          actions.grant_ssh_access,
-                         actions.add_implicit_package_signing_keys,
-                         actions.configure_sources,
-                         actions.swapoff,
-                         actions.reset_sysctl,
-                         actions.install_oracle_jre,
-                         actions.install_cassandra_packages,
-                         actions.emit_java_version,
-                         actions.ensure_cassandra_package_status,
                          actions.maintain_seeds,
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env,
                          actions.configure_cassandra_rackdc,
                          actions.reset_all_io_schedulers,
-                         actions.nrpe_external_master_relation,
                          actions.maybe_restart],
              start=[services.open_ports],
              stop=[actions.stop_cassandra, services.close_ports]),
@@ -87,6 +90,7 @@ def get_service_definitions():
                          actions.emit_describe_cluster,
                          actions.emit_auth_keyspace_status,
                          actions.emit_netstats,
+                         actions.nrpe_external_master_relation,
                          actions.set_active],
              start=[], stop=[])]
 

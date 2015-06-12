@@ -38,18 +38,15 @@ import cassandra.query
 import yaml
 
 from charmhelpers.contrib import unison
-from charmhelpers.coordinator import Serial
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
 
+from coordinator import coordinator
 import relations
 
 
 RESTART_TIMEOUT = 600
-
-
-coordinator = Serial()
 
 
 def logged(func):
@@ -807,9 +804,6 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml.update((k, config[k]) for k in simple_config_keys)
 
     seeds = ','.join(seeds or seed_ips())  # Don't include whitespace!
-    if not seeds:
-        hookenv.status_set('waiting', 'Waiting for a seed node')
-        return
     hookenv.log('Configuring seeds as {!r}'.format(seeds), DEBUG)
     assert seeds, 'Attempting to configure cassandra with empty seed list'
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
@@ -881,17 +875,6 @@ def is_cassandra_running():
         else:
             hookenv.log("Cassandra is not running. PID file does not exist.")
         return False
-
-
-@logged
-def reset_all_io_schedulers():
-    dirs = get_all_database_directories()
-    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']] +
-            [dirs['saved_caches_directory']])
-    config = hookenv.config()
-    for d in dirs:
-        if os.path.isdir(d):  # Directory may not exist yet.
-            set_io_scheduler(config['io_scheduler'], d)
 
 
 def reset_auth_keyspace_replication():

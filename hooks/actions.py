@@ -36,8 +36,8 @@ from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 
 import cassandra
 
+from coordinator import coordinator
 import helpers
-from helpers import coordinator
 import relations
 
 
@@ -125,13 +125,14 @@ def set_proxy():
 
 @action
 def revert_unchangeable_config():
-    if hookenv.hook_name() == 'install':
-        # config.previous() only becomes meaningful after the install
-        # hook has run. During the first run on the unit hook, it
-        # reports everything has having None as the previous value.
+    config = hookenv.config()
+
+    # config.previous() only becomes meaningful after the install
+    # hook has run. During the first run on the unit hook, it
+    # reports everything has having None as the previous value.
+    if config._prev_dict is None:
         return
 
-    config = hookenv.config()
     for key in UNCHANGEABLE_KEYS:
         if config.changed(key):
             previous = config.previous(key)
@@ -477,7 +478,13 @@ def ensure_unit_superuser():
 
 @action
 def reset_all_io_schedulers():
-    helpers.reset_all_io_schedulers()
+    dirs = helpers.get_all_database_directories()
+    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']] +
+            [dirs['saved_caches_directory']])
+    config = hookenv.config()
+    for d in dirs:
+        if os.path.isdir(d):  # Directory may not exist yet.
+            helpers.set_io_scheduler(config['io_scheduler'], d)
 
 
 def _publish_database_relation(relid, superuser):
@@ -681,8 +688,7 @@ def nrpe_external_master_relation():
             description="Check Cassandra Heap",
             check_cmd="check_cassandra_heap.sh {} {} {}"
                       "".format(hookenv.unit_private_ip(), cassandra_heap_warn,
-                                cassandra_heap_crit)
-        )
+                                cassandra_heap_crit))
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
@@ -697,9 +703,7 @@ def nrpe_external_master_relation():
                 description="Check Cassandra Disk {}".format(disk),
                 check_cmd="check_disk -u GB -w {}% -c {}% -K 5% -p {}"
                           "".format(cassandra_disk_warn, cassandra_disk_crit,
-                                    disk)
-            )
-
+                                    disk))
     nrpe_compat.write()
 
 
