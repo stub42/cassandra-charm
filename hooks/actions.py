@@ -18,6 +18,7 @@ from contextlib import closing
 import errno
 from functools import wraps
 import glob
+import json
 import os.path
 import re
 import shlex
@@ -456,7 +457,7 @@ def maybe_restart():
     ## helpers.wait_for_agreed_schema()
     ## helpers.wait_for_normality()
     ## helpers.emit_describe_cluster()
-    helpers.ensure_unit_superuser()
+    ## helpers.ensure_unit_superuser()
     ## helpers.reset_auth_keyspace_replication()
     hookenv.status_set('maintenance', 'Restarted')
 
@@ -471,9 +472,27 @@ def start_cassandra():
     helpers.start_cassandra()
 
 
+@leader_only
 @action
-def ensure_unit_superuser():
-    helpers.ensure_unit_superuser()
+def create_unit_superusers():
+    # The leader creates and updates accounts for nodes, using the
+    # encrypted password they provide in relations.PeerRelation. We
+    # don't end up with unencrypted passwords leaving the unit, and we
+    # don't need to restart Cassandra in no-auth mode which is slow and
+    # I worry may cause issues interrupting the bootstrap.
+    if coordinator.relid:
+        superusers = json.loads(hookenv.leader_get('superusers') or '{}')
+        for peer in hookenv.related_units(coordinator.relid):
+            rel = hookenv.relation_get(unit=peer, rid=coordinator.relid)
+            username = rel.get('username')
+            pwhash = rel.get('pwhash')
+            if username and superusers.get(username) != pwhash:
+                with helpers.connect() as session:
+                    helpers.ensure_user(session, rel['username'],
+                                        rel['pwhash'], superuser=True)
+                superusers[username] = pwhash
+                hookenv.leader_set(superusers=json.dumps(superusers,
+                                                         sort_keys=True))
 
 
 @action
@@ -747,17 +766,37 @@ def reset_default_password():
         hookenv.log('Default admin password already changed')
         return
 
-    # If we can connect using the default superuser password
-    # 'cassandra', change it to something random.
+    # Cassandra ships with well known credentials, rather than
+    # providing a tool to reset credentials. This is a huge security
+    # hole we must close.
     try:
         with helpers.connect('cassandra', 'cassandra') as session:
+            # But before we close this security hole, we need to use these
+            # credentials to create a different admin account for the
+            # leader, allowing it to create accounts for other nodes as they
+            # join. The alternative is restarting Cassandra without
+            # authentication, which this charm will likely need to do in the
+            # future when we allow Cassandra services to be related together.
+            hookenv.status_set('maintenance',
+                               'Creating initial superuser account')
+            username, password = helpers.superuser_credentials()
+            pwhash = helpers.encrypt_password(password)
+            helpers.ensure_user(session, username, pwhash, superuser=True)
+
             hookenv.log('Changing default admin password')
             helpers.query(session, 'ALTER USER cassandra WITH PASSWORD %s',
-                          cassandra.ConsistencyLevel.QUORUM, (host.pwgen(),))
+                          cassandra.ConsistencyLevel.ALL, (host.pwgen(),))
     except cassandra.AuthenticationFailed:
-        hookenv.log('Default admin password already changed')
-
-    hookenv.leader_set(default_admin_password_changed=True)
+        hookenv.log('Default superuser account already reset')
+        try:
+            with helpers.connect():
+                hookenv.log("Leader's superuser account already created")
+        except cassandra.AuthenticationFailed:
+            # We have no known superuser credentials. Create the account
+            # the hard, slow way. This will be the normal method
+            # of creating the service's initial account when we allow
+            # services to be related together.
+            helpers.create_unit_superuser_hard()
 
 
 @action

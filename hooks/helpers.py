@@ -43,7 +43,6 @@ from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
 
 from coordinator import coordinator
-import relations
 
 
 RESTART_TIMEOUT = 600
@@ -146,6 +145,7 @@ def get_database_directory(config_path):
     Entries in the config file may be absolute, relative to
     /var/lib/cassandra, or relative to the mountpoint.
     '''
+    import relations
     storage = relations.StorageRelation()
     if storage.mountpoint:
         root = os.path.join(storage.mountpoint, 'cassandra')
@@ -454,6 +454,7 @@ def reconfigure_and_restart_cassandra(overrides={}):
 def remount_cassandra():
     '''If a new mountpoint is ready, migrate data across to it.'''
     assert not is_cassandra_running()  # Guard against data loss.
+    import relations
     storage = relations.StorageRelation()
     if storage.needs_remount():
         hookenv.status_set('migrating data to new mountpoint')
@@ -480,7 +481,7 @@ def ensure_database_directories():
         ensure_database_directory(db_dir)
 
 
-CONNECT_TIMEOUT = 300
+CONNECT_TIMEOUT = 10
 
 
 @contextmanager
@@ -551,73 +552,62 @@ def query(session, statement, consistency_level, args=None):
                 raise
 
 
-def ensure_user(username, password, superuser=False):
+def encrypt_password(password):
+    return bcrypt.hashpw(password, bcrypt.gensalt())
+
+
+@logged
+def ensure_user(session, username, encrypted_password, superuser=False):
     '''Create the DB user if it doesn't already exist & reset the password.'''
     if superuser:
         hookenv.log('Creating SUPERUSER {}'.format(username))
-        sup = 'SUPERUSER'
     else:
         hookenv.log('Creating user {}'.format(username))
-        sup = 'NOSUPERUSER'
-    with connect() as session:
-        query(session,
-              'CREATE USER IF NOT EXISTS %s '
-              'WITH PASSWORD %s {}'.format(sup),
-              ConsistencyLevel.QUORUM, (username, password,))
-        query(session, 'ALTER USER %s WITH PASSWORD %s {}'.format(sup),
-              ConsistencyLevel.QUORUM, (username, password,))
+    query(session,
+          'INSERT INTO system_auth.users (name, super) VALUES (%s, %s)',
+          ConsistencyLevel.ALL, (username, superuser))
+    query(session,
+          'INSERT INTO system_auth.credentials (username, salted_hash) '
+          'VALUES (%s, %s)',
+          ConsistencyLevel.ALL, (username, encrypted_password))
+
+
+## @logged
+## def ensure_unit_superuser():
+##     '''If the unit's superuser account is not working, recreate it.'''
+##     try:
+##         with connect(auth_timeout=10):
+##             hookenv.log('Unit superuser account already setup', DEBUG)
+##             return
+##     except cassandra.AuthenticationFailed:
+##         pass
+##
+##     hookenv.status_set('maintenance', 'Creating unit superuser')
+##     create_unit_superuser()  # Doesn't exist or can't access, so create it.
+##
+##     with connect():
+##         hookenv.log('Unit superuser password reset successful')
 
 
 @logged
-def ensure_unit_superuser():
-    '''If the unit's superuser account is not working, recreate it.'''
-    try:
-        with connect(auth_timeout=10):
-            hookenv.log('Unit superuser account already setup', DEBUG)
-            return
-    except cassandra.AuthenticationFailed:
-        pass
-
-    hookenv.status_set('maintenance', 'Creating unit superuser')
-    create_unit_superuser()  # Doesn't exist or can't access, so create it.
-
-    with connect():
-        hookenv.log('Unit superuser password reset successful')
-
-
-@logged
-def create_unit_superuser():
+def create_unit_superuser_hard():
     '''Create or recreate the unit's superuser account.
 
-    As there may be no known superuser credentials to use, we restart
-    the node using the AllowAllAuthenticator and insert our user
-    directly into the system_auth keyspace.
+    This method is used when there are no known superuser credentials
+    to use. We restart the node using the AllowAllAuthenticator and
+    insert our credentials directly into the system_auth keyspace.
     '''
     username, password = superuser_credentials()
+    pwhash = encrypt_password(password)
     hookenv.log('Creating unit superuser {}'.format(username))
 
     # Restart cassandra without authentication & listening on localhost.
-    ## wait_for_normality()
     reconfigure_and_restart_cassandra(
         dict(authenticator='AllowAllAuthenticator', rpc_address='localhost'))
-    ## wait_for_normality()
-    ## emit_cluster_info()
     for _ in backoff('superuser creation'):
         try:
             with connect() as session:
-                pwhash = bcrypt.hashpw(password,
-                                       bcrypt.gensalt())  # Cassandra 2.1
-                statement = dedent('''\
-                    INSERT INTO system_auth.users (name, super)
-                    VALUES (%s, TRUE)
-                    ''')
-                query(session, statement, ConsistencyLevel.QUORUM, (username,))
-                statement = dedent('''\
-                    INSERT INTO system_auth.credentials (username, salted_hash)
-                    VALUES (%s, %s)
-                    ''')
-                query(session, statement,
-                      ConsistencyLevel.QUORUM, (username, pwhash))
+                ensure_user(session, username, pwhash, superuser=True)
                 break
         except Exception as x:
             print(str(x))
@@ -625,7 +615,6 @@ def create_unit_superuser():
     # Restart Cassandra with regular config.
     nodetool('flush')  # Ensure our backdoor updates are flushed.
     reconfigure_and_restart_cassandra()
-    ## wait_for_normality()
 
 
 def get_cqlshrc_path():

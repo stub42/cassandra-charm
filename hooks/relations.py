@@ -23,6 +23,7 @@ from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
 from coordinator import coordinator
+import helpers
 
 
 class PeerRelation(RelationContext):
@@ -40,8 +41,13 @@ class PeerRelation(RelationContext):
         # Mirror the bootstrapped config item onto the peer relation,
         # as when setting up the service the standalone leader will
         # have bootstrapped before joining the peer relation.
-        flag = "1" if hookenv.config().get('bootstrapped') else None
-        return dict(bootstrapped=flag)
+        bs_flag = "1" if hookenv.config().get('bootstrapped') else None
+
+        # Request creation of the unit's superuser, or remove the
+        # request if auth is working now.
+        username, password = helpers.superuser_credentials()
+        pwhash = helpers.encrypt_password(password)
+        return dict(bootstrapped=bs_flag, username=username, pwhash=pwhash)
 
 
 # FOR CHARMHELPERS

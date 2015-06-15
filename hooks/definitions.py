@@ -75,15 +75,15 @@ def get_service_definitions():
                          actions.configure_cassandra_env,
                          actions.configure_cassandra_rackdc,
                          actions.reset_all_io_schedulers,
-                         actions.maybe_restart],
+                         actions.maybe_restart,
+                         actions.reset_default_password],
              start=[services.open_ports],
              stop=[actions.stop_cassandra, services.close_ports]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresLiveNode()],
-             data_ready=[actions.ensure_unit_superuser,
-                         actions.reset_default_password,
+             data_ready=[actions.create_unit_superusers,
                          actions.publish_database_relations,
                          actions.publish_database_admin_relations,
                          actions.install_maintenance_crontab,
