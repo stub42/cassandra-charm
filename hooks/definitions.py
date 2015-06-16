@@ -87,10 +87,8 @@ def get_service_definitions():
                          actions.publish_database_relations,
                          actions.publish_database_admin_relations,
                          actions.install_maintenance_crontab,
-                         actions.emit_describe_cluster,
-                         actions.emit_auth_keyspace_status,
-                         actions.emit_netstats,
                          actions.nrpe_external_master_relation,
+                         actions.emit_cluster_info,
                          actions.set_active],
              start=[], stop=[])]
 

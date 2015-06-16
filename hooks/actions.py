@@ -387,36 +387,53 @@ def store_unit_private_ip():
 
 def needs_restart():
     '''Return True if Cassandra is not running or needs to be restarted.'''
-    restart = False
-
     if helpers.is_decommissioned():
-        hookenv.log("Decommissioned node.")
-        hookenv.status_set('blocked', 'Decommissioned')
+        # Decommissioned nodes are never restarted. They remain up
+        # telling everyone they are decommissioned.
+        hookenv.status_set('maintenance', 'Decommissioned')
         return False
 
     if not helpers.is_cassandra_running():
-        hookenv.log('Cassandra is not running.')
-        restart = True
+        if helpers.is_bootstrapped():
+            hookenv.status_set('waiting', 'Waiting for permission to start')
+        else:
+            hookenv.status_set('waiting',
+                               'Waiting for permission to bootstrap')
+        return True
 
-    # If any of these config items changed, a restart is required.
-    config = hookenv.config()
-    for key in RESTART_REQUIRED_KEYS:
-        if config.changed(key):
-            hookenv.log('{} changed. Restart required.'.format(key))
-            restart = True
+    if helpers.is_bootstrapped():
+        status = 'maintenance'
+    else:
+        status = 'waiting'
 
     # If the directory paths have changed, we need to migrate data
     # during a restart. Directory config items have already been picked
     # up in the previous check.
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        hookenv.log('Mountpoint changed. Restart and migration required.')
-        restart = True
+        hookenv.status_set(status,
+                           'Switching to new mountpoint. '
+                           'Waiting for restart permission')
+        return True
+
+
+    # If any of these config items changed, a restart is required.
+    config = hookenv.config()
+    for key in RESTART_REQUIRED_KEYS:
+        if config.changed(key):
+            hookenv.log('{} changed. Restart required.'.format(key))
+    for key in RESTART_REQUIRED_KEYS:
+        if config.changed(key):
+            hookenv.status_set(status,
+                               'Applying config changes. '
+                               'Waiting for restart permission.')
+            return True
 
     # If our IP address has changed, we need to restart.
     if config.changed('unit_private_ip'):
-        hookenv.log('Unit IP address changed. Restart required.')
-        restart = True
+        hookenv.log(status,
+                    'IP address changed. Waiting for restart permission.')
+        return True
 
     # If we have new seeds, we should restart.
     new_seeds = helpers.seed_ips()
@@ -427,16 +444,11 @@ def needs_restart():
         # We don't care about the local node in the changes.
         changed.discard(hookenv.unit_private_ip())
         if changed:
-            hookenv.log('New seeds {!r}. Restart required.'.format(new_seeds))
-            restart = True
+            hookenv.log('New seeds {!r}. Waiting for restart permission.')
+            return True
 
-    if restart:
-        hookenv.log('Requesting restart')
-        hookenv.status_set('waiting', 'Waiting for permission to restart')
-    else:
-        hookenv.log('Restart not required')
-
-    return restart
+    hookenv.log('Restart not required')
+    return False
 
 
 @action
@@ -488,6 +500,8 @@ def create_unit_superusers():
             pwhash = rel.get('pwhash')
             if username and superusers.get(username) != pwhash:
                 with helpers.connect() as session:
+                    hookenv.log('Creating {} account for {}'.format(
+                        rel['username'], peer))
                     helpers.ensure_user(session, rel['username'],
                                         rel['pwhash'], superuser=True)
                 superusers[username] = pwhash
@@ -589,20 +603,9 @@ def install_maintenance_crontab():
 
 
 @action
-def emit_describe_cluster():
-    '''Spam 'nodetool describecluster' into the logs.'''
+def emit_cluster_info():
     helpers.emit_describe_cluster()
-
-
-@action
-def emit_auth_keyspace_status():
-    '''Spam 'nodetool status system_auth' into the logs.'''
     helpers.emit_auth_keyspace_status()
-
-
-@action
-def emit_netstats():
-    '''Spam 'nodetool netstats' into the logs.'''
     helpers.emit_netstats()
 
 
@@ -798,7 +801,13 @@ def reset_default_password():
             # services to be related together.
             helpers.create_unit_superuser_hard()
 
+    hookenv.leader_set(default_admin_password_changed=True)
+
 
 @action
 def set_active():
-    hookenv.status_set('active', 'Live')
+    if hookenv.unit_private_ip() in helpers.seed_ips():
+        msg = 'Live seed node'
+    else:
+        msg = 'Live node'
+    hookenv.status_set('active', msg)
