@@ -24,13 +24,13 @@ import re
 import shlex
 import subprocess
 from textwrap import dedent
+import time
 import urllib.request
 
 from charmhelpers import fetch
 from charmhelpers.contrib.charmsupport import nrpe
 from charmhelpers.contrib.network import ufw
 from charmhelpers.contrib.templating import jinja
-from charmhelpers.contrib import unison
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
@@ -372,11 +372,26 @@ def configure_cassandra_rackdc():
 @leader_only
 @action
 def reset_auth_keyspace_replication():
-    # This action only lowers the system_auth keyspace replication
-    # values when a node has been decommissioned. The replication settings
-    # are also updated during rolling restart, which takes care of when new
-    # nodes are added.
-    helpers.reset_auth_keyspace_replication()
+    # Cassandra requires you to manually set the replication factor of
+    # the system_auth keyspace, to ensure availability and redundancy.
+    # We replication factor in this service's DC can be no higher than
+    # the number of bootstrapped nodes. We also cap this at 3 to ensure
+    # we don't have too many seeds.
+
+    num_nodes = len(helpers.get_bootstrapped_ips())
+    n = min(num_nodes, 3)
+    datacenter = hookenv.config()['datacenter']
+    with helpers.connect() as session:
+        strategy_opts = helpers.get_auth_keyspace_replication(session)
+        rf = int(strategy_opts.get(datacenter, -1))
+        hookenv.log('system_auth rf={!r}'.format(strategy_opts))
+        if rf != n:
+            strategy_opts['class'] = 'NetworkTopologyStrategy'
+            strategy_opts[datacenter] = n
+            if 'replication_factor' in strategy_opts:
+                del strategy_opts['replication_factor']
+            helpers.set_auth_keyspace_replication(session, strategy_opts)
+            helpers.repair_auth_keyspace()
 
 
 @action
@@ -390,14 +405,14 @@ def needs_restart():
     if helpers.is_decommissioned():
         # Decommissioned nodes are never restarted. They remain up
         # telling everyone they are decommissioned.
-        hookenv.status_set('maintenance', 'Decommissioned')
+        helpers.status_set('maintenance', 'Decommissioned')
         return False
 
     if not helpers.is_cassandra_running():
         if helpers.is_bootstrapped():
-            hookenv.status_set('waiting', 'Waiting for permission to start')
+            helpers.status_set('waiting', 'Waiting for permission to start')
         else:
-            hookenv.status_set('waiting',
+            helpers.status_set('waiting',
                                'Waiting for permission to bootstrap')
         return True
 
@@ -411,11 +426,10 @@ def needs_restart():
     # up in the previous check.
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        hookenv.status_set(status,
+        helpers.status_set(status,
                            'Switching to new mountpoint. '
                            'Waiting for restart permission')
         return True
-
 
     # If any of these config items changed, a restart is required.
     config = hookenv.config()
@@ -424,7 +438,7 @@ def needs_restart():
             hookenv.log('{} changed. Restart required.'.format(key))
     for key in RESTART_REQUIRED_KEYS:
         if config.changed(key):
-            hookenv.status_set(status,
+            helpers.status_set(status,
                                'Applying config changes. '
                                'Waiting for restart permission.')
             return True
@@ -436,7 +450,7 @@ def needs_restart():
         return True
 
     # If we have new seeds, we should restart.
-    new_seeds = helpers.seed_ips()
+    new_seeds = helpers.get_seed_ips()
     config['configured_seeds'] = sorted(new_seeds)
     if config.changed('configured_seeds'):
         old_seeds = set(config.previous('configured_seeds') or [])
@@ -459,19 +473,28 @@ def maybe_restart():
     If a restart is needed, shutdown Cassandra, perform all pending operations
     that cannot be be done while Cassandra is live, and restart it.
     '''
-    hookenv.status_set('maintenance', 'Restarting')
+    helpers.status_set('maintenance', 'Restarting')
     helpers.stop_cassandra()
     helpers.remount_cassandra()
     helpers.ensure_database_directories()
-    ## helpers.pre_bootstrap()
     helpers.start_cassandra()
-    helpers.post_bootstrap()
-    ## helpers.wait_for_agreed_schema()
-    ## helpers.wait_for_normality()
-    ## helpers.emit_describe_cluster()
-    ## helpers.ensure_unit_superuser()
-    ## helpers.reset_auth_keyspace_replication()
-    hookenv.status_set('maintenance', 'Restarted')
+    helpers.status_set('maintenance', 'Restarted')
+
+
+@action
+def post_bootstrap():
+    '''Maintain state on if the node has bootstrapped into the cluster.
+
+    Per documented procedure for adding new units to a cluster, wait 2
+    minutes if the unit has just bootstrapped to ensure other units
+    do not attempt bootstrap too soon.
+    '''
+    if not helpers.is_bootstrapped():
+        helpers.set_bootstrapped()
+        if coordinator.relid is not None:
+            helpers.status_set('maintenance', 'Post-bootstrap 2 minute delay')
+            hookenv.log('Post-bootstrap 2 minute delay')
+            time.sleep(120)  # Must wait 2 minutes between bootstrapping nodes.
 
 
 @action
@@ -493,7 +516,7 @@ def create_unit_superusers():
     # don't need to restart Cassandra in no-auth mode which is slow and
     # I worry may cause issues interrupting the bootstrap.
     if coordinator.relid:
-        superusers = json.loads(hookenv.leader_get('superusers') or '{}')
+        superusers = helpers.get_unit_superusers()
         for peer in hookenv.related_units(coordinator.relid):
             rel = hookenv.relation_get(unit=peer, rid=coordinator.relid)
             username = rel.get('username')
@@ -610,16 +633,6 @@ def emit_cluster_info():
 
 
 @action
-def grant_ssh_access():
-    '''Grant SSH access to run nodetool on remote nodes.
-
-    This is easier than setting up remote JMX access, and more secure.
-    '''
-    unison.ssh_authorized_peers(coordinator.relname,
-                                'juju_ssh', ensure_local_user=True)
-
-
-@action
 def configure_firewall():
     '''Configure firewall rules using ufw.
 
@@ -661,11 +674,6 @@ def configure_firewall():
     for relinfo in hookenv.relations_of_type('cluster'):
         for port in peer_ports:
             desired_rules.add((relinfo['private-address'], 'any', port))
-
-    # External seeds also need access.
-    for seed_ip in helpers.seed_ips():
-        for port in peer_ports:
-            desired_rules.add((seed_ip, 'any', port))
 
     previous_rules = set(tuple(rule) for rule in config.get('ufw_rules', []))
 
@@ -733,25 +741,20 @@ def nrpe_external_master_relation():
 @action
 def maintain_seeds():
     '''The leader needs to maintain the list of seed nodes'''
-    seed_ips = helpers.seed_ips()
+    seed_ips = helpers.get_seed_ips()
     hookenv.log('Current seeds == {!r}'.format(seed_ips), DEBUG)
 
-    bootstrapped = set()
-    if coordinator.relid is not None:
-        for unit in hookenv.related_units(coordinator.relid):
-            relinfo = hookenv.relation_get(unit=unit, rid=coordinator.relid)
-            if relinfo.get('bootstrapped'):
-                bootstrapped.add(relinfo['private-address'])
-    hookenv.log('Bootstrapped ips == {!r}'.format(bootstrapped), DEBUG)
+    bootstrapped_ips = helpers.get_bootstrapped_ips()
+    hookenv.log('Bootstrapped == {!r}'.format(bootstrapped_ips), DEBUG)
 
     # Remove any seeds that are no longer bootstrapped, such as dropped
     # units.
-    seed_ips.intersection_update(bootstrapped)
+    seed_ips.intersection_update(bootstrapped_ips)
 
     # Add more bootstrapped nodes, if necessary, to get to our maximum
     # of 3 seeds.
-    while len(seed_ips) < 3 and bootstrapped:
-        seed_ips.add(bootstrapped.pop())
+    while len(seed_ips) < 3 and bootstrapped_ips:
+        seed_ips.add(bootstrapped_ips.pop())
 
     # If there are no seeds or bootstrapped nodes, start with the leader. Us.
     if len(seed_ips) == 0:
@@ -780,7 +783,7 @@ def reset_default_password():
             # join. The alternative is restarting Cassandra without
             # authentication, which this charm will likely need to do in the
             # future when we allow Cassandra services to be related together.
-            hookenv.status_set('maintenance',
+            helpers.status_set('maintenance',
                                'Creating initial superuser account')
             username, password = helpers.superuser_credentials()
             pwhash = helpers.encrypt_password(password)
@@ -806,8 +809,46 @@ def reset_default_password():
 
 @action
 def set_active():
-    if hookenv.unit_private_ip() in helpers.seed_ips():
+    if hookenv.unit_private_ip() in helpers.get_seed_ips():
         msg = 'Live seed node'
     else:
         msg = 'Live node'
-    hookenv.status_set('active', msg)
+    helpers.status_set('active', msg)
+
+
+@action
+def publish_bootstrapped_flag():
+    # Publish out bootstrapped status to the peer relation.
+    if helpers.is_bootstrapped():
+        helpers.set_bootstrapped()
+
+
+@action
+def request_unit_superuser():
+    if coordinator.relid is None:
+        hookenv.log('Request deferred until peer relation exists')
+        return
+
+    relinfo = hookenv.relation_get(unit=hookenv.local_unit(),
+                                   rid=coordinator.relid)
+    if relinfo and relinfo.get('username'):
+        hookenv.log('Superuser account request previously made')
+        return
+
+    username, password = helpers.superuser_credentials()
+    superusers = helpers.get_unit_superusers()
+    if username in superusers:
+        # The first leader will have already created its own credentials
+        # when a standalone unit. Mirror the pwhash to the peer relation
+        # so things work as expected when it is deposed. We don't
+        # simply recalculate the pwhash, as we would likely get a
+        # different salt and create needless churn.
+        hookenv.relation_set(coordinator.relid,
+                             username=username, pwhash=superusers[username])
+    else:
+        # Publish our requested superuser and password hash to our peers.
+        username, password = helpers.superuser_credentials()
+        pwhash = helpers.encrypt_password(password)
+        hookenv.relation_set(coordinator.relid,
+                             username=username, pwhash=pwhash)
+        hookenv.log('Requested superuser account creation')

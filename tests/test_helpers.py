@@ -187,15 +187,15 @@ class TestHelpers(TestCaseBase):
 
     @patch('helpers.is_bootstrapped')
     @patch('rollingrestart.get_peers')
-    def test_seed_ips(self, get_peers, is_bootstrapped):
+    def test_get_seed_ips(self, get_peers, is_bootstrapped):
         hookenv.local_unit.return_value = 'service/1'
         get_peers.return_value = set(['service/2', 'service/3', 'service/4'])
         is_bootstrapped.return_value = True
 
         # The first three units are used as the seed list.
-        self.assertSetEqual(helpers.seed_ips(), set(['10.20.0.1',
-                                                     '10.20.0.2',
-                                                     '10.20.0.3']))
+        self.assertSetEqual(helpers.get_seed_ips(), set(['10.20.0.1',
+                                                         '10.20.0.2',
+                                                         '10.20.0.3']))
 
     @patch('rollingrestart.get_peers')
     def test_seed_ips_alone(self, get_peers):
@@ -207,7 +207,7 @@ class TestHelpers(TestCaseBase):
         # # remaining nodes list up to three seeds).
         # self.assertEqual(hookenv.unit_private_ip(), '10.20.0.1')
 
-        self.assertSetEqual(helpers.seed_ips(), set(['10.20.0.1']))
+        self.assertSetEqual(helpers.get_seed_ips(), set(['10.20.0.1']))
 
     @patch('helpers.read_cassandra_yaml')
     def test_actual_seed_ips(self, read_yaml):
@@ -1091,7 +1091,7 @@ class TestHelpers(TestCaseBase):
 
     @patch('helpers.get_cassandra_version')
     @patch('helpers.get_cassandra_yaml_file')
-    @patch('helpers.seed_ips')
+    @patch('helpers.get_seed_ips')
     @patch('charmhelpers.core.host.write_file')
     def test_configure_cassandra_yaml(self, write_file, seed_ips, yaml_file,
                                       get_cassandra_version):
@@ -1161,7 +1161,7 @@ class TestHelpers(TestCaseBase):
 
     @patch('helpers.get_cassandra_version')
     @patch('helpers.get_cassandra_yaml_file')
-    @patch('helpers.seed_ips')
+    @patch('helpers.get_seed_ips')
     @patch('charmhelpers.core.host.write_file')
     def test_configure_cassandra_yaml_21(self, write_file, seed_ips,
                                          yaml_file, get_cassandra_version):
@@ -1224,7 +1224,7 @@ class TestHelpers(TestCaseBase):
 
     @patch('helpers.get_cassandra_version')
     @patch('helpers.get_cassandra_yaml_file')
-    @patch('helpers.seed_ips')
+    @patch('helpers.get_seed_ips')
     @patch('charmhelpers.core.host.write_file')
     def test_configure_cassandra_yaml_overrides(self, write_file, seed_ips,
                                                 yaml_file, version):
@@ -1533,7 +1533,7 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(helpers.is_bootstrapped())
 
     @patch('charmhelpers.contrib.unison.collect_authed_hosts')
-    @patch('helpers.seed_ips')
+    @patch('helpers.get_seed_ips')
     @patch('helpers.peer_ips')
     @patch('helpers.node_ips')
     @patch('helpers.nuke_local_database')
@@ -1560,7 +1560,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.nuke_local_database')
     @patch('helpers.are_all_nodes_responding')
     @patch('helpers.configure_cassandra_yaml')
-    @patch('helpers.seed_ips')
+    @patch('helpers.get_seed_ips')
     @patch('shutil.rmtree')
     @patch('helpers.non_system_keyspaces')
     @patch('helpers.num_peers')

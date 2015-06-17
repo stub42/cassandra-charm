@@ -23,7 +23,5 @@ include:
     - fetch
     - contrib.charmsupport
     - contrib.templating.jinja
-    - contrib.peerstorage
     - contrib.network.ufw
-    - contrib.unison
     - contrib.benchmark

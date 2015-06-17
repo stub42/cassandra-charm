@@ -23,7 +23,6 @@ from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
 from coordinator import coordinator
-import helpers
 
 
 class PeerRelation(RelationContext):
@@ -37,20 +36,8 @@ class PeerRelation(RelationContext):
             return True
         return False
 
-    def provide_data(self):
-        # Mirror the bootstrapped config item onto the peer relation,
-        # as when setting up the service the standalone leader will
-        # have bootstrapped before joining the peer relation.
-        bs_flag = "1" if hookenv.config().get('bootstrapped') else None
 
-        # Request creation of the unit's superuser, or remove the
-        # request if auth is working now.
-        username, password = helpers.superuser_credentials()
-        pwhash = helpers.encrypt_password(password)
-        return dict(bootstrapped=bs_flag, username=username, pwhash=pwhash)
-
-
-# FOR CHARMHELPERS
+# FOR CHARMHELPERS (if we can integrate Juju 1.24 storage too)
 class StorageRelation(RelationContext):
     '''Wait for the block storage mount to become available.
 

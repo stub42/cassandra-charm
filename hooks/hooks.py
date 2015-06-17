@@ -35,11 +35,11 @@ def default_hook():
     # These need to be imported after bootstrap() or required Python
     # packages may not have been installed.
     import definitions
-    from loglog import loglog
+    ## from loglog import loglog
 
     # Only useful for debugging, or perhaps have this enabled with a config
     # option?
-    loglog('/var/log/cassandra/system.log', prefix='C*: ')
+    ## loglog('/var/log/cassandra/system.log', prefix='C*: ')
 
     hookenv.log('*** {} Hook Start'.format(hookenv.hook_name()))
     sm = definitions.get_service_manager()
