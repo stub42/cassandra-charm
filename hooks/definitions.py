@@ -20,7 +20,6 @@ from charmhelpers.core import services
 import actions
 import helpers
 import relations
-from coordinator import coordinator
 
 
 def get_service_definitions():
@@ -83,7 +82,6 @@ def get_service_definitions():
         dict(service='post',
              required_data=[RequiresLiveNode()],
              data_ready=[actions.post_bootstrap,
-                         actions.publish_bootstrapped_flag,
                          actions.create_unit_superusers,
                          actions.reset_auth_keyspace_replication,
                          actions.publish_database_relations,
@@ -97,8 +95,9 @@ def get_service_definitions():
 
 class RequiresLiveNode:
     def __bool__(self):
-        is_live = self.is_live():
-        hookenv.log('Requirement RequiresLiveNode: {}'.format(is_live))
+        is_live = self.is_live()
+        hookenv.log('Requirement RequiresLiveNode: {}'.format(is_live),
+                    hookenv.DEBUG)
         return is_live
 
     def is_live(self):
@@ -108,18 +107,15 @@ class RequiresLiveNode:
 
         if helpers.is_cassandra_running():
             hookenv.log('Cassandra is running')
-            relinfo = hookenv.relation_get(unit=hookenv.local_unit(),
-                                           rid=coordinator.relid) or {}
-            username = relinfo.get('username')
-            pwhash = relinfo.get('pwhash')
-            if helpers.get_unit_superusers().get(username) == pwhash:
-                hookenv.log('Credentials exist')
+            if hookenv.local_unit() in helpers.get_unit_superusers():
+                hookenv.log('Credentials created')
                 return True
             else:
-                hookenv.log('Credentials do not exist')
+                hookenv.log('Credentials have not been created')
                 return False
-
-        return False
+        else:
+            hookenv.log('Cassandra is not running')
+            return False
 
 
 def get_service_manager():

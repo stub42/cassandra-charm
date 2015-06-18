@@ -460,7 +460,7 @@ def remount_cassandra():
     import relations
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        status_set('migrating data to new mountpoint')
+        status_set('maintenance', 'migrating data to new mountpoint')
         hookenv.config()['bootstrapped_into_cluster'] = False
         if storage.mountpoint is None:
             hookenv.log('External storage AND DATA gone. '
@@ -573,23 +573,6 @@ def ensure_user(session, username, encrypted_password, superuser=False):
           'INSERT INTO system_auth.credentials (username, salted_hash) '
           'VALUES (%s, %s)',
           ConsistencyLevel.ALL, (username, encrypted_password))
-
-
-## @logged
-## def ensure_unit_superuser():
-##     '''If the unit's superuser account is not working, recreate it.'''
-##     try:
-##         with connect(auth_timeout=10):
-##             hookenv.log('Unit superuser account already setup', DEBUG)
-##             return
-##     except cassandra.AuthenticationFailed:
-##         pass
-##
-##     status_set('maintenance', 'Creating unit superuser')
-##     create_unit_superuser()  # Doesn't exist or can't access, so create it.
-##
-##     with connect():
-##         hookenv.log('Unit superuser password reset successful')
 
 
 @logged
@@ -1080,13 +1063,11 @@ def is_decommissioned():
     if not is_cassandra_running():
         return False  # Decommissioned nodes are not shut down.
 
-    for _ in backoff('stable node mode'):
-        raw = nodetool('netstats')
-        if 'Mode: DECOMMISSIONED' in raw:
-            hookenv.log('This node is DECOMMISSIONED', WARNING)
-            return True
-        elif 'Mode: NORMAL' in raw:
-            return False
+    raw = nodetool('netstats')
+    if 'Mode: DECOMMISSIONED' in raw:
+        hookenv.log('This node is DECOMMISSIONED', WARNING)
+        return True
+    return False
 
 
 @logged
@@ -1163,14 +1144,23 @@ def leader_ping():
 
 
 def get_unit_superusers():
-    '''Return the unit superuser accounts that have been created by the leader.
-
-    Returns a dictionary mapping username to encrypted password.
+    '''Return the set of units that have had their superuser accounts created.
     '''
-    return json.loads(hookenv.leader_get('superusers') or '{}')
+    raw = hookenv.leader_get('superusers')
+    return set(json.loads(raw or '[]'))
+
+
+def set_unit_superusers(superusers):
+    hookenv.leader_set(superusers=json.dumps(sorted(superusers)))
 
 
 def status_set(state, message):
     '''Set the unit status and log a message.'''
     hookenv.status_set(state, message)
-    hookenv.log('{} state: {}'.format(state, message))
+    hookenv.log('{} unit state: {}'.format(state, message))
+
+
+def service_status_set(state, message):
+    '''Set the service status and log a message.'''
+    subprocess.check_call(['status-set', '--service', state, message])
+    hookenv.log('{} service state: {}'.format(state, message))

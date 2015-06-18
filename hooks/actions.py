@@ -18,7 +18,6 @@ from contextlib import closing
 import errno
 from functools import wraps
 import glob
-import json
 import os.path
 import re
 import shlex
@@ -458,7 +457,8 @@ def needs_restart():
         # We don't care about the local node in the changes.
         changed.discard(hookenv.unit_private_ip())
         if changed:
-            hookenv.log('New seeds {!r}. Waiting for restart permission.')
+            hookenv.log('New seeds {!r}. Waiting for restart '
+                        'permission.'.format(new_seeds))
             return True
 
     hookenv.log('Restart not required')
@@ -473,12 +473,12 @@ def maybe_restart():
     If a restart is needed, shutdown Cassandra, perform all pending operations
     that cannot be be done while Cassandra is live, and restart it.
     '''
-    helpers.status_set('maintenance', 'Restarting')
+    helpers.status_set('maintenance', 'Stopping Cassandra')
     helpers.stop_cassandra()
     helpers.remount_cassandra()
     helpers.ensure_database_directories()
+    helpers.status_set('maintenance', 'Restarting')
     helpers.start_cassandra()
-    helpers.status_set('maintenance', 'Restarted')
 
 
 @action
@@ -490,11 +490,15 @@ def post_bootstrap():
     do not attempt bootstrap too soon.
     '''
     if not helpers.is_bootstrapped():
-        helpers.set_bootstrapped()
         if coordinator.relid is not None:
             helpers.status_set('maintenance', 'Post-bootstrap 2 minute delay')
             hookenv.log('Post-bootstrap 2 minute delay')
             time.sleep(120)  # Must wait 2 minutes between bootstrapping nodes.
+
+    # Unconditionally call this to publish the bootstrapped flag to
+    # the peer relation, as the first unit was bootstrapped before
+    # the peer relation existed.
+    helpers.set_bootstrapped()
 
 
 @action
@@ -516,20 +520,19 @@ def create_unit_superusers():
     # don't need to restart Cassandra in no-auth mode which is slow and
     # I worry may cause issues interrupting the bootstrap.
     if coordinator.relid:
-        superusers = helpers.get_unit_superusers()
+        created_units = helpers.get_unit_superusers()
         for peer in hookenv.related_units(coordinator.relid):
-            rel = hookenv.relation_get(unit=peer, rid=coordinator.relid)
-            username = rel.get('username')
-            pwhash = rel.get('pwhash')
-            if username and superusers.get(username) != pwhash:
+            if peer not in created_units:
+                rel = hookenv.relation_get(unit=peer, rid=coordinator.relid)
+                username = rel.get('username')
+                pwhash = rel.get('pwhash')
                 with helpers.connect() as session:
-                    hookenv.log('Creating {} account for {}'.format(
-                        rel['username'], peer))
-                    helpers.ensure_user(session, rel['username'],
-                                        rel['pwhash'], superuser=True)
-                superusers[username] = pwhash
-                hookenv.leader_set(superusers=json.dumps(superusers,
-                                                         sort_keys=True))
+                    hookenv.log(
+                        'Creating {} account for {}'.format(username, peer))
+                    helpers.ensure_user(session, username, pwhash,
+                                        superuser=True)
+                created_units.add(peer)
+                helpers.set_unit_superusers(created_units)
 
 
 @action
@@ -788,6 +791,7 @@ def reset_default_password():
             username, password = helpers.superuser_credentials()
             pwhash = helpers.encrypt_password(password)
             helpers.ensure_user(session, username, pwhash, superuser=True)
+            helpers.set_unit_superusers([hookenv.local_unit()])
 
             hookenv.log('Changing default admin password')
             helpers.query(session, 'ALTER USER cassandra WITH PASSWORD %s',
@@ -809,18 +813,24 @@ def reset_default_password():
 
 @action
 def set_active():
+    if coordinator.requested('restart'):
+        # Don't override the status if we are waiting to restart.
+        # It was already set in actions.needs_restart.
+        hookenv.log('Node is live but wants to restart')
+        return
+
     if hookenv.unit_private_ip() in helpers.get_seed_ips():
         msg = 'Live seed node'
     else:
         msg = 'Live node'
     helpers.status_set('active', msg)
 
-
-@action
-def publish_bootstrapped_flag():
-    # Publish out bootstrapped status to the peer relation.
-    if helpers.is_bootstrapped():
-        helpers.set_bootstrapped()
+    if hookenv.is_leader():
+        num_nodes = len(helpers.get_bootstrapped())
+        if num_nodes == 1:
+            num_nodes = 'Single'
+        helpers.service_status_set('active',
+                                   '{} node cluster'.format(num_nodes))
 
 
 @action
@@ -832,21 +842,12 @@ def request_unit_superuser():
     relinfo = hookenv.relation_get(unit=hookenv.local_unit(),
                                    rid=coordinator.relid)
     if relinfo and relinfo.get('username'):
+        # We must avoid blindly setting the pwhash on the relation,
+        # as we will likely get a different value everytime we
+        # encrypt the password due to the random salt.
         hookenv.log('Superuser account request previously made')
-        return
-
-    username, password = helpers.superuser_credentials()
-    superusers = helpers.get_unit_superusers()
-    if username in superusers:
-        # The first leader will have already created its own credentials
-        # when a standalone unit. Mirror the pwhash to the peer relation
-        # so things work as expected when it is deposed. We don't
-        # simply recalculate the pwhash, as we would likely get a
-        # different salt and create needless churn.
-        hookenv.relation_set(coordinator.relid,
-                             username=username, pwhash=superusers[username])
     else:
-        # Publish our requested superuser and password hash to our peers.
+        # Publish the requested superuser and hash to our peers.
         username, password = helpers.superuser_credentials()
         pwhash = helpers.encrypt_password(password)
         hookenv.relation_set(coordinator.relid,
