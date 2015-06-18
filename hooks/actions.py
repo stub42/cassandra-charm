@@ -252,26 +252,26 @@ def install_oracle_jre():
     config = hookenv.config()
     url = config.get('private_jre_url', None)
     if not url:
-        hookenv.log('private_jre_url not set. Unable to continue.', ERROR)
-        raise SystemExit(1)
+        hookenv.status_set('blocked',
+                           'private_jre_url not set. '
+                           'Unable to install Oracle JRE as requested.')
+        raise SystemExit(0)
 
     if config.get('retrieved_jre', None) != url:
         filename = os.path.join('lib', url.split('/')[-1])
         if not filename.endswith('-linux-x64.tar.gz'):
-            hookenv.log('Invalid JRE URL {}'.format(url), ERROR)
-            raise SystemExit(1)
+            hookenv.status_set('blocked',
+                               'Invalid private_jre_url {}'.format(url))
+            raise SystemExit(0)
         urllib.request.urlretrieve(url, filename)
         config['retrieved_jre'] = url
 
     pattern = 'lib/server-jre-?u*-linux-x64.tar.gz'
     tarballs = glob.glob(pattern)
     if not tarballs:
-        hookenv.log('Oracle JRE tarball not found ({})'.format(pattern),
-                    ERROR)
-        # We could fallback to OpenJDK, but the user took the trouble
-        # to specify the Oracle JRE and it is recommended for Cassandra
-        # so lets hard fail instead.
-        raise SystemExit(1)
+        hookenv.status_set('blocked',
+                           'Oracle JRE tarball not found ({})'.format(pattern))
+        raise SystemExit(0)
 
     # Latest tarball by filename/version num. Lets hope they don't hit
     # 99 (currently at 76).
@@ -368,15 +368,32 @@ def configure_cassandra_rackdc():
     host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
 
 
+def needs_reset_auth_keyspace_replication():
+    '''Guard for reset_auth_keyspace_replication.'''
+    num_nodes = len(helpers.get_bootstrapped_ips())
+    n = min(num_nodes, 3)
+    datacenter = hookenv.config()['datacenter']
+    with helpers.connect() as session:
+        strategy_opts = helpers.get_auth_keyspace_replication(session)
+        rf = int(strategy_opts.get(datacenter, -1))
+        hookenv.log('system_auth rf={!r}'.format(strategy_opts))
+        # If the node count has increased, we will change the rf.
+        # If the node count is decreasing, we do nothing as the service
+        # may be being destroyed.
+        if rf < n:
+            return True
+    return False
+
+
 @leader_only
 @action
+@coordinator.require('repair', needs_reset_auth_keyspace_replication)
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
     # the system_auth keyspace, to ensure availability and redundancy.
     # We replication factor in this service's DC can be no higher than
     # the number of bootstrapped nodes. We also cap this at 3 to ensure
     # we don't have too many seeds.
-
     num_nodes = len(helpers.get_bootstrapped_ips())
     n = min(num_nodes, 3)
     datacenter = hookenv.config()['datacenter']
@@ -421,13 +438,11 @@ def needs_restart():
         status = 'waiting'
 
     # If the directory paths have changed, we need to migrate data
-    # during a restart. Directory config items have already been picked
-    # up in the previous check.
+    # during a restart.
     storage = relations.StorageRelation()
     if storage.needs_remount():
         helpers.status_set(status,
-                           'Switching to new mountpoint. '
-                           'Waiting for restart permission')
+                           'New mounts. Waiting for restart permission')
         return True
 
     # If any of these config items changed, a restart is required.
@@ -477,7 +492,10 @@ def maybe_restart():
     helpers.stop_cassandra()
     helpers.remount_cassandra()
     helpers.ensure_database_directories()
-    helpers.status_set('maintenance', 'Restarting')
+    if coordinator.relid and not helpers.is_bootstrapped():
+        helpers.status_set('maintenance', 'Bootstrapping')
+    else:
+        helpers.status_set('maintenance', 'Starting Cassandra')
     helpers.start_cassandra()
 
 
@@ -519,20 +537,23 @@ def create_unit_superusers():
     # don't end up with unencrypted passwords leaving the unit, and we
     # don't need to restart Cassandra in no-auth mode which is slow and
     # I worry may cause issues interrupting the bootstrap.
-    if coordinator.relid:
-        created_units = helpers.get_unit_superusers()
-        for peer in hookenv.related_units(coordinator.relid):
-            if peer not in created_units:
-                rel = hookenv.relation_get(unit=peer, rid=coordinator.relid)
-                username = rel.get('username')
-                pwhash = rel.get('pwhash')
-                with helpers.connect() as session:
-                    hookenv.log(
-                        'Creating {} account for {}'.format(username, peer))
-                    helpers.ensure_user(session, username, pwhash,
-                                        superuser=True)
-                created_units.add(peer)
-                helpers.set_unit_superusers(created_units)
+    if not coordinator.relid:
+        return  # No peer relation, no requests yet.
+
+    created_units = helpers.get_unit_superusers()
+    uncreated_units = [u for u in hookenv.related_units(coordinator.relid)
+                       if u not in created_units]
+    for peer in uncreated_units:
+        rel = hookenv.relation_get(unit=peer, rid=coordinator.relid)
+        username = rel.get('username')
+        pwhash = rel.get('pwhash')
+        if not username:
+            continue
+        hookenv.log('Creating {} account for {}'.format(username, peer))
+        with helpers.connect() as session:
+            helpers.ensure_user(session, username, pwhash, superuser=True)
+        created_units.add(peer)
+        helpers.set_unit_superusers(created_units)
 
 
 @action
@@ -813,12 +834,6 @@ def reset_default_password():
 
 @action
 def set_active():
-    if coordinator.requested('restart'):
-        # Don't override the status if we are waiting to restart.
-        # It was already set in actions.needs_restart.
-        hookenv.log('Node is live but wants to restart')
-        return
-
     if hookenv.unit_private_ip() in helpers.get_seed_ips():
         msg = 'Live seed node'
     else:

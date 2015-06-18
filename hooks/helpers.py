@@ -370,17 +370,6 @@ def get_cassandra_packages():
     return packages
 
 
-## @logged
-## def stop_cassandra(immediate=False):
-##     if is_cassandra_running():
-##         if not immediate:
-##             # If there are cluster operations in progress, wait until
-##             # they are complete before restarting. This might take days.
-##             wait_for_normality()
-##         host.service_stop(get_cassandra_service())
-##     assert not is_cassandra_running()
-
-
 @logged
 def stop_cassandra():
     if is_cassandra_running():
@@ -413,37 +402,7 @@ def start_cassandra():
             return
         time.sleep(1)
     status_set('blocked', 'Cassandra failed to start')
-    if hookenv.has_juju_version('1.24'):
-        raise SystemExit(0)
-    else:
-        raise SystemExit(1)
-
-
-## def is_responding(ip, port=None, timeout=5):
-##     if port is None:
-##         port = hookenv.config()['storage_port']
-##     try:
-##         subprocess.check_output(['nc', '-zw', str(timeout), ip, str(port)],
-##                                 stderr=subprocess.STDOUT)
-##         hookenv.log('{} listening on port {}'.format(ip, port), DEBUG)
-##         return True
-##     except subprocess.TimeoutExpired:
-##         hookenv.log('{} not listening on port {}'.format(ip, port), DEBUG)
-##         return False
-
-
-## @logged
-## def are_all_nodes_responding():
-##     all_contactable = True
-##     for ip in node_ips():
-##         if ip == hookenv.unit_private_ip():
-##             pass
-##         elif is_responding(ip, timeout=5):
-##             hookenv.log('{} is responding'.format(ip))
-##         else:
-##             all_contactable = False
-##             hookenv.log('{} is not responding'.format(ip))
-##     return all_contactable
+    raise SystemExit(0)
 
 
 @logged
@@ -664,9 +623,6 @@ def emit(*args, **kw):
 
 def nodetool(*cmd, timeout=120):
     cmd = ['nodetool'] + [str(i) for i in cmd]
-    ## if ip is not None:
-    ##     assert ip in unison.collect_authed_hosts(coordinator.relid)
-    ##     cmd = ['sudo', '-Hsu', 'juju_ssh', 'ssh', ip] + cmd
     i = 0
     until = time.time() + timeout
     for _ in backoff('nodetool to work'):
@@ -1059,13 +1015,31 @@ def unit_to_ip(unit):
 ##             return
 
 
-def is_decommissioned():
-    if not is_cassandra_running():
-        return False  # Decommissioned nodes are not shut down.
+def get_node_status():
+    '''Return the Cassandra node status.
 
+    May be NORMAL, JOINING, DECOMMISSIONED etc., or None if we can't tell.
+    '''
+    if not is_cassandra_running():
+        return None
     raw = nodetool('netstats')
-    if 'Mode: DECOMMISSIONED' in raw:
+    m = re.search(r'(?m)^Mode:\s+(\w+)$', raw)
+    if m is None:
+        return None
+    return m.group(1)
+
+
+def is_decommissioned():
+    if get_node_status() == 'DECOMMISSIONED':
         hookenv.log('This node is DECOMMISSIONED', WARNING)
+        return True
+    return False
+
+
+def is_normal():
+    raw = nodetool('netstats')
+    if 'Mode: NORMAL' in raw:
+        hookenv.log('This node is NORMAL')
         return True
     return False
 

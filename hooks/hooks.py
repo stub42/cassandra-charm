@@ -32,13 +32,18 @@ def bootstrap():
 
 
 def default_hook():
+    if not hookenv.has_juju_version('1.24'):
+        hookenv.status_set('blocked', 'Requires Juju 1.24 or higher')
+        # Error state, since we don't have 1.24 to give a nice blocked state.
+        raise SystemExit(1)
+
     # These need to be imported after bootstrap() or required Python
     # packages may not have been installed.
     import definitions
-    ## from loglog import loglog
 
     # Only useful for debugging, or perhaps have this enabled with a config
     # option?
+    ## from loglog import loglog
     ## loglog('/var/log/cassandra/system.log', prefix='C*: ')
 
     hookenv.log('*** {} Hook Start'.format(hookenv.hook_name()))
