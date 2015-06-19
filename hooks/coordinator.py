@@ -17,7 +17,7 @@ from charmhelpers.coordinator import BaseCoordinator
 
 
 class CassandraCoordinator(BaseCoordinator):
-    def default_grant(self, unit, granted, queue):
+    def default_grant(self, lock, unit, granted, queue):
         '''Grant locks to only one unit at a time, regardless of its name.
 
         This lets us keep separate locks like repair and restart,
@@ -29,7 +29,7 @@ class CassandraCoordinator(BaseCoordinator):
             return True
 
         # Otherwise, return True if the unit is first in the queue.
-        return queue[0] == unit
+        return queue[0] == unit and not granted
 
 
 coordinator = CassandraCoordinator()

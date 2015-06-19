@@ -13,14 +13,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 import configparser
 from contextlib import contextmanager
 from datetime import timedelta
 import errno
 from functools import wraps
 import io
-## from itertools import chain
 import json
 import os.path
 import re
@@ -99,9 +97,6 @@ def install_packages(packages):
     if hookenv.config('extra_packages'):
         packages.extend(hookenv.config('extra_packages').split())
     packages = fetch.filter_installed_packages(packages)
-    # if 'ntp' in packages:
-    #     fetch.apt_install(['ntp'], fatal=True)  # With autostart
-    #     packages.remove('ntp')
     if packages:
         # The DSE packages are huge, so this might take some time.
         status_set('maintenance', 'Installing packages')
@@ -652,54 +647,6 @@ def nodetool(*cmd, timeout=120):
                 raise
 
 
-## def node_ips():
-##     '''IP addresses of all nodes in the Cassandra cluster.'''
-##     if is_bootstrapped() or num_peers() == 0:
-##         # If bootstrapped, or standalone, we trust our local info.
-##         raw = nodetool('status', 'system_auth')
-##     else:
-##         # If not bootstrapped, we query a seed.
-##         authed_ips = unison.collect_authed_hosts(coordinator.relid)
-##         seeds = [ip for ip in get_seed_ips() if ip in authed_ips]
-##         if not seeds:
-##             return set()  # Not bootstrapped, and nobody else is either.
-##         raw = nodetool('status', 'system_auth', ip=seeds[0])
-##
-##     ips = set()
-##     for line in raw.splitlines():
-##         match = re.search(r'^(\w)([NLJM])\s+([\d\.]+)\s', line)
-##         if match is not None and (match.group(1) == 'U'
-##                                   or match.group(2) != 'L'):
-##             ips.add(match.group(3))
-##     return ips
-##
-##
-## def up_node_ips():
-##     '''IP addresses of nodes that are up.'''
-##     raw = nodetool('status', 'system_auth')
-##     ips = set()
-##     for line in raw.splitlines():
-##         match = re.search(r'^(\w)([NLJM])\s+([\d\.]+)\s', line)
-##         if match is not None and match.group(1) == 'U':  # Up
-##             ips.add(match.group(3))
-##     return ips
-##
-##
-## def num_nodes():
-##     '''Number of nodes in the Cassandra cluster.
-##
-##     This is not necessarily the same as the number of peers, as nodes
-##     may be decommissioned.
-##     '''
-##     return len(node_ips())
-##
-##
-## def num_peers():
-##     if coordinator.relid is not None:
-##         return len(hookenv.related_units(coordinator.relid))
-##     return 0
-
-
 def read_cassandra_yaml():
     cassandra_yaml_path = get_cassandra_yaml_file()
     with open(cassandra_yaml_path, 'rb') as f:
@@ -819,7 +766,8 @@ def get_auth_keyspace_replication(session):
 
 @logged
 def set_auth_keyspace_replication(session, settings):
-    status_set('maintenance',
+    # Live operation, so keep status the same.
+    status_set(hookenv.status_get(),
                'Updating system_auth rf to {!r}'.format(settings))
     statement = 'ALTER KEYSPACE system_auth WITH REPLICATION = %s'
     query(session, statement, ConsistencyLevel.ALL, (settings,))
@@ -827,70 +775,17 @@ def set_auth_keyspace_replication(session, settings):
 
 @logged
 def repair_auth_keyspace():
-    ## # First, wait for schema agreement. Attempting to repair a keyspace
-    ## # with inconsistent replication settings will fail.
-    ## wait_for_agreed_schema()
+    # First, wait for schema agreement. Attempting to repair a keyspace
+    # with inconsistent replication settings will fail.
+    status_set(hookenv.status_get(),
+               'Waiting for schema agreement')
+    wait_for_agreed_schema()
     # Repair takes a long time, and may need to be retried due to 'snapshot
     # creation' errors, but should certainly complete within an hour since
     # the keyspace is tiny.
+    status_set(hookenv.status_get(),
+               'Repairing system_auth keyspace')
     nodetool('repair', 'system_auth', timeout=3600)
-
-
-## def non_system_keyspaces():
-##     # If there are only system keyspaces defined, there is no data we
-##     # may want to preserve and we can safely proceed with the bootstrap.
-##     # This should always be the case, but it is worth checking for weird
-##     # situations such as reusing an existing external mount without
-##     # clearing its data.
-##     dfds = get_all_database_directories()['data_file_directories']
-##     keyspaces = set(chain(*[os.listdir(dfd) for dfd in dfds]))
-##     hookenv.log('keyspaces={!r}'.format(keyspaces), DEBUG)
-##     return keyspaces - set(['system', 'system_auth', 'system_traces',
-##                             'dse_system'])
-
-
-## def nuke_local_database():
-##     '''Destroy the local database, entirely, so this node may bootstrap.
-##
-##     This needs to be lower level than just removing selected keyspaces
-##     such as 'system', as commitlogs and other crumbs can also cause the
-##     bootstrap process to fail disasterously.
-##     '''
-##     # This function is dangerous enough to warrent a guard.
-##     assert not is_bootstrapped()
-##     assert unit_number() != 0
-##
-##     keyspaces = non_system_keyspaces()
-##     if keyspaces:
-##         hookenv.log('Non-system keyspaces {!r} detected. '
-##                     'Unable to bootstrap.'.format(keyspaces), ERROR)
-##         raise SystemExit(1)
-##
-##     dirs = get_all_database_directories()
-##     nuke_directory_contents(dirs['saved_caches_directory'])
-##     nuke_directory_contents(dirs['commitlog_directory'])
-##     for dfd in dirs['data_file_directories']:
-##         nuke_directory_contents(dfd)
-##
-##
-## def nuke_directory_contents(d):
-##     '''Remove the contents of directory d, leaving d in place.
-##
-##     We don't remove the top level directory as it may be a mount
-##     or symlink we cannot recreate.
-##     '''
-##     for name in os.listdir(d):
-##         path = os.path.join(d, name)
-##         if os.path.isdir(path):
-##             shutil.rmtree(path)
-##         else:
-##             os.remove(path)
-
-
-## def unit_number(unit=None):
-##     if unit is None:
-##         unit = hookenv.local_unit()
-##     return int(unit.split('/')[-1])
 
 
 def is_bootstrapped(unit=None):
@@ -937,84 +832,6 @@ def unit_to_ip(unit):
         return None
 
 
-## def is_schema_agreed():
-##     '''Return True if all the nodes that are up agree on a schema.'''
-##     up_ips = set(up_node_ips())
-##     # Always include ourself since we may be joining just now.
-##     up_ips.add(hookenv.unit_private_ip())
-##     raw = nodetool('describecluster')
-##     # The output of nodetool describe cluster is almost yaml,
-##     # so we use that tool once we fix the tabs.
-##     description = yaml.load(raw.expandtabs())
-##     versions = description['Cluster Information']['Schema versions'] or {}
-##
-##     for schema, schema_ips in versions.items():
-##         schema_ips = set(schema_ips)
-##         if up_ips.issubset(schema_ips):
-##             hookenv.log('{!r} agree on schema'.format(up_ips), DEBUG)
-##             return True
-##     hookenv.log('{!r} do not agree on schema'.format(up_ips), DEBUG)
-##     return False
-##
-##
-## @logged
-## def wait_for_agreed_schema():
-##     for _ in backoff('schema agreement'):
-##         if is_schema_agreed():
-##             return
-
-
-## def is_all_normal(timeout=120):
-##     '''All nodes in the cluster report status Normal.
-##
-##     Returns false if a node is joining, leaving or moving in the ring.
-##     '''
-##     is_all_normal = True
-##     try:
-##         raw = nodetool('status', 'system_auth', timeout=timeout)
-##     except subprocess.TimeoutExpired:
-##         return False
-##     node_status_re = re.compile('^(.)([NLJM])\s+([\d\.]+)\s')
-##     for line in raw.splitlines():
-##         match = node_status_re.search(line)
-##         if match is not None:
-##             updown, mode, address = match.groups()
-##             if updown == 'D':
-##                 # 'Down' is unfortunately just informative. During service
-##                 # teardown, nodes will disappear without decommissioning
-##                 # leaving these entries.
-##                 if address == hookenv.unit_private_ip():
-##                     is_all_normal = False
-##                     hookenv.log(
-##                         'Node {} (this node) is down'.format(address))
-##                 else:
-##                     hookenv.log('Node {} is down'.format(address))
-##             elif updown == '?':  # CASSANDRA-8791
-##                 is_all_normal = False
-##                 hookenv.log('Node {} is transitioning'.format(address))
-##
-##             if mode == 'L':
-##                 hookenv.log(
-##                     'Node {} is leaving the cluster'.format(address))
-##                 is_all_normal = False
-##             elif mode == 'J':
-##                 hookenv.log(
-##                     'Node {} is joining the cluster'.format(address))
-##                 is_all_normal = False
-##             elif mode == 'M':
-##                 hookenv.log(
-##                     'Node {} is moving ring position'.format(address))
-##                 is_all_normal = False
-##     return is_all_normal
-##
-##
-## @logged
-## def wait_for_normality():
-##     for _ in backoff('cluster operators to complete'):
-##         if is_all_normal():
-##             return
-
-
 def get_node_status():
     '''Return the Cassandra node status.
 
@@ -1026,20 +843,13 @@ def get_node_status():
     m = re.search(r'(?m)^Mode:\s+(\w+)$', raw)
     if m is None:
         return None
-    return m.group(1)
+    return m.group(1).upper()
 
 
 def is_decommissioned():
-    if get_node_status() == 'DECOMMISSIONED':
-        hookenv.log('This node is DECOMMISSIONED', WARNING)
-        return True
-    return False
-
-
-def is_normal():
-    raw = nodetool('netstats')
-    if 'Mode: NORMAL' in raw:
-        hookenv.log('This node is NORMAL')
+    status = get_node_status()
+    if status in ('DECOMMISSIONED', 'LEAVING'):
+        hookenv.log('This node is {}'.format(status), WARNING)
         return True
     return False
 
