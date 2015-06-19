@@ -421,7 +421,7 @@ def needs_restart():
     if helpers.is_decommissioned():
         # Decommissioned nodes are never restarted. They remain up
         # telling everyone they are decommissioned.
-        helpers.status_set('maintenance', 'Decommissioned')
+        helpers.status_set('blocked', 'Node is decommissioned')
         return False
 
     if not helpers.is_cassandra_running():
@@ -432,36 +432,32 @@ def needs_restart():
                                'Waiting for permission to bootstrap')
         return True
 
-    if helpers.is_bootstrapped():
-        status = 'maintenance'
-    else:
-        status = 'waiting'
+    config = hookenv.config()
+
+    # If our IP address has changed, we need to restart.
+    if config.changed('unit_private_ip'):
+        hookenv.log('waiting',
+                    'IP address changed. Waiting for restart permission.')
+        return True
 
     # If the directory paths have changed, we need to migrate data
     # during a restart.
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        helpers.status_set(status,
+        helpers.status_set('waiting',
                            'New mounts. Waiting for restart permission')
         return True
 
     # If any of these config items changed, a restart is required.
-    config = hookenv.config()
     for key in RESTART_REQUIRED_KEYS:
         if config.changed(key):
             hookenv.log('{} changed. Restart required.'.format(key))
     for key in RESTART_REQUIRED_KEYS:
         if config.changed(key):
-            helpers.status_set(status,
-                               'Applying config changes. '
+            helpers.status_set('waiting',
+                               'Config changes. '
                                'Waiting for restart permission.')
             return True
-
-    # If our IP address has changed, we need to restart.
-    if config.changed('unit_private_ip'):
-        hookenv.log(status,
-                    'IP address changed. Waiting for restart permission.')
-        return True
 
     # If we have new seeds, we should restart.
     new_seeds = helpers.get_seed_ips()
@@ -472,8 +468,10 @@ def needs_restart():
         # We don't care about the local node in the changes.
         changed.discard(hookenv.unit_private_ip())
         if changed:
-            hookenv.log('New seeds {!r}. Waiting for restart '
-                        'permission.'.format(new_seeds))
+            helpers.status_set('waiting',
+                               'Updated seeds {!r}. '
+                               'Waiting for restart permission.'
+                               ''.format(new_seeds))
             return True
 
     hookenv.log('Restart not required')
@@ -590,7 +588,7 @@ def _publish_database_relation(relid, superuser):
             try:
                 relinfo = hookenv.relation_get(unit=unit, rid=relid)
             except subprocess.CalledProcessError:
-                continue  # Assume unit has not joined relid yet.
+                continue  # Assume the remote unit has not joined relid yet.
             if 'username' in relinfo:
                 username = relinfo['username']
                 password = relinfo['password']
@@ -600,7 +598,9 @@ def _publish_database_relation(relid, superuser):
         # Credentials unset. The leader must generate them.
         username = 'juju_{}'.format(relid.replace(':', '_').replace('-', '_'))
         password = host.pwgen()
-        helpers.ensure_user(username, password, superuser)
+        pwhash = helpers.encrypt_password(password)
+        with helpers.connect() as session:
+            helpers.ensure_user(session, username, pwhash, superuser)
         # Wake the peers, if any.
         helpers.leader_ping()
 
