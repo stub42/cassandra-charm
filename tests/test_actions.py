@@ -410,182 +410,6 @@ class TestsActions(TestCaseBase):
         actions.store_unit_private_ip('')
         self.assertEqual(hookenv.config()['unit_private_ip'], sentinel.ip)
 
-    @patch('helpers.set_bootstrapped')
-    @patch('helpers.unit_number')
-    def test_set_unit_zero_bootstrapped(self, unit_number, set_bootstrapped):
-        unit_number.return_value = 0
-        hookenv.hook_name.return_value = 'cluster-whatever'
-        actions.set_unit_zero_bootstrapped('')
-        set_bootstrapped.assert_called_once_with(True)
-        set_bootstrapped.reset_mock()
-
-        # Noop if unit number is not 0.
-        unit_number.return_value = 2
-        actions.set_unit_zero_bootstrapped('')
-        self.assertFalse(set_bootstrapped.called)
-
-        # Noop if called from a non peer relation hook. Unfortunatly,
-        # attempting to set attributes on the peer relation fails before
-        # the peer relation has been joined.
-        unit_number.return_value = 0
-        hookenv.hook_name.return_value = 'install'
-        actions.set_unit_zero_bootstrapped('')
-        self.assertFalse(set_bootstrapped.called)
-
-    @patch('helpers.is_cassandra_running')
-    @patch('helpers.is_decommissioned')
-    @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_decommissioned(self, request_restart,
-                                                   is_running, is_decom):
-        is_decom.return_value = True
-        is_running.return_value = True
-        actions.maybe_schedule_restart('')
-        self.assertFalse(request_restart.called)
-
-    @patch('helpers.is_decommissioned')
-    @patch('helpers.seed_ips')
-    @patch('helpers.is_cassandra_running')
-    @patch('relations.StorageRelation')
-    @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_need_remount(self, request_restart,
-                                                 storage_relation, is_running,
-                                                 seed_ips, is_decom):
-        config = hookenv.config()
-
-        is_decom.return_value = False
-        is_running.return_value = True
-
-        # Storage says we need to restart.
-        storage_relation().needs_remount.return_value = True
-
-        # No new seeds
-        seed_ips.return_value = set(['a'])
-        config['configured_seeds'] = sorted(seed_ips())
-        config.save()
-        config.load_previous()
-
-        # IP address is unchanged.
-        config['unit_private_ip'] = hookenv.unit_private_ip()
-
-        # Config items are unchanged.
-        config.save()
-        config.load_previous()
-
-        actions.maybe_schedule_restart('')
-        request_restart.assert_called_once_with()
-        hookenv.log.assert_any_call('Mountpoint changed. '
-                                    'Restart and migration required.')
-
-    @patch('helpers.is_decommissioned')
-    @patch('helpers.seed_ips')
-    @patch('helpers.is_cassandra_running')
-    @patch('relations.StorageRelation')
-    @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_unchanged(self, request_restart,
-                                              storage_relation, is_running,
-                                              seed_ips, is_decom):
-        config = hookenv.config()
-        config['configured_seeds'] = ['a']
-        config.save()
-        config.load_previous()
-
-        is_decom.return_value = False
-        is_running.return_value = True
-
-        # Storage says we do not need to restart.
-        storage_relation().needs_remount.return_value = False
-
-        # No new seeds
-        seed_ips.return_value = set(['a'])
-        config['configured_seeds'] = sorted(seed_ips())
-        config.save()
-        config.load_previous()
-
-        # IP address is unchanged.
-        config['unit_private_ip'] = hookenv.unit_private_ip()
-
-        # Config items are unchanged, except for ones that do not
-        # matter.
-        config.save()
-        config.load_previous()
-        config['package_status'] = 'new'
-        self.assertTrue(config.changed('package_status'))
-
-        actions.maybe_schedule_restart('')
-        self.assertFalse(request_restart.called)
-
-    @patch('helpers.is_decommissioned')
-    @patch('helpers.is_cassandra_running')
-    @patch('helpers.seed_ips')
-    @patch('relations.StorageRelation')
-    @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_config_changed(self, request_restart,
-                                                   storage_relation,
-                                                   seed_ips, is_running,
-                                                   is_decom):
-        config = hookenv.config()
-
-        is_decom.return_value = False
-        is_running.return_value = True
-
-        # Storage says we do not need to restart.
-        storage_relation().needs_remount.return_value = False
-
-        # IP address is unchanged.
-        config['unit_private_ip'] = hookenv.unit_private_ip()
-
-        # Config items are changed.
-        config.save()
-        config.load_previous()
-        config['package_status'] = 'new'
-        self.assertTrue(config.changed('package_status'))  # Doesn't matter.
-        config['max_heap_size'] = 'lots and lots'
-        self.assertTrue(config.changed('max_heap_size'))  # Requires restart.
-
-        actions.maybe_schedule_restart('')
-        request_restart.assert_called_once_with()
-        hookenv.log.assert_any_call('max_heap_size changed. Restart required.')
-
-    @patch('helpers.is_decommissioned')
-    @patch('helpers.seed_ips')
-    @patch('helpers.is_cassandra_running')
-    @patch('relations.StorageRelation')
-    @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_ip_changed(self, request_restart,
-                                               storage_relation, is_running,
-                                               seed_ips, is_decom):
-        is_decom.return_value = False
-        is_running.return_value = True
-
-        # Storage says we do not need to restart.
-        storage_relation().needs_remount.return_value = False
-
-        # No new seeds
-        seed_ips.return_value = set(['a'])
-        config = hookenv.config()
-        config['configured_seeds'] = sorted(seed_ips())
-        config.save()
-        config.load_previous()
-
-        # Config items are unchanged.
-        config = hookenv.config()
-        config.save()
-        config.load_previous()
-
-        actions.store_unit_private_ip('')  # IP address change
-
-        actions.maybe_schedule_restart('')
-        request_restart.assert_called_once_with()
-        hookenv.log.assert_any_call('Unit IP address changed. '
-                                    'Restart required.')
-
-    @patch('helpers.is_cassandra_running')
-    @patch('rollingrestart.request_restart')
-    def test_maybe_schedule_restart_down(self, request_restart, is_running):
-        is_running.return_value = False
-        actions.maybe_schedule_restart('')
-        request_restart.assert_called_once_with()
-
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
         actions.stop_cassandra('ignored')
@@ -624,17 +448,6 @@ class TestsActions(TestCaseBase):
             with self.subTest(key=key):
                 self.assertIn(key, combined)
 
-    # def test_publish_cluster_relation(self):
-    #     actions.publish_cluster_relation('')
-    #     hookenv.relation_set.assert_called_once_with(
-    #         'cluster:1', {'public-address': '10.30.0.1'})
-
-    # @patch('rollingrestart.get_peer_relation_id')
-    # def test_publish_cluster_relation_not_yet(self, get_relid):
-    #     get_relid.return_value = None  # Peer relation not yet joined.
-    #     actions.publish_cluster_relation('')  # Noop
-    #     self.assertFalse(hookenv.relation_set.called)
-
     @patch('actions._publish_database_relation')
     def test_publish_database_relations(self, publish_db_rel):
         actions.publish_database_relations('')
@@ -646,13 +459,10 @@ class TestsActions(TestCaseBase):
         publish_db_rel.assert_called_once_with('database-admin:1',
                                                superuser=True)
 
-    @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
-    @patch('rollingrestart.get_peers')
-    def test_publish_database_relation(self, get_peers, pwgen,
-                                       ensure_user, utcnow_str):
-        get_peers.return_value = set()
+    def test_publish_database_relation(self, pwgen, ensure_user):
+        #get_peers.return_value = set()
         pwgen.side_effect = iter(['secret1', 'secret2'])
         hookenv.relation_get.return_value = {}
         config = hookenv.config()
@@ -661,7 +471,6 @@ class TestsActions(TestCaseBase):
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
-        utcnow_str.return_value = 'whenever'
 
         actions._publish_database_relation('database:1', sentinel.superuser)
 
@@ -680,13 +489,11 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
-    @patch('rollingrestart.get_peers')
-    def test_publish_database_relation_fail(self, get_peers):
+    def test_publish_database_relation_fail(self):
         # If we fail to retrieve details from the first unit, don't
         # fail. This could just be an edge case where the first unit
         # hasn't joined the relation yet, causing relation-get to barf
         # unpredictably.
-        get_peers.return_value = ['service/1', 'service/2']
         hookenv.local_unit.return_value = 'service/99'
         hookenv.relation_get.side_effect = repeat(
             subprocess.CalledProcessError(1, ''))
@@ -695,7 +502,7 @@ class TestsActions(TestCaseBase):
 
         # If we fail to retrieve details from the first unit, and it is
         # us, something is very wrong and the exception propagated.
-        get_peers.return_value = ['service/1', 'service/2']
+        # get_peers.return_value = ['service/1', 'service/2']
         hookenv.local_unit.return_value = 'service/0'
         hookenv.relation_get.side_effect = repeat(
             subprocess.CalledProcessError(1, ''))
@@ -703,12 +510,9 @@ class TestsActions(TestCaseBase):
                           actions._publish_database_relation,
                           'database:1', sentinel.superuser)
 
-    @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('rollingrestart.get_peers')
-    def test_publish_database_relation_alone(self, get_peers,
-                                             ensure_user, utcnow_str):
-        get_peers.return_value = set()
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_publish_database_relation_alone(self, is_leader, ensure_user):
         # There are existing credentials on the relation.
         hookenv.relation_set(relation_id='database:1',
                              username='un', password='pw')
@@ -718,7 +522,6 @@ class TestsActions(TestCaseBase):
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
-        utcnow_str.return_value = 'whenever'
 
         actions._publish_database_relation('database:1', sentinel.superuser)
 
@@ -741,12 +544,9 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
-    @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
-    @patch('rollingrestart.get_peers')
-    def test_publish_database_relation_leader(self, get_peers, pwgen,
-                                              ensure_user, utcnow_str):
+    def test_publish_database_relation_leader(self, pwgen, ensure_user):
         get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         hookenv.relation_get.return_value = {}
@@ -756,7 +556,6 @@ class TestsActions(TestCaseBase):
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
-        utcnow_str.return_value = 'whenever'
 
         actions._publish_database_relation('database:1', sentinel.superuser)
 
@@ -775,12 +574,8 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
-    @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
-    @patch('rollingrestart.get_peers')
-    def test_publish_database_relation_leader2(self, get_peers,
-                                               ensure_user, utcnow_str):
-        get_peers.return_value = set()
+    def test_publish_database_relation_leader2(self, ensure_user):
         # There are existing credentials on the relation.
         hookenv.relation_set(relation_id='database:1',
                              username='un', password='pw')
@@ -790,7 +585,6 @@ class TestsActions(TestCaseBase):
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
-        utcnow_str.return_value = 'whenever'
 
         actions._publish_database_relation('database:1', sentinel.superuser)
 
@@ -813,14 +607,11 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
-    @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
-    @patch('rollingrestart.get_peers')
-    def test_publish_database_relation_follow(self, get_peers, pwgen,
-                                              ensure_user, utcnow_str):
+    def test_publish_database_relation_follow(self, pwgen, ensure_user):
         hookenv.local_unit.return_value = 'service/4'
-        get_peers.return_value = set(['service/2', 'service/3'])
+        #get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         config = hookenv.config()
         config['native_transport_port'] = 666
@@ -828,7 +619,6 @@ class TestsActions(TestCaseBase):
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
-        utcnow_str.return_value = 'whenever'
 
         actions._publish_database_relation('database:1', sentinel.superuser)
 
@@ -851,13 +641,10 @@ class TestsActions(TestCaseBase):
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
-    @patch('rollingrestart.utcnow_str')
     @patch('helpers.ensure_user')
     @patch('charmhelpers.core.host.pwgen')
-    @patch('rollingrestart.get_peers')
-    def test_publish_database_relation_follow2(self, get_peers, pwgen,
-                                               ensure_user, utcnow_str):
-        get_peers.return_value = set(['service/2', 'service/3'])
+    def test_publish_database_relation_follow2(self, pwgen, ensure_user):
+        #get_peers.return_value = set(['service/2', 'service/3'])
         pwgen.side_effect = iter(['secret1', 'secret2'])
         # Existing credentials on the relation.
         hookenv.local_unit.return_value = 'service/2'
@@ -871,7 +658,6 @@ class TestsActions(TestCaseBase):
         config['cluster_name'] = 'fred'
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
-        utcnow_str.return_value = 'whenever'
 
         actions._publish_database_relation('database:1', sentinel.superuser)
 

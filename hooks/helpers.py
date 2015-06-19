@@ -414,7 +414,7 @@ def remount_cassandra():
     import relations
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        status_set('maintenance', 'migrating data to new mountpoint')
+        status_set('maintenance', 'Migrating data to new mountpoint')
         hookenv.config()['bootstrapped_into_cluster'] = False
         if storage.mountpoint is None:
             hookenv.log('External storage AND DATA gone. '
@@ -767,7 +767,7 @@ def get_auth_keyspace_replication(session):
 @logged
 def set_auth_keyspace_replication(session, settings):
     # Live operation, so keep status the same.
-    status_set('active',
+    status_set(hookenv.status_get(),
                'Updating system_auth rf to {!r}'.format(settings))
     statement = 'ALTER KEYSPACE system_auth WITH REPLICATION = %s'
     query(session, statement, ConsistencyLevel.ALL, (settings,))
@@ -778,7 +778,7 @@ def repair_auth_keyspace():
     # Repair takes a long time, and may need to be retried due to 'snapshot
     # creation' errors, but should certainly complete within an hour since
     # the keyspace is tiny.
-    status_set('active',
+    status_set(hookenv.status_get(),
                'Repairing system_auth keyspace')
     nodetool('repair', 'system_auth', timeout=3600)
 

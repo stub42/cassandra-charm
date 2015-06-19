@@ -421,7 +421,7 @@ def needs_restart():
     if helpers.is_decommissioned():
         # Decommissioned nodes are never restarted. They remain up
         # telling everyone they are decommissioned.
-        helpers.status_set('blocked', 'Node is decommissioned')
+        helpers.status_set('blocked', 'Decommissioned node')
         return False
 
     if not helpers.is_cassandra_running():
@@ -444,7 +444,7 @@ def needs_restart():
     # during a restart.
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        helpers.status_set('waiting',
+        helpers.status_set(hookenv.status_get(),
                            'New mounts. Waiting for restart permission')
         return True
 
@@ -454,7 +454,7 @@ def needs_restart():
             hookenv.log('{} changed. Restart required.'.format(key))
     for key in RESTART_REQUIRED_KEYS:
         if config.changed(key):
-            helpers.status_set('waiting',
+            helpers.status_set(hookenv.status_get(),
                                'Config changes. '
                                'Waiting for restart permission.')
             return True
@@ -468,7 +468,7 @@ def needs_restart():
         # We don't care about the local node in the changes.
         changed.discard(hookenv.unit_private_ip())
         if changed:
-            helpers.status_set('waiting',
+            helpers.status_set(hookenv.status_get(),
                                'Updated seeds {!r}. '
                                'Waiting for restart permission.'
                                ''.format(new_seeds))
@@ -814,7 +814,8 @@ def reset_default_password():
             helpers.ensure_user(session, username, pwhash, superuser=True)
             helpers.set_unit_superusers([hookenv.local_unit()])
 
-            hookenv.log('Changing default admin password')
+            helpers.status_set('maintenance',
+                               'Changing default admin password')
             helpers.query(session, 'ALTER USER cassandra WITH PASSWORD %s',
                           cassandra.ConsistencyLevel.ALL, (host.pwgen(),))
     except cassandra.AuthenticationFailed:
@@ -834,11 +835,13 @@ def reset_default_password():
 
 @action
 def set_active():
-    if hookenv.unit_private_ip() in helpers.get_seed_ips():
-        msg = 'Live seed node'
-    else:
-        msg = 'Live node'
-    helpers.status_set('active', msg)
+    # If we got this far, the unit is active.
+    if hookenv.status_get() != 'active':
+        if hookenv.unit_private_ip() in helpers.get_seed_ips():
+            msg = 'Live seed'
+        else:
+            msg = 'Live node'
+        helpers.status_set('active', msg)
 
     if hookenv.is_leader():
         num_nodes = len(helpers.get_bootstrapped())

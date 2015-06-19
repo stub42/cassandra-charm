@@ -36,7 +36,6 @@ from charmhelpers.core import hookenv, host
 
 from tests.base import TestCaseBase
 import helpers
-import rollingrestart
 
 
 patch = functools.partial(patch, autospec=True)
@@ -186,8 +185,7 @@ class TestHelpers(TestCaseBase):
         self.assertFalse(popen.called)
 
     @patch('helpers.is_bootstrapped')
-    @patch('rollingrestart.get_peers')
-    def test_get_seed_ips(self, get_peers, is_bootstrapped):
+    def test_get_seed_ips(self, is_bootstrapped):
         hookenv.local_unit.return_value = 'service/1'
         get_peers.return_value = set(['service/2', 'service/3', 'service/4'])
         is_bootstrapped.return_value = True
@@ -197,8 +195,7 @@ class TestHelpers(TestCaseBase):
                                                          '10.20.0.2',
                                                          '10.20.0.3']))
 
-    @patch('rollingrestart.get_peers')
-    def test_seed_ips_alone(self, get_peers):
+    def test_seed_ips_alone(self):
         hookenv.local_unit.return_value = 'service/1'
         get_peers.return_value = set()
 
@@ -1067,8 +1064,7 @@ class TestHelpers(TestCaseBase):
         node_ips.return_value = ['10.0.0.1', '10.0.0.2']
         self.assertEqual(helpers.num_nodes(), 2)
 
-    @patch('rollingrestart.get_peers')
-    def test_num_peers(self, get_peers):
+    def test_num_peers(self):
         get_peers.return_value = ['a', 'b']
         self.assertEqual(helpers.num_peers(), 2)
 
@@ -1556,44 +1552,9 @@ class TestHelpers(TestCaseBase):
         # Existing node destroyed.
         nuke_all.assert_called_once_with()
 
-    @patch('helpers.unbootstrapped_peers')
-    @patch('helpers.nuke_local_database')
-    @patch('helpers.are_all_nodes_responding')
-    @patch('helpers.configure_cassandra_yaml')
-    @patch('helpers.get_seed_ips')
-    @patch('shutil.rmtree')
-    @patch('helpers.non_system_keyspaces')
-    @patch('helpers.num_peers')
-    @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_turn(self, is_bootstrapped, num_peers, keyspaces,
-                                rmtree, seed_ips, conf_yaml, are_nodes_resp,
-                                nuke_all, unbootstrapped_peers):
-        keyspaces.return_value = set()
-        is_bootstrapped.return_value = False
-        num_peers.return_value = 1
-        seed_ips.return_value = set([sentinel.seed])
-        are_nodes_resp.return_value = True
-        hookenv.local_unit.return_value = 'foo/3'
-        helpers.unbootstrapped_peers.return_value = ['foo/1', 'foo/2']
-        self.assertRaises(rollingrestart.DeferRestart, helpers.pre_bootstrap)
-
-    @patch('helpers.num_peers')
-    @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_alone(self, is_bootstrapped, num_peers):
-        is_bootstrapped.return_value = False
-        num_peers.return_value = 0
-        helpers.pre_bootstrap()
-
-    @patch('helpers.is_bootstrapped')
-    def test_pre_bootstrap_already(self, is_bootstrapped):
-        is_bootstrapped.return_value = True
-        helpers.pre_bootstrap()
-
-    @patch('helpers.is_all_normal')
     @patch('helpers.is_cassandra_running')
     @patch('time.sleep')
-    @patch('helpers.num_nodes')
-    def test_post_bootstrap(self, num_nodes, sleep, is_running, is_normal):
+    def test_post_bootstrap(self, sleep, is_running):
         hookenv.local_unit.return_value = 'foo/1'
         num_nodes.return_value = 3
         is_running.return_value = True
