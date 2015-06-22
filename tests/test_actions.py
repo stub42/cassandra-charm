@@ -420,7 +420,6 @@ class TestActions(TestCaseBase):
         actions.reset_all_io_schedulers('')
         self.assertFalse(set_io_scheduler.called)
 
-
     def test_config_key_lists_complete(self):
         # Ensure that we have listed all keys in either
         # RESTART_REQUIRED_KEYS, RESTART_NOT_REQUIRED_KEYS or
