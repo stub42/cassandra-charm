@@ -872,12 +872,13 @@ def set_active():
 
 @action
 def request_unit_superuser():
-    if coordinator.relid is None:
+    relid = helpers.peer_relid()
+    if relid is None:
         hookenv.log('Request deferred until peer relation exists')
         return
 
     relinfo = hookenv.relation_get(unit=hookenv.local_unit(),
-                                   rid=coordinator.relid)
+                                   rid=relid)
     if relinfo and relinfo.get('username'):
         # We must avoid blindly setting the pwhash on the relation,
         # as we will likely get a different value everytime we
@@ -887,6 +888,5 @@ def request_unit_superuser():
         # Publish the requested superuser and hash to our peers.
         username, password = helpers.superuser_credentials()
         pwhash = helpers.encrypt_password(password)
-        hookenv.relation_set(coordinator.relid,
-                             username=username, pwhash=pwhash)
+        hookenv.relation_set(relid, username=username, pwhash=pwhash)
         hookenv.log('Requested superuser account creation')

@@ -17,7 +17,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import errno
-import functools
 from itertools import repeat
 import os.path
 import re
@@ -35,9 +34,6 @@ from charmhelpers.core import hookenv
 from tests.base import TestCaseBase
 import actions
 import helpers
-
-
-patch = functools.partial(patch, autospec=True)  # autospec=True as default.
 
 
 class TestActions(TestCaseBase):
@@ -573,8 +569,6 @@ class TestActions(TestCaseBase):
         config.load_previous()
         self.assertFalse(actions.needs_restart())
 
-
-
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
         actions.stop_cassandra('ignored')
@@ -710,6 +704,15 @@ class TestActions(TestCaseBase):
         expected = (b'\n37 8 * * 5 cassandra run-one-until-success '
                     b'nodetool repair -pr')
         self.assertIn(expected, contents)
+
+    @patch('helpers.emit_netstats')
+    @patch('helpers.emit_auth_keyspace_status')
+    @patch('helpers.emit_describe_cluster')
+    def test_emit_cluster_info(self, emit_desc, emit_status, emit_netstats):
+        actions.emit_cluster_info('')
+        emit_desc.assert_called_once_with()
+        emit_status.assert_called_once_with()
+        emit_netstats.assert_called_once_with()
 
     @patch('charmhelpers.core.hookenv.relations_of_type')
     @patch('actions.ufw')
@@ -988,6 +991,19 @@ class TestActions(TestCaseBase):
         actions.set_active('')
         service_status_set.assert_called_once_with('active',
                                                    '6 node cluster')
+
+    @patch('helpers.encrypt_password')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.peer_relid')
+    def test_request_unit_superuser(self, peer_relid, sup_creds, crypt):
+        peer_relid.return_value = sentinel.peer_relid
+        sup_creds.return_value = (sentinel.username, sentinel.password)
+        crypt.return_value = sentinel.pwhash
+        hookenv.relation_get.return_value = dict()
+        actions.request_unit_superuser('')
+        hookenv.relation_set.assert_called_once_with(
+            sentinel.peer_relid,
+            username=sentinel.username, pwhash=sentinel.pwhash)
 
 
 if __name__ == '__main__':

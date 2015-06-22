@@ -958,3 +958,7 @@ def get_service_name(relid):
         return units[0].split('/', 1)[0]
     else:
         return None
+
+
+def peer_relid():
+    return coordinator.relid
