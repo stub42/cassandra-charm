@@ -29,6 +29,7 @@ import unittest
 from unittest.mock import ANY, call, patch, sentinel
 import yaml
 
+import cassandra
 from charmhelpers.core import hookenv
 
 from tests.base import TestCaseBase
@@ -835,6 +836,58 @@ class TestActions(TestCaseBase):
         # First seed is the first leader, which lets is get everything
         # started.
         leader_set.assert_called_once_with(seeds=hookenv.unit_private_ip())
+
+    @patch('charmhelpers.core.host.pwgen')
+    @patch('helpers.query')
+    @patch('helpers.set_unit_superusers')
+    @patch('helpers.ensure_user')
+    @patch('helpers.encrypt_password')
+    @patch('helpers.superuser_credentials')
+    @patch('helpers.connect')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    @patch('charmhelpers.core.hookenv.leader_set')
+    @patch('charmhelpers.core.hookenv.leader_get')
+    def test_reset_default_password(self, leader_get, leader_set, is_leader,
+                                    connect, sup_creds, encrypt_password,
+                                    ensure_user, set_sups, query, pwgen):
+        is_leader.return_value = True
+        leader_get.return_value = None
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        connect.reset_mock()
+
+        sup_creds.return_value = (sentinel.username, sentinel.password)
+        encrypt_password.return_value = sentinel.pwhash
+        pwgen.return_value = sentinel.random_password
+
+        actions.reset_default_password('')
+
+        # First, a superuser account for the unit was created.
+        connect.assert_called_once_with('cassandra', 'cassandra')
+        encrypt_password.assert_called_once_with(sentinel.password)
+        ensure_user.assert_called_once_with(sentinel.session,
+                                            sentinel.username,
+                                            sentinel.pwhash,
+                                            superuser=True)
+        set_sups.assert_called_once_with([hookenv.local_unit()])
+
+        # After that, the default password is reset.
+        query.assert_called_once_with(sentinel.session,
+                                      'ALTER USER cassandra WITH PASSWORD %s',
+                                      cassandra.ConsistencyLevel.ALL,
+                                      (sentinel.random_password,))
+
+        # Flag stored to avoid attempting this again.
+        leader_set.assert_called_once_with(default_admin_password_changed=True)
+
+    @patch('helpers.connect')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    @patch('charmhelpers.core.hookenv.leader_get')
+    def test_reset_default_password_noop(self, leader_get, is_leader, connect):
+        leader_get.return_value = True
+        is_leader.return_value = True
+        actions.reset_default_password('')  # noop
+        self.assertFalse(connect.called)
 
 
 if __name__ == '__main__':
