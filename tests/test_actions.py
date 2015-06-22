@@ -39,7 +39,7 @@ import helpers
 patch = functools.partial(patch, autospec=True)  # autospec=True as default.
 
 
-class TestsActions(TestCaseBase):
+class TestActions(TestCaseBase):
     def test_action_wrapper(self):
         @actions.action
         def somefunc(*args, **kw):
@@ -61,7 +61,6 @@ class TestsActions(TestCaseBase):
             '** Action catch-fire/somefunc (foo)')
 
     def test_revert_unchangeable_config(self):
-        hookenv.hook_name.return_value = 'config-changed'
         config = hookenv.config()
 
         self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
@@ -77,24 +76,6 @@ class TestsActions(TestCaseBase):
         self.assertEqual(config['datacenter'], 'mission_control')  # Reverted
 
         hookenv.log.assert_any_call(ANY, hookenv.ERROR)
-
-    def test_revert_unchangeable_config_install(self):
-        hookenv.hook_name.return_value = 'install'
-        config = hookenv.config()
-
-        self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
-
-        config['datacenter'] = 'mission_control'
-        config.save()
-        config.load_previous()
-        config['datacenter'] = 'orbital_1'
-
-        self.assertTrue(config.changed('datacenter'))
-
-        # In the install hook, revert_unchangeable_config() does
-        # nothing.
-        actions.revert_unchangeable_config('')
-        self.assertEqual(config['datacenter'], 'orbital_1')
 
     def test_set_proxy(self):
         # NB. Environment is already mocked.
@@ -399,11 +380,6 @@ class TestsActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
-    @patch('helpers.reset_auth_keyspace_replication')
-    def test_reset_auth_keyspace_replication(self, helpers_reset):
-        actions.reset_auth_keyspace_replication('')
-        helpers_reset.assert_called_once_with()
-
     def test_store_unit_private_ip(self):
         hookenv.unit_private_ip.side_effect = None
         hookenv.unit_private_ip.return_value = sentinel.ip
@@ -420,15 +396,30 @@ class TestsActions(TestCaseBase):
         actions.start_cassandra('ignored')
         helpers_start_cassandra.assert_called_once_with()
 
-    @patch('helpers.ensure_unit_superuser')
-    def test_ensure_unit_superuser(self, helpers_ensure_unit_superuser):
-        actions.ensure_unit_superuser('ignored')
-        helpers_ensure_unit_superuser.assert_called_once_with()
+    @patch('os.path.isdir')
+    @patch('helpers.get_all_database_directories')
+    @patch('helpers.set_io_scheduler')
+    def test_reset_all_io_schedulers(self, set_io_scheduler, dbdirs, isdir):
+        hookenv.config()['io_scheduler'] = sentinel.io_scheduler
+        dbdirs.return_value = dict(
+            data_file_directories=[sentinel.d1, sentinel.d2],
+            commitlog_directory=sentinel.cl,
+            saved_caches_directory=sentinel.sc)
+        isdir.return_value = True
+        actions.reset_all_io_schedulers('')
+        set_io_scheduler.assert_has_calls([
+            call(sentinel.io_scheduler, sentinel.d1),
+            call(sentinel.io_scheduler, sentinel.d2),
+            call(sentinel.io_scheduler, sentinel.cl),
+            call(sentinel.io_scheduler, sentinel.sc)],
+            any_order=True)
 
-    @patch('helpers.reset_all_io_schedulers')
-    def test_reset_all_io_schedulers(self, helpers_reset_all_io_schedulers):
-        actions.reset_all_io_schedulers('ignored')
-        helpers_reset_all_io_schedulers.assert_called_once_with()
+        # If directories don't exist yet, nothing happens.
+        set_io_scheduler.reset_mock()
+        isdir.return_value = False
+        actions.reset_all_io_schedulers('')
+        self.assertFalse(set_io_scheduler.called)
+
 
     def test_config_key_lists_complete(self):
         # Ensure that we have listed all keys in either
@@ -459,97 +450,27 @@ class TestsActions(TestCaseBase):
         publish_db_rel.assert_called_once_with('database-admin:1',
                                                superuser=True)
 
+    @patch('helpers.leader_ping')
     @patch('helpers.ensure_user')
+    @patch('helpers.connect')
+    @patch('helpers.get_service_name')
+    @patch('helpers.encrypt_password')
     @patch('charmhelpers.core.host.pwgen')
-    def test_publish_database_relation(self, pwgen, ensure_user):
-        #get_peers.return_value = set()
-        pwgen.side_effect = iter(['secret1', 'secret2'])
-        hookenv.relation_get.return_value = {}
-        config = hookenv.config()
-        config['native_transport_port'] = 666
-        config['rpc_port'] = 777
-        config['cluster_name'] = 'fred'
-        config['datacenter'] = 'mission_control'
-        config['rack'] = '01'
-
-        actions._publish_database_relation('database:1', sentinel.superuser)
-
-        # Checked this unit for existing data.
-        hookenv.relation_get.assert_called_once_with(rid='database:1',
-                                                     unit='service/1')
-
-        ensure_user.assert_called_once_with('juju_database_1', 'secret1',
-                                            sentinel.superuser)
-
-        hookenv.relation_set.assert_has_calls([
-            call('cluster:1', ping='whenever'),
-            call('database:1',
-                 username='juju_database_1', password='secret1',
-                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
-                 cluster_name='fred', datacenter='mission_control',
-                 rack='01')])
-
-    def test_publish_database_relation_fail(self):
-        # If we fail to retrieve details from the first unit, don't
-        # fail. This could just be an edge case where the first unit
-        # hasn't joined the relation yet, causing relation-get to barf
-        # unpredictably.
-        hookenv.local_unit.return_value = 'service/99'
-        hookenv.relation_get.side_effect = repeat(
-            subprocess.CalledProcessError(1, ''))
-        actions._publish_database_relation('database:1', sentinel.superuser)
-        self.assertFalse(hookenv.relation_set.called)
-
-        # If we fail to retrieve details from the first unit, and it is
-        # us, something is very wrong and the exception propagated.
-        # get_peers.return_value = ['service/1', 'service/2']
-        hookenv.local_unit.return_value = 'service/0'
-        hookenv.relation_get.side_effect = repeat(
-            subprocess.CalledProcessError(1, ''))
-        self.assertRaises(subprocess.CalledProcessError,
-                          actions._publish_database_relation,
-                          'database:1', sentinel.superuser)
-
-    @patch('helpers.ensure_user')
     @patch('charmhelpers.core.hookenv.is_leader')
-    def test_publish_database_relation_alone(self, is_leader, ensure_user):
-        # There are existing credentials on the relation.
-        hookenv.relation_set(relation_id='database:1',
-                             username='un', password='pw')
-        config = hookenv.config()
-        config['native_transport_port'] = 666
-        config['rpc_port'] = 777
-        config['cluster_name'] = 'fred'
-        config['datacenter'] = 'mission_control'
-        config['rack'] = '01'
+    @patch('actions._client_credentials')
+    def test_publish_database_relation_leader(self, client_creds, is_leader,
+                                              pwgen, encrypt_password,
+                                              get_service_name,
+                                              connect, ensure_user,
+                                              leader_ping):
+        is_leader.return_value = True  # We are the leader.
+        client_creds.return_value = (None, None)  # No creds published yet.
 
-        actions._publish_database_relation('database:1', sentinel.superuser)
-
-        # Checked this unit for existing data.
-        hookenv.relation_get.assert_called_once_with(rid='database:1',
-                                                     unit='service/1')
-
-        # Even if the stored creds are unchanged, we ensure the password
-        # is valid and reset it if necessary.
-        ensure_user.assert_called_once_with('un', 'pw', sentinel.superuser)
-
-        hookenv.relation_set.assert_has_calls([
-            # Credentials unchanged, so no peer wakeup.
-            # call('cluster:1', ping='whenever'),
-
-            # relation_set still called, despite no credentials being
-            # changed, in case the other details have changed.
-            call('database:1', username='un', password='pw',
-                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
-                 cluster_name='fred', datacenter='mission_control',
-                 rack='01')])
-
-    @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.host.pwgen')
-    def test_publish_database_relation_leader(self, pwgen, ensure_user):
-        get_peers.return_value = set(['service/2', 'service/3'])
+        get_service_name.return_value = 'cservice'
         pwgen.side_effect = iter(['secret1', 'secret2'])
-        hookenv.relation_get.return_value = {}
+        encrypt_password.side_effect = iter(['crypt1', 'crypt2'])
+        connect().__enter__.return_value = sentinel.session
+
         config = hookenv.config()
         config['native_transport_port'] = 666
         config['rpc_port'] = 777
@@ -559,121 +480,15 @@ class TestsActions(TestCaseBase):
 
         actions._publish_database_relation('database:1', sentinel.superuser)
 
-        # Checked this unit for existing data.
-        hookenv.relation_get.assert_called_once_with(rid='database:1',
-                                                     unit='service/1')
-
-        ensure_user.assert_called_once_with('juju_database_1', 'secret1',
+        ensure_user.assert_called_once_with(sentinel.session,
+                                            'juju_cservice', 'crypt1',
                                             sentinel.superuser)
+        leader_ping.assert_called_once_with()  # Peers woken.
 
         hookenv.relation_set.assert_has_calls([
-            call('cluster:1', ping='whenever'),
             call('database:1',
-                 username='juju_database_1', password='secret1',
+                 username='juju_cservice', password='secret1',
                  host='10.30.0.1', native_transport_port=666, rpc_port=777,
-                 cluster_name='fred', datacenter='mission_control',
-                 rack='01')])
-
-    @patch('helpers.ensure_user')
-    def test_publish_database_relation_leader2(self, ensure_user):
-        # There are existing credentials on the relation.
-        hookenv.relation_set(relation_id='database:1',
-                             username='un', password='pw')
-        config = hookenv.config()
-        config['native_transport_port'] = 666
-        config['rpc_port'] = 777
-        config['cluster_name'] = 'fred'
-        config['datacenter'] = 'mission_control'
-        config['rack'] = '01'
-
-        actions._publish_database_relation('database:1', sentinel.superuser)
-
-        # Checked this unit for existing data.
-        hookenv.relation_get.assert_called_once_with(rid='database:1',
-                                                     unit='service/1')
-
-        # Even if the stored creds are unchanged, we ensure the password
-        # is valid and reset it if necessary.
-        ensure_user.assert_called_once_with('un', 'pw', sentinel.superuser)
-
-        hookenv.relation_set.assert_has_calls([
-            # Credentials unchanged, so no peer wakeup.
-            # call('cluster:1', ping='whenever'),
-
-            # relation_set still called, despite no credentials being
-            # changed, in case the ports have changed.
-            call('database:1', username='un', password='pw',
-                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
-                 cluster_name='fred', datacenter='mission_control',
-                 rack='01')])
-
-    @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.host.pwgen')
-    def test_publish_database_relation_follow(self, pwgen, ensure_user):
-        hookenv.local_unit.return_value = 'service/4'
-        #get_peers.return_value = set(['service/2', 'service/3'])
-        pwgen.side_effect = iter(['secret1', 'secret2'])
-        config = hookenv.config()
-        config['native_transport_port'] = 666
-        config['rpc_port'] = 777
-        config['cluster_name'] = 'fred'
-        config['datacenter'] = 'mission_control'
-        config['rack'] = '01'
-
-        actions._publish_database_relation('database:1', sentinel.superuser)
-
-        # Checked first unit for existing data.
-        # There are no existing credentials on the relation.
-        hookenv.relation_get.assert_called_once_with(rid='database:1',
-                                                     unit='service/2')
-
-        self.assertFalse(ensure_user.called)
-
-        hookenv.relation_set.assert_has_calls([
-            # No wakeup, because we are following. Only the leader
-            # sets creds.
-            # call('cluster:1', ping='whenever'),
-            call('database:1',
-                 # Still publish details, despite no creds, in case we
-                 # are not using password authentication.
-                 username=None, password=None,
-                 host='10.30.0.4', native_transport_port=666, rpc_port=777,
-                 cluster_name='fred', datacenter='mission_control',
-                 rack='01')])
-
-    @patch('helpers.ensure_user')
-    @patch('charmhelpers.core.host.pwgen')
-    def test_publish_database_relation_follow2(self, pwgen, ensure_user):
-        #get_peers.return_value = set(['service/2', 'service/3'])
-        pwgen.side_effect = iter(['secret1', 'secret2'])
-        # Existing credentials on the relation.
-        hookenv.local_unit.return_value = 'service/2'
-        hookenv.relation_set(relation_id='database:1',
-                             username='un', password='pw')
-        hookenv.local_unit.return_value = 'service/4'
-        hookenv.relation_get.reset_mock()
-        config = hookenv.config()
-        config['native_transport_port'] = 666
-        config['rpc_port'] = 777
-        config['cluster_name'] = 'fred'
-        config['datacenter'] = 'mission_control'
-        config['rack'] = '01'
-
-        actions._publish_database_relation('database:1', sentinel.superuser)
-
-        # Checked first unit for existing data.
-        hookenv.relation_get.assert_called_once_with(rid='database:1',
-                                                     unit='service/2')
-
-        self.assertFalse(ensure_user.called)
-
-        hookenv.relation_set.assert_has_calls([
-            # No wakeup, because we are following. Only the leader
-            # sets creds.
-            # call('cluster:1', ping='whenever'),
-            call('database:1',
-                 username='un', password='pw',
-                 host='10.30.0.4', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
 
@@ -708,54 +523,11 @@ class TestsActions(TestCaseBase):
                     b'nodetool repair -pr')
         self.assertIn(expected, contents)
 
-    @patch('helpers.emit_describe_cluster')
-    def test_emit_describe_cluster(self, helpers_emit):
-        actions.emit_describe_cluster('')
-        helpers_emit.assert_called_once_with()
-
-    @patch('helpers.emit_auth_keyspace_status')
-    def test_emit_auth_keyspace_status(self, helpers_emit):
-        actions.emit_auth_keyspace_status('')
-        helpers_emit.assert_called_once_with()
-
-    @patch('helpers.emit_netstats')
-    def test_emit_netstats(self, helpers_emit):
-        actions.emit_netstats('')
-        helpers_emit.assert_called_once_with()
-
-    @patch('helpers.is_bootstrapped')
-    @patch('helpers.stop_cassandra')
-    def test_shutdown_before_joining_peers(self, stop, is_bootstrapped):
-
-        # Nothing happens until the -joined hook.
-        hookenv.hook_name.return_value = 'install'
-        is_bootstrapped.return_value = False
-        actions.shutdown_before_joining_peers('')
-        self.assertFalse(stop.called)
-
-        # If we are joining the cluster, shutdown the current cassandra
-        # instance before we open firewall access to ensure no other
-        # nodes interfere before it is bootstrapped.
-        hookenv.hook_name.return_value = 'cluster-relation-joined'
-        actions.shutdown_before_joining_peers('')
-        stop.assert_called_once_with(immediate=True)
-
-        # If we are already bootstrapped (eg. Unit 0 is always
-        # considered bootstrapped), nothing happens.
-        stop.reset_mock()
-        is_bootstrapped.return_value = True
-        actions.shutdown_before_joining_peers('')
-        self.assertFalse(stop.called)
-
-    @patch('helpers.seed_ips')
     @patch('charmhelpers.core.hookenv.relations_of_type')
     @patch('actions.ufw')
-    def test_configure_firewall(self, ufw, rel_of_type, seed_ips):
+    def test_configure_firewall(self, ufw, rel_of_type):
         rel_of_type.return_value = [{'private-address': '1.1.0.1'},
                                     {'private-address': '1.1.0.2'}]
-
-        # Seeds get access too, to ensure the force_seed_nodes work.
-        seed_ips.return_value = set(['10.20.0.1'])
 
         actions.configure_firewall('')
 
@@ -780,15 +552,11 @@ class TestsActions(TestCaseBase):
                                            call('1.1.0.1', 'any', 7001),
 
                                            call('1.1.0.2', 'any', 7000),
-                                           call('1.1.0.2', 'any', 7001),
-
-                                           call('10.20.0.1', 'any', 7000),
-                                           call('10.20.0.1', 'any', 7001)],
+                                           call('1.1.0.2', 'any', 7001)],
                                           any_order=True)
 
         # If things change in a later hook, unwanted rules are removed
         # and new ones added.
-        seed_ips.return_value = set(['1.1.0.1'])
         config = hookenv.config()
         config.save()
         config.load_previous()
@@ -808,9 +576,7 @@ class TestsActions(TestCaseBase):
                                       call(7777, 'open'),
                                       call(9160, 'open')], any_order=True)
         ufw.revoke_access.assert_has_calls([call('1.1.0.1', 'any', 7000),
-                                            call('1.1.0.2', 'any', 7000),
-                                            call('10.20.0.1', 'any', 7000),
-                                            call('10.20.0.1', 'any', 7001)],
+                                            call('1.1.0.2', 'any', 7000)],
                                            any_order=True)
         ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7001),
                                            call('1.1.0.1', 'any', 7002),

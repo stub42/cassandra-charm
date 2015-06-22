@@ -370,7 +370,7 @@ def configure_cassandra_rackdc():
 
 def needs_reset_auth_keyspace_replication():
     '''Guard for reset_auth_keyspace_replication.'''
-    num_nodes = len(helpers.get_bootstrapped_ips())
+    num_nodes = helpers.num_nodes()
     n = min(num_nodes, 3)
     datacenter = hookenv.config()['datacenter']
     with helpers.connect() as session:
@@ -394,7 +394,7 @@ def reset_auth_keyspace_replication():
     # We replication factor in this service's DC can be no higher than
     # the number of bootstrapped nodes. We also cap this at 3 to ensure
     # we don't have too many seeds.
-    num_nodes = len(helpers.get_bootstrapped_ips())
+    num_nodes = helpers.num_nodes()
     n = min(num_nodes, 3)
     datacenter = hookenv.config()['datacenter']
     with helpers.connect() as session:
@@ -565,47 +565,50 @@ def reset_all_io_schedulers():
             helpers.set_io_scheduler(config['io_scheduler'], d)
 
 
-def _publish_database_relation(relid, superuser):
-    # Due to Bug #1409763, this functionality is as action rather than a
-    # provided_data item.
-    #
-    # The Casandra service needs to provide a common set of credentials
-    # to a client unit. The leader creates these, if none of the other
-    # units are found to have published them already. The leader then
-    # tickles the other units, firing a hook and giving them the
-    # opportunity to copy and publish these credentials.
-    if coordinator.relid is None and not hookenv.is_leader():
-        # Non-leader has not yet joined the peer relation. Nothing can
-        # be done, yet.
-        return
-
+def _client_credentials(relid):
+    '''Return the client credentials used by relation relid.'''
     relinfo = hookenv.relation_get(unit=hookenv.local_unit(), rid=relid)
     username = relinfo.get('username')
     password = relinfo.get('password')
-
-    if username is None:
+    if username is None or password is None:
         for unit in hookenv.related_units(coordinator.relid):
             try:
                 relinfo = hookenv.relation_get(unit=unit, rid=relid)
+                username = relinfo.get('username')
+                password = relinfo.get('password')
+                if username is not None and password is not None:
+                    return username, password
             except subprocess.CalledProcessError:
-                continue  # Assume the remote unit has not joined relid yet.
-            if 'username' in relinfo:
-                username = relinfo['username']
-                password = relinfo['password']
-                break
+                pass  # Assume the remote unit has not joined yet.
+        return None, None
+    else:
+        return username, password
 
-    if username is None and hookenv.is_leader():
-        # Credentials unset. The leader must generate them.
-        username = 'juju_{}'.format(relid.replace(':', '_').replace('-', '_'))
-        password = host.pwgen()
-        pwhash = helpers.encrypt_password(password)
-        with helpers.connect() as session:
-            helpers.ensure_user(session, username, pwhash, superuser)
-        # Wake the peers, if any.
-        helpers.leader_ping()
 
+def _publish_database_relation(relid, superuser):
+    # The Casandra service needs to provide a common set of credentials
+    # to a client unit. The leader creates these, if none of the other
+    # units are found to have published them already (a previously elected
+    # leader may have done this). The leader then tickles the other units,
+    # firing a hook and giving them the opportunity to copy and publish
+    # these credentials.
+    username, password = _client_credentials(relid)
     if username is None:
-        return  # No credentials yet. Nothing to do.
+        if hookenv.is_leader():
+            # Credentials not set. The leader must generate them. We use
+            # the service name so that database permissions remain valid
+            # even after the relation is dropped and recreated, or the
+            # juju environment rebuild and the database restored from
+            # backups.
+            username = 'juju_{}'.format(helpers.get_service_name(relid))
+            password = host.pwgen()
+            pwhash = helpers.encrypt_password(password)
+            with helpers.connect() as session:
+                helpers.ensure_user(session, username, pwhash, superuser)
+            # Wake the peers, if any.
+            helpers.leader_ping()
+        else:
+            return  # No credentials yet. Nothing to do.
 
     # Publish the information the client needs on the relation where
     # they can find it.
@@ -696,8 +699,9 @@ def configure_firewall():
 
     # Rules for peers
     for relinfo in hookenv.relations_of_type('cluster'):
-        for port in peer_ports:
-            desired_rules.add((relinfo['private-address'], 'any', port))
+        if relinfo['private-address']:
+            for port in peer_ports:
+                desired_rules.add((relinfo['private-address'], 'any', port))
 
     previous_rules = set(tuple(rule) for rule in config.get('ufw_rules', []))
 
@@ -835,7 +839,10 @@ def reset_default_password():
 
 @action
 def set_active():
-    # If we got this far, the unit is active.
+    # If we got this far, the unit is active. Update the status if it is
+    # not already active. We don't do this unconditionally, as the charm
+    # may be active but doing stuff, like active but waiting for restart
+    # permission.
     if hookenv.status_get() != 'active':
         if hookenv.unit_private_ip() in helpers.get_seed_ips():
             msg = 'Live seed'
@@ -844,7 +851,7 @@ def set_active():
         helpers.status_set('active', msg)
 
     if hookenv.is_leader():
-        num_nodes = len(helpers.get_bootstrapped())
+        num_nodes = helpers.num_nodes()
         if num_nodes == 1:
             num_nodes = 'Single'
         helpers.service_status_set('active',

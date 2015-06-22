@@ -370,7 +370,9 @@ def stop_cassandra():
     if is_cassandra_running():
         hookenv.log('Shutting down Cassandra')
         host.service_stop(get_cassandra_service())
-    assert not is_cassandra_running()
+    if is_cassandra_running():
+        hookenv.status_set('blocked', 'Cassandra failed to shut down')
+        raise SystemExit(0)
 
 
 @logged
@@ -645,6 +647,10 @@ def nodetool(*cmd, timeout=120):
                 emit(x.output.expandtabs())  # Expand tabs for juju debug-log.
             if time.time() >= until:
                 raise
+
+
+def num_nodes():
+    return len(get_bootstrapped_ips())
 
 
 def read_cassandra_yaml():
@@ -943,3 +949,12 @@ def service_status_set(state, message):
     '''Set the service status and log a message.'''
     subprocess.check_call(['status-set', '--service', state, message])
     hookenv.log('{} service state: {}'.format(state, message))
+
+
+def get_service_name(relid):
+    '''Return the service name for the other end of relid.'''
+    units = hookenv.related_units(relid)
+    if units:
+        return units[0].split('/', 1)[0]
+    else:
+        return None
