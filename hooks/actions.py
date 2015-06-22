@@ -244,39 +244,39 @@ def ensure_cassandra_package_status():
     helpers.ensure_package_status(helpers.get_cassandra_packages())
 
 
-@action
-def install_oracle_jre():
-    if helpers.get_jre() != 'oracle':
-        return
-
+def _fetch_oracle_jre():
     config = hookenv.config()
     url = config.get('private_jre_url', None)
-    if not url:
-        hookenv.status_set('blocked',
-                           'private_jre_url not set. '
-                           'Unable to install Oracle JRE as requested.')
-        raise SystemExit(0)
-
-    if config.get('retrieved_jre', None) != url:
-        filename = os.path.join('lib', url.split('/')[-1])
+    if url and config.get('retrieved_jre', None) != url:
+        filename = os.path.join(hookenv.charm_dir(),
+                                'lib', url.split('/')[-1])
         if not filename.endswith('-linux-x64.tar.gz'):
-            hookenv.status_set('blocked',
+            helpers.status_set('blocked',
                                'Invalid private_jre_url {}'.format(url))
             raise SystemExit(0)
         urllib.request.urlretrieve(url, filename)
         config['retrieved_jre'] = url
 
-    pattern = 'lib/server-jre-?u*-linux-x64.tar.gz'
+    pattern = os.path.join(hookenv.charm_dir(),
+                           'lib', 'server-jre-?u*-linux-x64.tar.gz')
     tarballs = glob.glob(pattern)
-    if not tarballs:
-        hookenv.status_set('blocked',
+    if not (url or tarballs):
+        helpers.status_set('blocked',
+                           'private_jre_url not set and no local tarballs.')
+        raise SystemExit(0)
+
+    elif not tarballs:
+        helpers.status_set('blocked',
                            'Oracle JRE tarball not found ({})'.format(pattern))
         raise SystemExit(0)
 
     # Latest tarball by filename/version num. Lets hope they don't hit
     # 99 (currently at 76).
     tarball = sorted(tarballs)[-1]
+    return tarball
 
+
+def _install_oracle_jre_tarball(tarball):
     # Same directory as webupd8 to avoid surprising people, but it could
     # be anything.
     dest = '/usr/lib/jvm/java-7-oracle'
@@ -285,6 +285,8 @@ def install_oracle_jre():
         host.mkdir(dest)
 
     jre_exists = os.path.exists(os.path.join(dest, 'bin', 'java'))
+
+    config = hookenv.config()
 
     # Unpack the latest tarball if necessary.
     if config.get('oracle_jre_tarball', '') == tarball and jre_exists:
@@ -303,6 +305,15 @@ def install_oracle_jre():
                                tool, tool_path, '1'])
         subprocess.check_call(['update-alternatives',
                                '--set', tool, tool_path])
+
+
+@action
+def install_oracle_jre():
+    if helpers.get_jre() != 'oracle':
+        return
+
+    tarball = _fetch_oracle_jre()
+    _install_oracle_jre_tarball(tarball)
 
 
 @action
@@ -781,8 +792,9 @@ def maintain_seeds():
 
     # Add more bootstrapped nodes, if necessary, to get to our maximum
     # of 3 seeds.
-    while len(seed_ips) < 3 and bootstrapped_ips:
-        seed_ips.add(bootstrapped_ips.pop())
+    potential_seed_ips = list(reversed(sorted(bootstrapped_ips)))
+    while len(seed_ips) < 3 and potential_seed_ips:
+        seed_ips.add(potential_seed_ips.pop())
 
     # If there are no seeds or bootstrapped nodes, start with the leader. Us.
     if len(seed_ips) == 0:

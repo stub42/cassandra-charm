@@ -65,17 +65,34 @@ class TestActions(TestCaseBase):
 
         self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
 
+        # In the first hook, revert does nothing as there is nothing to
+        # revert too.
         config['datacenter'] = 'mission_control'
+        self.assertTrue(config.changed('datacenter'))
+        actions.revert_unchangeable_config('')
+        self.assertEqual(config['datacenter'], 'mission_control')
+
         config.save()
         config.load_previous()
         config['datacenter'] = 'orbital_1'
 
-        self.assertTrue(config.changed('datacenter'))
-
         actions.revert_unchangeable_config('')
         self.assertEqual(config['datacenter'], 'mission_control')  # Reverted
 
-        hookenv.log.assert_any_call(ANY, hookenv.ERROR)
+        hookenv.log.assert_any_call(ANY, hookenv.ERROR)  # Logged the problem.
+
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_leader_only(self, is_leader):
+
+        @actions.leader_only
+        def f(*args, **kw):
+            return args, kw
+
+        is_leader.return_value = False
+        self.assertIsNone(f(1, foo='bar'))
+
+        is_leader.return_value = True
+        self.assertEqual(f(1, foo='bar'), ((1,), dict(foo='bar')))
 
     def test_set_proxy(self):
         # NB. Environment is already mocked.
@@ -295,6 +312,122 @@ class TestActions(TestCaseBase):
         # No alternatives selected, as the Oracle JRE installer method
         # handles this.
         self.assertFalse(check_call.called)
+
+    @patch('actions._install_oracle_jre_tarball')
+    @patch('actions._fetch_oracle_jre')
+    def test_install_oracle_jre(self, fetch, install_tarball):
+        fetch.return_value = sentinel.tarball
+
+        actions.install_oracle_jre('')
+        self.assertFalse(fetch.called)
+        self.assertFalse(install_tarball.called)
+
+        hookenv.config()['jre'] = 'oracle'
+        actions.install_oracle_jre('')
+        fetch.assert_called_once_with()
+        install_tarball.assert_called_once_with(sentinel.tarball)
+
+    @patch('urllib.request')
+    def test_fetch_oracle_jre(self, req):
+        config = hookenv.config()
+        url = 'https://foo.example.com/server-jre-7u42-linux-x64.tar.gz'
+        expected_tarball = os.path.join(hookenv.charm_dir(), 'lib',
+                                        'server-jre-7u42-linux-x64.tar.gz')
+        config['private_jre_url'] = url
+
+        # Create a dummy tarball, since the mock urlretrieve won't.
+        os.makedirs(os.path.dirname(expected_tarball))
+        with open(expected_tarball, 'w'):
+            pass  # Empty file
+
+        self.assertEqual(actions._fetch_oracle_jre(), expected_tarball)
+        req.urlretrieve.assert_called_once_with(url, expected_tarball)
+
+    def test_fetch_oracle_jre_local(self):
+        # Create an existing tarball. If it is found, it will be used
+        # without needing to specify a remote url or actually download
+        # anything.
+        expected_tarball = os.path.join(hookenv.charm_dir(), 'lib',
+                                        'server-jre-7u42-linux-x64.tar.gz')
+        os.makedirs(os.path.dirname(expected_tarball))
+        with open(expected_tarball, 'w'):
+            pass  # Empty file
+
+        self.assertEqual(actions._fetch_oracle_jre(), expected_tarball)
+
+    @patch('helpers.status_set')
+    def test_fetch_oracle_jre_notfound(self, status_set):
+        with self.assertRaises(SystemExit) as x:
+            actions._fetch_oracle_jre()
+            self.assertEqual(x.code, 0)
+            status_set.assert_called_once_with('blocked', ANY)
+
+    @patch('subprocess.check_call')
+    @patch('charmhelpers.core.host.mkdir')
+    @patch('os.path.isdir')
+    def test_install_oracle_jre_tarball(self, isdir, mkdir, check_call):
+        isdir.return_value = False
+
+        dest = '/usr/lib/jvm/java-7-oracle'
+
+        actions._install_oracle_jre_tarball(sentinel.tarball)
+        mkdir.assert_called_once_with(dest)
+        check_call.assert_has_calls([
+            call(['tar', '-xz', '-C', dest,
+                  '--strip-components=1', '-f', sentinel.tarball]),
+            call(['update-alternatives', '--install',
+                  '/usr/bin/java', 'java',
+                  os.path.join(dest, 'bin', 'java'), '1']),
+            call(['update-alternatives', '--set', 'java',
+                  os.path.join(dest, 'bin', 'java')]),
+            call(['update-alternatives', '--install',
+                  '/usr/bin/javac', 'javac',
+                  os.path.join(dest, 'bin', 'javac'), '1']),
+            call(['update-alternatives', '--set', 'javac',
+                  os.path.join(dest, 'bin', 'javac')])])
+
+    @patch('os.path.exists')
+    @patch('subprocess.check_call')
+    @patch('charmhelpers.core.host.mkdir')
+    @patch('os.path.isdir')
+    def test_install_oracle_jre_tarball_already(self, isdir,
+                                                mkdir, check_call, exists):
+        isdir.return_value = True
+        exists.return_value = True  # jre already installed
+
+        # Store the version previously installed.
+        hookenv.config()['oracle_jre_tarball'] = sentinel.tarball
+
+        dest = '/usr/lib/jvm/java-7-oracle'
+
+        actions._install_oracle_jre_tarball(sentinel.tarball)
+
+        self.assertFalse(mkdir.called)  # The jvm dir already existed.
+
+        exists.assert_called_once_with('/usr/lib/jvm/java-7-oracle/bin/java')
+
+        # update-alternatives done, but tarball not extracted.
+        check_call.assert_has_calls([
+            call(['update-alternatives', '--install',
+                  '/usr/bin/java', 'java',
+                  os.path.join(dest, 'bin', 'java'), '1']),
+            call(['update-alternatives', '--set', 'java',
+                  os.path.join(dest, 'bin', 'java')]),
+            call(['update-alternatives', '--install',
+                  '/usr/bin/javac', 'javac',
+                  os.path.join(dest, 'bin', 'javac'), '1']),
+            call(['update-alternatives', '--set', 'javac',
+                  os.path.join(dest, 'bin', 'javac')])])
+
+    @patch('subprocess.check_output')
+    def test_emit_java_version(self, check_output):
+        check_output.return_value = 'Line 1\nLine 2'
+        actions.emit_java_version('')
+        check_output.assert_called_once_with(['java', '-version'],
+                                             universal_newlines=True)
+        hookenv.log.assert_has_calls([call(ANY),
+                                      call('JRE: Line 1'),
+                                      call('JRE: Line 2')])
 
     @patch('helpers.configure_cassandra_yaml')
     def test_configure_cassandra_yaml(self, configure_cassandra_yaml):
@@ -674,6 +807,34 @@ class TestActions(TestCaseBase):
         nrpe().add_check.assert_called_once_with(shortname='cassandra_heap',
                                                  description=ANY,
                                                  check_cmd=ANY)
+
+    @patch('helpers.get_bootstrapped_ips')
+    @patch('helpers.get_seed_ips')
+    @patch('charmhelpers.core.hookenv.leader_set')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_maintain_seeds(self, is_leader, leader_set,
+                            seed_ips, bootstrapped_ips):
+        is_leader.return_value = True
+
+        seed_ips.return_value = set(['1.2.3.4'])
+        bootstrapped_ips.return_value = set(['2.2.3.4', '3.2.3.4',
+                                             '4.2.3.4', '5.2.3.4'])
+
+        actions.maintain_seeds('')
+        leader_set.assert_called_once_with(seeds='2.2.3.4,3.2.3.4,4.2.3.4')
+
+    @patch('helpers.get_bootstrapped_ips')
+    @patch('helpers.get_seed_ips')
+    @patch('charmhelpers.core.hookenv.leader_set')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_maintain_seeds_start(self, is_leader, leader_set,
+                                  seed_ips, bootstrapped_ips):
+        seed_ips.return_value = set()
+        bootstrapped_ips.return_value = set()
+        actions.maintain_seeds('')
+        # First seed is the first leader, which lets is get everything
+        # started.
+        leader_set.assert_called_once_with(seeds=hookenv.unit_private_ip())
 
 
 if __name__ == '__main__':
