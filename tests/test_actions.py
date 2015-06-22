@@ -520,6 +520,61 @@ class TestActions(TestCaseBase):
         actions.store_unit_private_ip('')
         self.assertEqual(hookenv.config()['unit_private_ip'], sentinel.ip)
 
+    @patch('helpers.status_set')
+    @patch('helpers.get_seed_ips')
+    @patch('relations.StorageRelation.needs_remount')
+    @patch('helpers.is_bootstrapped')
+    @patch('helpers.is_cassandra_running')
+    @patch('helpers.is_decommissioned')
+    def test_needs_restart(self, is_decom, is_running, is_bootstrapped,
+                           needs_remount, seed_ips, status_set):
+        is_decom.return_value = False
+        is_running.return_value = True
+        needs_remount.return_value = False
+        seed_ips.return_value = set(['1.2.3.4'])
+
+        config = hookenv.config()
+        config['configured_seeds'] = list(sorted(seed_ips()))
+        config.save()
+        config.load_previous()  # Ensure everything flagged as unchanged.
+
+        self.assertFalse(actions.needs_restart())
+
+        # Decommissioned nodes are not restarted.
+        is_decom.return_value = True
+        self.assertFalse(actions.needs_restart())
+        is_decom.return_value = False
+        self.assertFalse(actions.needs_restart())
+
+        # Nodes not running need to be restarted.
+        is_running.return_value = False
+        self.assertTrue(actions.needs_restart())
+        is_running.return_value = True
+        self.assertFalse(actions.needs_restart())
+
+        # If we have a new mountpoint, we need to restart in order to
+        # migrate data.
+        needs_remount.return_value = True
+        self.assertTrue(actions.needs_restart())
+        needs_remount.return_value = False
+        self.assertFalse(actions.needs_restart())
+
+        # Certain changed config items trigger a restart.
+        config['max_heap_size'] = '512M'
+        self.assertTrue(actions.needs_restart())
+        config.save()
+        config.load_previous()
+        self.assertFalse(actions.needs_restart())
+
+        # If the seeds have changed, we need to restart.
+        seed_ips.return_value = set(['9.8.7.6'])
+        self.assertTrue(actions.needs_restart())
+        config.save()
+        config.load_previous()
+        self.assertFalse(actions.needs_restart())
+
+
+
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
         actions.stop_cassandra('ignored')
@@ -933,7 +988,6 @@ class TestActions(TestCaseBase):
         actions.set_active('')
         service_status_set.assert_called_once_with('active',
                                                    '6 node cluster')
-
 
 
 if __name__ == '__main__':
