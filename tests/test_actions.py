@@ -889,6 +889,52 @@ class TestActions(TestCaseBase):
         actions.reset_default_password('')  # noop
         self.assertFalse(connect.called)
 
+    @patch('helpers.get_seed_ips')
+    @patch('helpers.status_set')
+    @patch('charmhelpers.core.hookenv.status_get')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_set_active(self, is_leader, status_get, status_set, seed_ips):
+        is_leader.return_value = False
+        status_get.return_value = 'waiting'
+        seed_ips.return_value = set()
+        actions.set_active('')
+        status_set.assert_called_once_with('active', 'Live node')
+
+    @patch('helpers.get_seed_ips')
+    @patch('helpers.status_set')
+    @patch('charmhelpers.core.hookenv.status_get')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_set_active_seed(self, is_leader,
+                             status_get, status_set, seed_ips):
+        is_leader.return_value = False
+        status_get.return_value = 'waiting'
+        seed_ips.return_value = set([hookenv.unit_private_ip()])
+        actions.set_active('')
+        status_set.assert_called_once_with('active', 'Live seed')
+
+    @patch('helpers.num_nodes')
+    @patch('helpers.get_seed_ips')
+    @patch('helpers.service_status_set')
+    @patch('helpers.status_set')
+    @patch('charmhelpers.core.hookenv.status_get')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_set_active_service(self, is_leader,
+                                status_get, status_set, service_status_set,
+                                seed_ips, num_nodes):
+        is_leader.return_value = True
+        seed_ips.return_value = set([hookenv.unit_private_ip()])
+        num_nodes.return_value = 1
+        actions.set_active('')
+        service_status_set.assert_called_once_with('active',
+                                                   'Single node cluster')
+
+        service_status_set.reset_mock()
+        num_nodes.return_value = 6
+        actions.set_active('')
+        service_status_set.assert_called_once_with('active',
+                                                   '6 node cluster')
+
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
