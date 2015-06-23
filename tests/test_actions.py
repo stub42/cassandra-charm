@@ -660,11 +660,11 @@ class TestActions(TestCaseBase):
         config['datacenter'] = 'mission_control'
         config['rack'] = '01'
 
-        actions._publish_database_relation('database:1', sentinel.superuser)
+        actions._publish_database_relation('database:1', superuser=False)
 
         ensure_user.assert_called_once_with(sentinel.session,
                                             'juju_cservice', 'crypt1',
-                                            sentinel.superuser)
+                                            False)
         leader_ping.assert_called_once_with()  # Peers woken.
 
         hookenv.relation_set.assert_has_calls([
@@ -673,6 +673,40 @@ class TestActions(TestCaseBase):
                  host='10.30.0.1', native_transport_port=666, rpc_port=777,
                  cluster_name='fred', datacenter='mission_control',
                  rack='01')])
+
+    @patch('helpers.leader_ping')
+    @patch('helpers.ensure_user')
+    @patch('helpers.connect')
+    @patch('helpers.get_service_name')
+    @patch('helpers.encrypt_password')
+    @patch('charmhelpers.core.host.pwgen')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    @patch('actions._client_credentials')
+    def test_publish_database_relation_super(self, client_creds, is_leader,
+                                             pwgen, encrypt_password,
+                                             get_service_name,
+                                             connect, ensure_user,
+                                             leader_ping):
+        is_leader.return_value = True  # We are the leader.
+        client_creds.return_value = (None, None)  # No creds published yet.
+
+        get_service_name.return_value = 'cservice'
+        pwgen.side_effect = iter(['secret1', 'secret2'])
+        encrypt_password.side_effect = iter(['crypt1', 'crypt2'])
+        connect().__enter__.return_value = sentinel.session
+
+        config = hookenv.config()
+        config['native_transport_port'] = 666
+        config['rpc_port'] = 777
+        config['cluster_name'] = 'fred'
+        config['datacenter'] = 'mission_control'
+        config['rack'] = '01'
+
+        actions._publish_database_relation('database:1', superuser=True)
+
+        ensure_user.assert_called_once_with(sentinel.session,
+                                            'juju_cservice_admin', 'crypt1',
+                                            True)
 
     @patch('charmhelpers.core.host.write_file')
     def test_install_maintenance_crontab(self, write_file):
