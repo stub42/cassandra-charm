@@ -612,6 +612,8 @@ def _publish_database_relation(relid, superuser):
             # juju environment rebuild and the database restored from
             # backups.
             username = 'juju_{}'.format(helpers.get_service_name(relid))
+            if superuser:
+                username += '_admin'
             password = host.pwgen()
             pwhash = helpers.encrypt_password(password)
             with helpers.connect() as session:

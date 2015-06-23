@@ -974,7 +974,7 @@ def set_active():
     status_set('active', msg)
 
     if hookenv.is_leader():
-        num_nodes = num_nodes()
-        if num_nodes == 1:
-            num_nodes = 'Single'
-        service_status_set('active', '{} node cluster'.format(num_nodes))
+        n = num_nodes()
+        if n == 1:
+            n = 'Single'
+        service_status_set('active', '{} node cluster'.format(n))
