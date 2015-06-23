@@ -33,6 +33,7 @@ from charmhelpers.core import hookenv
 
 from tests.base import TestCaseBase
 import actions
+from coordinator import coordinator
 import helpers
 
 
@@ -324,8 +325,9 @@ class TestActions(TestCaseBase):
         fetch.assert_called_once_with()
         install_tarball.assert_called_once_with(sentinel.tarball)
 
+    @patch('helpers.status_set')
     @patch('urllib.request')
-    def test_fetch_oracle_jre(self, req):
+    def test_fetch_oracle_jre(self, req, status_set):
         config = hookenv.config()
         url = 'https://foo.example.com/server-jre-7u42-linux-x64.tar.gz'
         expected_tarball = os.path.join(hookenv.charm_dir(), 'lib',
@@ -365,7 +367,7 @@ class TestActions(TestCaseBase):
     def test_install_oracle_jre_tarball(self, isdir, mkdir, check_call):
         isdir.return_value = False
 
-        dest = '/usr/lib/jvm/java-7-oracle'
+        dest = '/usr/lib/jvm/java-8-oracle'
 
         actions._install_oracle_jre_tarball(sentinel.tarball)
         mkdir.assert_called_once_with(dest)
@@ -395,13 +397,13 @@ class TestActions(TestCaseBase):
         # Store the version previously installed.
         hookenv.config()['oracle_jre_tarball'] = sentinel.tarball
 
-        dest = '/usr/lib/jvm/java-7-oracle'
+        dest = '/usr/lib/jvm/java-8-oracle'
 
         actions._install_oracle_jre_tarball(sentinel.tarball)
 
         self.assertFalse(mkdir.called)  # The jvm dir already existed.
 
-        exists.assert_called_once_with('/usr/lib/jvm/java-7-oracle/bin/java')
+        exists.assert_called_once_with('/usr/lib/jvm/java-8-oracle/bin/java')
 
         # update-alternatives done, but tarball not extracted.
         check_call.assert_has_calls([
@@ -510,6 +512,63 @@ class TestActions(TestCaseBase):
                 self.assertEqual(f.read().strip(),
                                  'dc=test_dc\nrack=test_rack')
 
+    @patch('helpers.connect')
+    @patch('helpers.get_auth_keyspace_replication')
+    @patch('helpers.num_nodes')
+    def test_needs_reset_auth_keyspace_replication(self, num_nodes,
+                                                   get_auth_ks_rep,
+                                                   connect):
+        num_nodes.return_value = 4
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        get_auth_ks_rep.return_value = {'another': '8'}
+        self.assertTrue(actions.needs_reset_auth_keyspace_replication())
+
+    @patch('helpers.connect')
+    @patch('helpers.get_auth_keyspace_replication')
+    @patch('helpers.num_nodes')
+    def test_needs_reset_auth_keyspace_replication_false(self, num_nodes,
+                                                         get_auth_ks_rep,
+                                                         connect):
+        config = hookenv.config()
+        config['datacenter'] = 'mydc'
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+
+        num_nodes.return_value = 4
+        get_auth_ks_rep.return_value = {'another': '8',
+                                        'mydc': '3'}
+        self.assertFalse(actions.needs_reset_auth_keyspace_replication())
+
+    @patch('helpers.set_active')
+    @patch('helpers.repair_auth_keyspace')
+    @patch('helpers.connect')
+    @patch('helpers.set_auth_keyspace_replication')
+    @patch('helpers.get_auth_keyspace_replication')
+    @patch('helpers.num_nodes')
+    @patch('charmhelpers.core.hookenv.is_leader')
+    def test_reset_auth_keyspace_replication(self, is_leader, num_nodes,
+                                             get_auth_ks_rep,
+                                             set_auth_ks_rep,
+                                             connect, repair, set_active):
+        is_leader.return_value = True
+        num_nodes.return_value = 4
+        coordinator.grants = {}
+        coordinator.requests = {hookenv.local_unit(): {}}
+        coordinator.grant('repair', hookenv.local_unit())
+        config = hookenv.config()
+        config['datacenter'] = 'mydc'
+        connect().__enter__.return_value = sentinel.session
+        connect().__exit__.return_value = False
+        get_auth_ks_rep.return_value = {'another': '8'}
+        self.assertTrue(actions.needs_reset_auth_keyspace_replication())
+        actions.reset_auth_keyspace_replication('')
+        set_auth_ks_rep.assert_called_once_with(
+            sentinel.session,
+            {'class': 'NetworkTopologyStrategy', 'another': '8', 'mydc': 3})
+        repair.assert_called_once_with()
+        set_active.assert_called_once_with()
+
     def test_store_unit_private_ip(self):
         hookenv.unit_private_ip.side_effect = None
         hookenv.unit_private_ip.return_value = sentinel.ip
@@ -562,12 +621,39 @@ class TestActions(TestCaseBase):
         config.load_previous()
         self.assertFalse(actions.needs_restart())
 
+        # A new IP address requires a restart.
+        config['unit_private_ip'] = 'new'
+        self.assertTrue(actions.needs_restart())
+        config.save()
+        config.load_previous()
+        self.assertFalse(actions.needs_restart())
+
         # If the seeds have changed, we need to restart.
         seed_ips.return_value = set(['9.8.7.6'])
         self.assertTrue(actions.needs_restart())
         config.save()
         config.load_previous()
         self.assertFalse(actions.needs_restart())
+
+    @patch('charmhelpers.core.hookenv.is_leader')
+    @patch('helpers.is_bootstrapped')
+    @patch('helpers.ensure_database_directories')
+    @patch('helpers.remount_cassandra')
+    @patch('helpers.start_cassandra')
+    @patch('helpers.stop_cassandra')
+    @patch('helpers.status_set')
+    def test_maybe_restart(self, status_set, stop_cassandra, start_cassandra,
+                           remount, ensure_directories, is_bootstrapped,
+                           is_leader):
+        coordinator.grants = {}
+        coordinator.requests = {hookenv.local_unit(): {}}
+        coordinator.relid = 'cluster:1'
+        coordinator.grant('restart', hookenv.local_unit())
+        actions.maybe_restart('')
+        stop_cassandra.assert_called_once_with()
+        remount.assert_called_once_with()
+        ensure_directories.assert_called_once_with()
+        start_cassandra.assert_called_once_with()
 
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):

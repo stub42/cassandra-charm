@@ -305,9 +305,7 @@ def get_cassandra_service():
 
 def get_cassandra_version():
     if get_cassandra_edition() == 'dse':
-        # When we support multiple versions, we will need to map
-        # DataStax versions to Cassandra versions.
-        return '2.0' if get_package_version('dse-full') else None
+        return '2.1' if get_package_version('dse-full') else None
     return get_package_version('cassandra')
 
 
@@ -335,8 +333,6 @@ def get_cassandra_pid_file():
     edition = get_cassandra_edition()
     if edition == 'dse':
         pid_file = "/var/run/dse/dse.pid"
-    # elif apt_pkg.version_compare(get_cassandra_version(), "2.0") < 0:
-    #     pid_file = "/var/run/cassandra.pid"
     else:
         pid_file = "/var/run/cassandra/cassandra.pid"
     return pid_file
@@ -360,6 +356,7 @@ def get_cassandra_packages():
         # agreement.
         pass
     else:
+        # NB. OpenJDK 8 not available in trusty.
         packages.add('openjdk-7-jre-headless')
 
     return packages

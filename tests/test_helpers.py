@@ -408,8 +408,8 @@ class TestHelpers(TestCaseBase):
     def test_get_cassandra_version_dse(self, get_package_version):
         # Return the cassandra version equivalent if using dse.
         hookenv.config()['edition'] = 'dse'
-        get_package_version.return_value = '4.5-beta2~88'
-        self.assertEqual(helpers.get_cassandra_version(), '2.0')
+        get_package_version.return_value = '4.7-beta2~88'
+        self.assertEqual(helpers.get_cassandra_version(), '2.1')
         get_package_version.assert_called_with('dse-full')
 
     @patch('helpers.get_package_version')
@@ -793,8 +793,8 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.get_cqlshrc_path')
     @patch('helpers.get_cassandra_version')
     @patch('charmhelpers.core.host.pwgen')
-    def test_superuser_credentials(self, pwgen, get_cassandra_version,
-                                   get_cqlshrc_path, get_username):
+    def test_superuser_credentials_20(self, pwgen, get_cassandra_version,
+                                      get_cqlshrc_path, get_username):
         get_cassandra_version.return_value = '2.0'
         with tempfile.TemporaryDirectory() as dotcassandra_dir:
             cqlshrc_path = os.path.join(dotcassandra_dir, 'cqlshrc')
@@ -836,8 +836,8 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.get_cqlshrc_path')
     @patch('helpers.get_cassandra_version')
     @patch('charmhelpers.core.host.pwgen')
-    def test_superuser_credentials_21plus(self, pwgen, get_cassandra_version,
-                                          get_cqlshrc_path, get_username):
+    def test_superuser_credentials(self, pwgen, get_cassandra_version,
+                                   get_cqlshrc_path, get_username):
         # Cassandra 2.1 or higher uses native protocol in its cqlshrc
         get_cassandra_version.return_value = '2.1'
         with tempfile.TemporaryDirectory() as dotcassandra_dir:
@@ -931,8 +931,8 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.get_cassandra_yaml_file')
     @patch('helpers.get_seed_ips')
     @patch('charmhelpers.core.host.write_file')
-    def test_configure_cassandra_yaml(self, write_file, seed_ips, yaml_file,
-                                      get_cassandra_version):
+    def test_configure_cassandra_yaml_20(self, write_file, seed_ips, yaml_file,
+                                         get_cassandra_version):
         get_cassandra_version.return_value = '2.0'
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name='test_cluster_name',
@@ -1001,8 +1001,8 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.get_cassandra_yaml_file')
     @patch('helpers.get_seed_ips')
     @patch('charmhelpers.core.host.write_file')
-    def test_configure_cassandra_yaml_21(self, write_file, seed_ips,
-                                         yaml_file, get_cassandra_version):
+    def test_configure_cassandra_yaml(self, write_file, seed_ips,
+                                      yaml_file, get_cassandra_version):
         get_cassandra_version.return_value = '2.1'
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name='test_cluster_name',
@@ -1066,7 +1066,7 @@ class TestHelpers(TestCaseBase):
     @patch('charmhelpers.core.host.write_file')
     def test_configure_cassandra_yaml_overrides(self, write_file, seed_ips,
                                                 yaml_file, version):
-        version.return_value = '2.0'
+        version.return_value = '2.1'
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name=None,
                                      partitioner='my_partitioner'))

@@ -14,9 +14,9 @@ See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 # Editions
 
 This charm supports Apache Cassandra 2.0, Apache Cassandra 2.1, and
-Datastax Enterprise 4.6. The default is Apache Cassandra 2.0.
+Datastax Enterprise 4.7. The default is Apache Cassandra 2.1.
 
-To use Apache Cassandra 2.1, specify the Apache Cassandra 2.1 archive source
+To use Apache Cassandra 2.0, specify the Apache Cassandra 2.0 archive source
 in the `install_sources` config setting when deploying.
 
 To use Datastax Enterprise, set the `edition` config setting to `dse`
@@ -83,22 +83,15 @@ containing the DataStax Enterprise .deb packages in the
 `install_keys` configuration item. Place the DataStax packages in a
 local archive to avoid downloading from datastax.com.
 
-The Cassandra Python driver and some dependencies are installed using
-`pip(1)`. Set the `http_proxy` config item to direct its downloads via
-a proxy server, such as squid or devpi.
-
 
 ## Oracle Java SE
 
-Cassandra recommends using Oracle Java SE 7. Unfortunately, this
+Cassandra recommends using Oracle Java SE 8. Unfortunately, this
 software is accessible only after accepting Oracle's click-through
 license making deployments using it much more cumbersome. You will need
-to download the Oracle Java SE 7 Server Runtime for Linux, and place the
+to download the Oracle Java SE 8 Server Runtime for Linux, and place the
 tarball at a URL accessible to your deployed units. The config item
 `private_jre_url` needs to be set to this URL.
-
-The recommended Java version is expected to change, as Java SE 7 public
-releases cease as of April 2015.
 
 
 # Usage

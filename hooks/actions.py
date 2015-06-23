@@ -253,6 +253,9 @@ def _fetch_oracle_jre():
             helpers.status_set('blocked',
                                'Invalid private_jre_url {}'.format(url))
             raise SystemExit(0)
+        helpers.status_set(hookenv.status_get(),
+                           'Downloading Oracle JRE')
+        hookenv.log('Oracle JRE URL is {}'.format(url))
         urllib.request.urlretrieve(url, filename)
         config['retrieved_jre'] = url
 
@@ -278,7 +281,10 @@ def _fetch_oracle_jre():
 def _install_oracle_jre_tarball(tarball):
     # Same directory as webupd8 to avoid surprising people, but it could
     # be anything.
-    dest = '/usr/lib/jvm/java-7-oracle'
+    if 'jre-7u' in str(tarball):
+        dest = '/usr/lib/jvm/java-7-oracle'
+    else:
+        dest = '/usr/lib/jvm/java-8-oracle'
 
     if not os.path.isdir(dest):
         host.mkdir(dest)
@@ -501,7 +507,7 @@ def maybe_restart():
     helpers.stop_cassandra()
     helpers.remount_cassandra()
     helpers.ensure_database_directories()
-    if coordinator.relid and not helpers.is_bootstrapped():
+    if helpers.peer_relid() and not helpers.is_bootstrapped():
         helpers.status_set('maintenance', 'Bootstrapping')
     else:
         helpers.status_set('maintenance', 'Starting Cassandra')

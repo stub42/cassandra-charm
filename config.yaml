@@ -35,7 +35,7 @@ options:
             If you are using Datastax Enterprise, you will need to
             override one defaults with your own username and password.
         default: |
-            - deb http://www.apache.org/dist/cassandra/debian 20x main
+            - deb http://www.apache.org/dist/cassandra/debian 21x main
         #   - deb http://debian.datastax.com/community stable main
         #   DSE requires you to register and add your username/password here.
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
