@@ -962,3 +962,19 @@ def get_service_name(relid):
 
 def peer_relid():
     return coordinator.relid
+
+
+@logged
+def set_active():
+    '''Set happy state'''
+    if hookenv.unit_private_ip() in get_seed_ips():
+        msg = 'Live seed'
+    else:
+        msg = 'Live node'
+    status_set('active', msg)
+
+    if hookenv.is_leader():
+        num_nodes = num_nodes()
+        if num_nodes == 1:
+            num_nodes = 'Single'
+        service_status_set('active', '{} node cluster'.format(num_nodes))

@@ -56,7 +56,6 @@ RESTART_REQUIRED_KEYS = set([
     'native_transport_port',
     'partitioner',
     'num_tokens',
-    'force_seed_nodes',
     'max_heap_size',
     'heap_newsize',
     'authorizer',
@@ -419,6 +418,7 @@ def reset_auth_keyspace_replication():
                 del strategy_opts['replication_factor']
             helpers.set_auth_keyspace_replication(session, strategy_opts)
             helpers.repair_auth_keyspace()
+            helpers.set_active()
 
 
 @action
@@ -856,18 +856,7 @@ def set_active():
     # may be active but doing stuff, like active but waiting for restart
     # permission.
     if hookenv.status_get() != 'active':
-        if hookenv.unit_private_ip() in helpers.get_seed_ips():
-            msg = 'Live seed'
-        else:
-            msg = 'Live node'
-        helpers.status_set('active', msg)
-
-    if hookenv.is_leader():
-        num_nodes = helpers.num_nodes()
-        if num_nodes == 1:
-            num_nodes = 'Single'
-        helpers.service_status_set('active',
-                                   '{} node cluster'.format(num_nodes))
+        helpers.set_active()
 
 
 @action
