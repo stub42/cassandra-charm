@@ -377,15 +377,18 @@ def start_cassandra():
     if is_cassandra_running():
         return
 
-    actual_seeds = actual_seed_ips()
+    actual_seeds = sorted(actual_seed_ips())
     assert actual_seeds, 'Attempting to start cassandra with empty seed list'
+    hookenv.config()['configured_seeds'] = actual_seeds
 
     if is_bootstrapped():
         status_set('maintenance',
-                   'Starting Cassandra with seeds {!r}'.format(actual_seeds))
+                   'Starting Cassandra with seeds {!r}'
+                   .format(','.join(actual_seeds)))
     else:
         status_set('maintenance',
-                   'Bootstrapping with seeds {!r}'.format(actual_seeds))
+                   'Bootstrapping with seeds {}'
+                   .format(','.join(actual_seeds)))
 
     host.service_start(get_cassandra_service())
 

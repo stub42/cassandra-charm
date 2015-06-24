@@ -575,14 +575,15 @@ class TestActions(TestCaseBase):
         actions.store_unit_private_ip('')
         self.assertEqual(hookenv.config()['unit_private_ip'], sentinel.ip)
 
+    @patch('charmhelpers.core.host.service_start')
     @patch('helpers.status_set')
-    @patch('helpers.get_seed_ips')
+    @patch('helpers.actual_seed_ips')
     @patch('relations.StorageRelation.needs_remount')
     @patch('helpers.is_bootstrapped')
     @patch('helpers.is_cassandra_running')
     @patch('helpers.is_decommissioned')
     def test_needs_restart(self, is_decom, is_running, is_bootstrapped,
-                           needs_remount, seed_ips, status_set):
+                           needs_remount, seed_ips, status_set, service_start):
         is_decom.return_value = False
         is_running.return_value = True
         needs_remount.return_value = False
@@ -631,8 +632,7 @@ class TestActions(TestCaseBase):
         # If the seeds have changed, we need to restart.
         seed_ips.return_value = set(['9.8.7.6'])
         self.assertTrue(actions.needs_restart())
-        config.save()
-        config.load_previous()
+        helpers.start_cassandra()
         self.assertFalse(actions.needs_restart())
 
     @patch('charmhelpers.core.hookenv.is_leader')

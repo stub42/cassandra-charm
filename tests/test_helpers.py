@@ -513,7 +513,7 @@ class TestHelpers(TestCaseBase):
     def test_start_cassandra(self, is_cassandra_running,
                              service_start, get_service, sleep, seed_ips):
         get_service.return_value = sentinel.service_name
-        seed_ips.return_value = sentinel.just_for_logging
+        seed_ips.return_value = set(['1.2.3.4'])
         is_cassandra_running.return_value = True
         helpers.start_cassandra()
         self.assertFalse(service_start.called)
@@ -521,6 +521,10 @@ class TestHelpers(TestCaseBase):
         is_cassandra_running.side_effect = iter([False, False, False, True])
         helpers.start_cassandra()
         service_start.assert_called_once_with(sentinel.service_name)
+
+        # A side effect of starting cassandra is storing the current live
+        # seed list, so we can tell when it has changed.
+        self.assertEqual(hookenv.config()['configured_seeds'], ['1.2.3.4'])
 
     @patch('os.chmod')
     @patch('helpers.is_cassandra_running')
