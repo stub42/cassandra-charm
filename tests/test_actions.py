@@ -1048,7 +1048,8 @@ class TestActions(TestCaseBase):
         actions.reset_default_password('')
 
         # First, a superuser account for the unit was created.
-        connect.assert_called_once_with('cassandra', 'cassandra')
+        connect.assert_called_once_with('cassandra', 'cassandra',
+                                        timeout=120, auth_timeout=120)
         encrypt_password.assert_called_once_with(sentinel.password)
         ensure_user.assert_called_once_with(sentinel.session,
                                             sentinel.username,

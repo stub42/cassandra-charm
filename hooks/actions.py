@@ -823,7 +823,11 @@ def reset_default_password():
     # providing a tool to reset credentials. This is a huge security
     # hole we must close.
     try:
-        with helpers.connect('cassandra', 'cassandra') as session:
+        # We need a big timeout here, as the cassandra user actually
+        # springs into existence some time after Cassandra has started
+        # up and is accepting connections.
+        with helpers.connect('cassandra', 'cassandra',
+                             timeout=120, auth_timeout=120) as session:
             # But before we close this security hole, we need to use these
             # credentials to create a different admin account for the
             # leader, allowing it to create accounts for other nodes as they
