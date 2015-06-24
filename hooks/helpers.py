@@ -645,6 +645,10 @@ def nodetool(*cmd, timeout=120):
         except subprocess.CalledProcessError as x:
             if i > 1:
                 emit(x.output.expandtabs())  # Expand tabs for juju debug-log.
+            if not is_cassandra_running():
+                status_set('blocked',
+                           'Cassandra has unexpectedly shutdown')
+                raise SystemExit(0)
             if time.time() >= until:
                 raise
 

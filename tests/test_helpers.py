@@ -883,9 +883,11 @@ class TestHelpers(TestCaseBase):
         # The output was emitted.
         helpers.emit.assert_called_once_with('OK')
 
+    @patch('helpers.is_cassandra_running')
     @patch('helpers.backoff')
     @patch('subprocess.check_output')
-    def test_nodetool_CASSANDRA_8776(self, check_output, backoff):
+    def test_nodetool_CASSANDRA_8776(self, check_output, backoff, is_running):
+        is_running.return_value = True
         backoff.return_value = repeat(True)
         check_output.side_effect = iter(['ONE Error: stuff', 'TWO OK'])
         self.assertEqual(helpers.nodetool('status', 'system_auth'), 'TWO OK')
@@ -893,10 +895,12 @@ class TestHelpers(TestCaseBase):
         # The output was emitted.
         helpers.emit.assert_called_once_with('TWO OK')
 
+    @patch('helpers.is_cassandra_running')
     @patch('helpers.backoff')
     @patch('subprocess.check_output')
-    def test_nodetool_retry(self, check_output, backoff):
+    def test_nodetool_retry(self, check_output, backoff, is_running):
         backoff.return_value = repeat(True)
+        is_running.return_value = True
         check_output.side_effect = iter([
             subprocess.CalledProcessError([], 1, 'fail 1'),
             subprocess.CalledProcessError([], 1, 'fail 2'),

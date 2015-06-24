@@ -478,8 +478,7 @@ def needs_restart():
 
     # If we have new seeds, we should restart.
     new_seeds = helpers.get_seed_ips()
-    config['configured_seeds'] = sorted(new_seeds)
-    if config.changed('configured_seeds'):
+    if config.get('configured_seeds') != sorted(new_seeds):
         old_seeds = set(config.previous('configured_seeds') or [])
         changed = old_seeds.symmetric_difference(new_seeds)
         # We don't care about the local node in the changes.
