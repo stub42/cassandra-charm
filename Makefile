@@ -34,6 +34,10 @@ SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 PIP=.venv3/bin/pip3.4 -q
 NOSETESTS=.venv3/bin/nosetests-3.4 -sv
 
+# Set pipefail so we can get sane error codes while tagging test output
+# with ts(1)
+SHELL=bash -o pipefail
+
 deps: packages venv3
 
 lint: deps
@@ -42,7 +46,7 @@ lint: deps
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402,E265 \
-	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
+	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing | ts
 
 unittest: lint
 	$(NOSETESTS) \
