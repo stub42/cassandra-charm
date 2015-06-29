@@ -9,4 +9,4 @@ makefile:
     - unittest
     - Test1UnitDeployment
     - Test3UnitDeployment
-    - Test21Deployment
+    - Test20Deployment
