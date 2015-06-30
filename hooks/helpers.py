@@ -160,9 +160,6 @@ def ensure_database_directory(config_path):
 
     Returns the absolute path.
     '''
-    # Guard against changing perms on a running db. Although probably
-    # harmless, it causes shutil.chown() to fail.
-    assert not is_cassandra_running()
     absdir = get_database_directory(config_path)
 
     # Work around Bug #1427150 by ensuring components of the path are
@@ -432,6 +429,9 @@ def remount_cassandra():
 @logged
 def ensure_database_directories():
     '''Ensure that directories Cassandra expects to store its data in exist.'''
+    # Guard against changing perms on a running db. Although probably
+    # harmless, it causes shutil.chown() to fail.
+    assert not is_cassandra_running()
     db_dirs = get_all_database_directories()
     unpacked_db_dirs = (db_dirs['data_file_directories'] +
                         [db_dirs['commitlog_directory']] +
@@ -805,15 +805,19 @@ def is_bootstrapped(unit=None):
 
 
 def set_bootstrapped():
-    hookenv.log('Bootstrapped')
     # We need to store this flag in two locations. The peer relation,
     # so peers can see it, and local state, for when we haven't joined
     # the peer relation yet. actions.publish_bootstrapped_flag()
     # calls this method again when necessary to ensure that state is
     # propagated # if/when the peer relation is joined.
-    hookenv.config()['bootstrapped'] = True
+    config = hookenv.config()
+    config['bootstrapped'] = True
     if coordinator.relid is not None:
         hookenv.relation_set(coordinator.relid, bootstrapped="1")
+    if config.changed('bootstrapped'):
+        hookenv.log('Bootstrapped')
+    else:
+        hookenv.log('Already bootstrapped')
 
 
 def get_bootstrapped():

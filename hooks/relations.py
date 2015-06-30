@@ -94,7 +94,9 @@ class StorageRelation(RelationContext):
                 return False
         return True
 
-    def provide_data(self):
+    def provide_data(self, remote_service, service_ready):
+        hookenv.log('Requesting mountpoint {} from {}'
+                    .format(self._requested_mountpoint, remote_service))
         return dict(mountpoint=self._requested_mountpoint)
 
     def needs_remount(self):

@@ -868,6 +868,8 @@ def set_active():
     # permission.
     if hookenv.status_get() != 'active':
         helpers.set_active()
+    else:
+        hookenv.log('Unit status already active', DEBUG)
 
 
 @action

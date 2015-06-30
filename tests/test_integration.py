@@ -290,6 +290,21 @@ class Test1UnitDeployment(TestDeploymentBase):
             with self.subTest(unit=unit):
                 while True:
                     s = self.deployment.sentry[unit]
+                    # Attempting to diagnose Amulet failures. I suspect
+                    # SSH host keys again, per Bug #802117
+                    try:
+                        s.directory_contents('/')
+                    except subprocess.CalledProcessError:
+                        self.skipTest('sentry[{!r}].directory_contents({!r}) '
+                                      'failed!'.format(unit, '/'))
+                    parents = ['/srv', '/srv/cassandra_{}'.format(unit_num),
+                               '/srv/cassandra_{}/cassandra'.format(unit_num)]
+                    for path in parents:
+                        try:
+                            s.directory_contents('/srv')
+                        except subprocess.CalledProcessError:
+                            raise AssertionError('Failed to scan {!r} on {}'
+                                                 .format(path, unit))
                     try:
                         contents = s.directory_contents(
                             '/srv/cassandra_{}/cassandra/data'.format(

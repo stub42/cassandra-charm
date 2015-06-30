@@ -46,7 +46,8 @@ lint: deps
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402,E265 \
-	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing | ts
+	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
+	@echo OK: Lint free
 
 unittest: lint
 	$(NOSETESTS) \
