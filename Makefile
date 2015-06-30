@@ -47,7 +47,7 @@ lint: deps
 	flake8 \
 	    --ignore=E402,E265 \
 	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
-	@echo OK: Lint free
+	@echo OK: Lint free `date`
 
 unittest: lint
 	$(NOSETESTS) \
@@ -55,6 +55,7 @@ unittest: lint
 	    tests.test_helpers        --cover-package=helpers \
 	    tests.test_definitions    --cover-package=definitions \
 	    --with-coverage --cover-branches
+	@echo OK: Unit tests pass `date`
 
 test: unittest
 	AMULET_TIMEOUT=3600 \
