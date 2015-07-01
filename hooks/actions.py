@@ -23,20 +23,22 @@ import re
 import shlex
 import subprocess
 from textwrap import dedent
+import time
 import urllib.request
 
 from charmhelpers import fetch
 from charmhelpers.contrib.charmsupport import nrpe
 from charmhelpers.contrib.network import ufw
 from charmhelpers.contrib.templating import jinja
-from charmhelpers.contrib import unison
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.fstab import Fstab
-from charmhelpers.core.hookenv import ERROR, WARNING
+from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 
+import cassandra
+
+from coordinator import coordinator
 import helpers
 import relations
-import rollingrestart
 
 
 # These config keys cannot be changed after service deployment.
@@ -54,7 +56,6 @@ RESTART_REQUIRED_KEYS = set([
     'native_transport_port',
     'partitioner',
     'num_tokens',
-    'force_seed_nodes',
     'max_heap_size',
     'heap_newsize',
     'authorizer',
@@ -83,8 +84,7 @@ RESTART_NOT_REQUIRED_KEYS = set([
     'nagios_heapchk_warn_pct',
     'nagios_heapchk_crit_pct',
     'nagios_disk_warn_pct',
-    'nagios_disk_crit_pct',
-    'post_bootstrap_delay'])
+    'nagios_disk_crit_pct'])
 
 
 def action(func):
@@ -103,6 +103,17 @@ def action(func):
     return wrapper
 
 
+def leader_only(func):
+    '''Decorated function is only run on the leader.'''
+    @wraps(func)
+    def wrapper(*args, **kw):
+        if hookenv.is_leader():
+            return func(*args, **kw)
+        else:
+            return None
+    return wrapper
+
+
 @action
 def set_proxy():
     config = hookenv.config()
@@ -113,13 +124,14 @@ def set_proxy():
 
 @action
 def revert_unchangeable_config():
-    if hookenv.hook_name() == 'install':
-        # config.previous() only becomes meaningful after the install
-        # hook has run. During the first run on the unit hook, it
-        # reports everything has having None as the previous value.
+    config = hookenv.config()
+
+    # config.previous() only becomes meaningful after the install
+    # hook has run. During the first run on the unit hook, it
+    # reports everything has having None as the previous value.
+    if config._prev_dict is None:
         return
 
-    config = hookenv.config()
     for key in UNCHANGEABLE_KEYS:
         if config.changed(key):
             previous = config.previous(key)
@@ -231,47 +243,55 @@ def ensure_cassandra_package_status():
     helpers.ensure_package_status(helpers.get_cassandra_packages())
 
 
-@action
-def install_oracle_jre():
-    if helpers.get_jre() != 'oracle':
-        return
-
+def _fetch_oracle_jre():
     config = hookenv.config()
     url = config.get('private_jre_url', None)
-    if not url:
-        hookenv.log('private_jre_url not set. Unable to continue.', ERROR)
-        raise SystemExit(1)
-
-    if config.get('retrieved_jre', None) != url:
-        filename = os.path.join('lib', url.split('/')[-1])
+    if url and config.get('retrieved_jre', None) != url:
+        filename = os.path.join(hookenv.charm_dir(),
+                                'lib', url.split('/')[-1])
         if not filename.endswith('-linux-x64.tar.gz'):
-            hookenv.log('Invalid JRE URL {}'.format(url), ERROR)
-            raise SystemExit(1)
+            helpers.status_set('blocked',
+                               'Invalid private_jre_url {}'.format(url))
+            raise SystemExit(0)
+        helpers.status_set(hookenv.status_get(),
+                           'Downloading Oracle JRE')
+        hookenv.log('Oracle JRE URL is {}'.format(url))
         urllib.request.urlretrieve(url, filename)
         config['retrieved_jre'] = url
 
-    pattern = 'lib/server-jre-?u*-linux-x64.tar.gz'
+    pattern = os.path.join(hookenv.charm_dir(),
+                           'lib', 'server-jre-?u*-linux-x64.tar.gz')
     tarballs = glob.glob(pattern)
-    if not tarballs:
-        hookenv.log('Oracle JRE tarball not found ({})'.format(pattern),
-                    ERROR)
-        # We could fallback to OpenJDK, but the user took the trouble
-        # to specify the Oracle JRE and it is recommended for Cassandra
-        # so lets hard fail instead.
-        raise SystemExit(1)
+    if not (url or tarballs):
+        helpers.status_set('blocked',
+                           'private_jre_url not set and no local tarballs.')
+        raise SystemExit(0)
+
+    elif not tarballs:
+        helpers.status_set('blocked',
+                           'Oracle JRE tarball not found ({})'.format(pattern))
+        raise SystemExit(0)
 
     # Latest tarball by filename/version num. Lets hope they don't hit
     # 99 (currently at 76).
     tarball = sorted(tarballs)[-1]
+    return tarball
 
+
+def _install_oracle_jre_tarball(tarball):
     # Same directory as webupd8 to avoid surprising people, but it could
     # be anything.
-    dest = '/usr/lib/jvm/java-7-oracle'
+    if 'jre-7u' in str(tarball):
+        dest = '/usr/lib/jvm/java-7-oracle'
+    else:
+        dest = '/usr/lib/jvm/java-8-oracle'
 
     if not os.path.isdir(dest):
         host.mkdir(dest)
 
     jre_exists = os.path.exists(os.path.join(dest, 'bin', 'java'))
+
+    config = hookenv.config()
 
     # Unpack the latest tarball if necessary.
     if config.get('oracle_jre_tarball', '') == tarball and jre_exists:
@@ -290,6 +310,15 @@ def install_oracle_jre():
                                tool, tool_path, '1'])
         subprocess.check_call(['update-alternatives',
                                '--set', tool, tool_path])
+
+
+@action
+def install_oracle_jre():
+    if helpers.get_jre() != 'oracle':
+        return
+
+    tarball = _fetch_oracle_jre()
+    _install_oracle_jre_tarball(tarball)
 
 
 @action
@@ -355,82 +384,153 @@ def configure_cassandra_rackdc():
     host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
 
 
+def needs_reset_auth_keyspace_replication():
+    '''Guard for reset_auth_keyspace_replication.'''
+    num_nodes = helpers.num_nodes()
+    n = min(num_nodes, 3)
+    datacenter = hookenv.config()['datacenter']
+    with helpers.connect() as session:
+        strategy_opts = helpers.get_auth_keyspace_replication(session)
+        rf = int(strategy_opts.get(datacenter, -1))
+        hookenv.log('system_auth rf={!r}'.format(strategy_opts))
+        # If the node count has increased, we will change the rf.
+        # If the node count is decreasing, we do nothing as the service
+        # may be being destroyed.
+        if rf < n:
+            return True
+    return False
+
+
+@leader_only
 @action
+@coordinator.require('repair', needs_reset_auth_keyspace_replication)
 def reset_auth_keyspace_replication():
-    # This action only lowers the system_auth keyspace replication
-    # values when a node has been decommissioned. The replication settings
-    # are also updated during rolling restart, which takes care of when new
-    # nodes are added.
-    helpers.reset_auth_keyspace_replication()
+    # Cassandra requires you to manually set the replication factor of
+    # the system_auth keyspace, to ensure availability and redundancy.
+    # We replication factor in this service's DC can be no higher than
+    # the number of bootstrapped nodes. We also cap this at 3 to ensure
+    # we don't have too many seeds.
+    num_nodes = helpers.num_nodes()
+    n = min(num_nodes, 3)
+    datacenter = hookenv.config()['datacenter']
+    with helpers.connect() as session:
+        strategy_opts = helpers.get_auth_keyspace_replication(session)
+        rf = int(strategy_opts.get(datacenter, -1))
+        hookenv.log('system_auth rf={!r}'.format(strategy_opts))
+        if rf != n:
+            strategy_opts['class'] = 'NetworkTopologyStrategy'
+            strategy_opts[datacenter] = n
+            if 'replication_factor' in strategy_opts:
+                del strategy_opts['replication_factor']
+            helpers.set_auth_keyspace_replication(session, strategy_opts)
+            helpers.repair_auth_keyspace()
+            helpers.set_active()
 
 
 @action
 def store_unit_private_ip():
+    '''Store the unit's private ip address, so we can tell if it changes.'''
     hookenv.config()['unit_private_ip'] = hookenv.unit_private_ip()
 
 
-@action
-def set_unit_zero_bootstrapped():
-    '''Unit #0 is used as the first node in the cluster.
-
-    Unit #0 is implicitly flagged as bootstrap, and thus befores the
-    first node in the cluster and providing a seed for other nodes to
-    bootstrap off. We can change this when we have juju leadership,
-    making the leader the first node in the cluster. Until then, don't
-    attempt to create a multiunit service if you have removed Unit #0.
-    '''
-    relname = rollingrestart.get_peer_relation_name()
-    if helpers.unit_number() == 0 and hookenv.hook_name().startswith(relname):
-        helpers.set_bootstrapped(True)
-
-
-@action
-def maybe_schedule_restart():
-    '''Prepare for and schedule a rolling restart if necessary.'''
-    if not helpers.is_cassandra_running():
-        # Short circuit if Cassandra is not running to avoid log spam.
-        rollingrestart.request_restart()
-        return
-
+def needs_restart():
+    '''Return True if Cassandra is not running or needs to be restarted.'''
     if helpers.is_decommissioned():
-        hookenv.log("Decommissioned")
-        return
+        # Decommissioned nodes are never restarted. They remain up
+        # telling everyone they are decommissioned.
+        helpers.status_set('blocked', 'Decommissioned node')
+        return False
 
-    # If any of these config items changed, a restart is required.
+    if not helpers.is_cassandra_running():
+        if helpers.is_bootstrapped():
+            helpers.status_set('waiting', 'Waiting for permission to start')
+        else:
+            helpers.status_set('waiting',
+                               'Waiting for permission to bootstrap')
+        return True
+
     config = hookenv.config()
-    restart = False
-    for key in RESTART_REQUIRED_KEYS:
-        if config.changed(key):
-            hookenv.log('{} changed. Restart required.'.format(key))
-            restart = True
-
-    # If the directory paths have changed, we need to migrate data
-    # during a restart. Directory config items have already been picked
-    # up in the previous check.
-    storage = relations.StorageRelation()
-    if storage.needs_remount():
-        hookenv.log('Mountpoint changed. Restart and migration required.')
-        restart = True
 
     # If our IP address has changed, we need to restart.
     if config.changed('unit_private_ip'):
-        hookenv.log('Unit IP address changed. Restart required.')
-        restart = True
+        hookenv.log('waiting',
+                    'IP address changed. Waiting for restart permission.')
+        return True
+
+    # If the directory paths have changed, we need to migrate data
+    # during a restart.
+    storage = relations.StorageRelation()
+    if storage.needs_remount():
+        helpers.status_set(hookenv.status_get(),
+                           'New mounts. Waiting for restart permission')
+        return True
+
+    # If any of these config items changed, a restart is required.
+    for key in RESTART_REQUIRED_KEYS:
+        if config.changed(key):
+            hookenv.log('{} changed. Restart required.'.format(key))
+    for key in RESTART_REQUIRED_KEYS:
+        if config.changed(key):
+            helpers.status_set(hookenv.status_get(),
+                               'Config changes. '
+                               'Waiting for restart permission.')
+            return True
 
     # If we have new seeds, we should restart.
-    new_seeds = helpers.seed_ips()
-    config['configured_seeds'] = sorted(new_seeds)
-    if config.changed('configured_seeds'):
+    new_seeds = helpers.get_seed_ips()
+    if config.get('configured_seeds') != sorted(new_seeds):
         old_seeds = set(config.previous('configured_seeds') or [])
         changed = old_seeds.symmetric_difference(new_seeds)
         # We don't care about the local node in the changes.
         changed.discard(hookenv.unit_private_ip())
         if changed:
-            hookenv.log('New seeds {!r}. Restart required.'.format(new_seeds))
-            restart = True
+            helpers.status_set(hookenv.status_get(),
+                               'Updated seeds {!r}. '
+                               'Waiting for restart permission.'
+                               ''.format(new_seeds))
+            return True
 
-    if restart:
-        rollingrestart.request_restart()
+    hookenv.log('Restart not required')
+    return False
+
+
+@action
+@coordinator.require('restart', needs_restart)
+def maybe_restart():
+    '''Restart sequence.
+
+    If a restart is needed, shutdown Cassandra, perform all pending operations
+    that cannot be be done while Cassandra is live, and restart it.
+    '''
+    helpers.status_set('maintenance', 'Stopping Cassandra')
+    helpers.stop_cassandra()
+    helpers.remount_cassandra()
+    helpers.ensure_database_directories()
+    if helpers.peer_relid() and not helpers.is_bootstrapped():
+        helpers.status_set('maintenance', 'Bootstrapping')
+    else:
+        helpers.status_set('maintenance', 'Starting Cassandra')
+    helpers.start_cassandra()
+
+
+@action
+def post_bootstrap():
+    '''Maintain state on if the node has bootstrapped into the cluster.
+
+    Per documented procedure for adding new units to a cluster, wait 2
+    minutes if the unit has just bootstrapped to ensure other units
+    do not attempt bootstrap too soon.
+    '''
+    if not helpers.is_bootstrapped():
+        if coordinator.relid is not None:
+            helpers.status_set('maintenance', 'Post-bootstrap 2 minute delay')
+            hookenv.log('Post-bootstrap 2 minute delay')
+            time.sleep(120)  # Must wait 2 minutes between bootstrapping nodes.
+
+    # Unconditionally call this to publish the bootstrapped flag to
+    # the peer relation, as the first unit was bootstrapped before
+    # the peer relation existed.
+    helpers.set_bootstrapped()
 
 
 @action
@@ -443,66 +543,90 @@ def start_cassandra():
     helpers.start_cassandra()
 
 
+@leader_only
 @action
-def ensure_unit_superuser():
-    helpers.ensure_unit_superuser()
+def create_unit_superusers():
+    # The leader creates and updates accounts for nodes, using the
+    # encrypted password they provide in relations.PeerRelation. We
+    # don't end up with unencrypted passwords leaving the unit, and we
+    # don't need to restart Cassandra in no-auth mode which is slow and
+    # I worry may cause issues interrupting the bootstrap.
+    if not coordinator.relid:
+        return  # No peer relation, no requests yet.
+
+    created_units = helpers.get_unit_superusers()
+    uncreated_units = [u for u in hookenv.related_units(coordinator.relid)
+                       if u not in created_units]
+    for peer in uncreated_units:
+        rel = hookenv.relation_get(unit=peer, rid=coordinator.relid)
+        username = rel.get('username')
+        pwhash = rel.get('pwhash')
+        if not username:
+            continue
+        hookenv.log('Creating {} account for {}'.format(username, peer))
+        with helpers.connect() as session:
+            helpers.ensure_user(session, username, pwhash, superuser=True)
+        created_units.add(peer)
+        helpers.set_unit_superusers(created_units)
 
 
 @action
 def reset_all_io_schedulers():
-    helpers.reset_all_io_schedulers()
+    dirs = helpers.get_all_database_directories()
+    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']] +
+            [dirs['saved_caches_directory']])
+    config = hookenv.config()
+    for d in dirs:
+        if os.path.isdir(d):  # Directory may not exist yet.
+            helpers.set_io_scheduler(config['io_scheduler'], d)
+
+
+def _client_credentials(relid):
+    '''Return the client credentials used by relation relid.'''
+    relinfo = hookenv.relation_get(unit=hookenv.local_unit(), rid=relid)
+    username = relinfo.get('username')
+    password = relinfo.get('password')
+    if username is None or password is None:
+        for unit in hookenv.related_units(coordinator.relid):
+            try:
+                relinfo = hookenv.relation_get(unit=unit, rid=relid)
+                username = relinfo.get('username')
+                password = relinfo.get('password')
+                if username is not None and password is not None:
+                    return username, password
+            except subprocess.CalledProcessError:
+                pass  # Assume the remote unit has not joined yet.
+        return None, None
+    else:
+        return username, password
 
 
 def _publish_database_relation(relid, superuser):
-    # Due to Bug #1409763, this functionality is as action rather than a
-    # provided_data item.
-    #
     # The Casandra service needs to provide a common set of credentials
-    # to a client unit. Juju does not yet provide a leader so we
-    # need another mechanism for determine which unit will create the
-    # client's account, with the remaining units copying the lead unit's
-    # credentials. For the purposes of this charm, the first unit in
-    # order is considered the leader and creates the user with a random
-    # password. It then tickles the peer relation to ensure the other
-    # units get a hook fired and the opportunity to copy and publish
-    # these credentials. If the lowest numbered unit is removed before
-    # all of the other peers have copied its credentials, then the next
-    # lowest will have either already copied the credentials (and the
-    # remaining peers will use them), or the process starts again and
-    # it will generate new credentials.
-    node_list = list(rollingrestart.get_peers()) + [hookenv.local_unit()]
-    sorted_nodes = sorted(node_list, key=lambda unit: int(unit.split('/')[-1]))
-    first_node = sorted_nodes[0]
-
-    config = hookenv.config()
-
-    try:
-        relinfo = hookenv.relation_get(unit=first_node, rid=relid)
-    except subprocess.CalledProcessError:
-        if first_node == hookenv.local_unit():
-            raise
-        # relation-get may fail if the specified unit has not yet joined
-        # the peer relation, or has just departed. Try again later.
-        return
-
-    username = relinfo.get('username')
-    password = relinfo.get('password')
-    if hookenv.local_unit() == first_node:
-        # Lowest numbered unit, at least for now.
-        if 'username' not in relinfo:
-            # Credentials unset. Generate them.
-            username = 'juju_{}'.format(
-                relid.replace(':', '_').replace('-', '_'))
+    # to a client unit. The leader creates these, if none of the other
+    # units are found to have published them already (a previously elected
+    # leader may have done this). The leader then tickles the other units,
+    # firing a hook and giving them the opportunity to copy and publish
+    # these credentials.
+    username, password = _client_credentials(relid)
+    if username is None:
+        if hookenv.is_leader():
+            # Credentials not set. The leader must generate them. We use
+            # the service name so that database permissions remain valid
+            # even after the relation is dropped and recreated, or the
+            # juju environment rebuild and the database restored from
+            # backups.
+            username = 'juju_{}'.format(helpers.get_service_name(relid))
+            if superuser:
+                username += '_admin'
             password = host.pwgen()
-            # Wake the other peers, if any.
-            hookenv.relation_set(rollingrestart.get_peer_relation_id(),
-                                 ping=rollingrestart.utcnow_str())
-        # Create the account if necessary, and reset the password.
-        # We need to reset the password as another unit may have
-        # rudely changed it thinking they were the lowest numbered
-        # unit. Fix this behavior once juju provides real
-        # leadership.
-        helpers.ensure_user(username, password, superuser)
+            pwhash = helpers.encrypt_password(password)
+            with helpers.connect() as session:
+                helpers.ensure_user(session, username, pwhash, superuser)
+            # Wake the peers, if any.
+            helpers.leader_ping()
+        else:
+            return  # No credentials yet. Nothing to do.
 
     # Publish the information the client needs on the relation where
     # they can find it.
@@ -511,6 +635,7 @@ def _publish_database_relation(relid, superuser):
     #  - cluster_name, so clients can differentiate multiple clusters
     #  - datacenter + rack, so clients know what names they can use
     #    when altering keyspace replication settings.
+    config = hookenv.config()
     hookenv.relation_set(relid,
                          username=username, password=password,
                          host=hookenv.unit_public_ip(),
@@ -546,50 +671,10 @@ def install_maintenance_crontab():
 
 
 @action
-def emit_describe_cluster():
-    '''Spam 'nodetool describecluster' into the logs.'''
+def emit_cluster_info():
     helpers.emit_describe_cluster()
-
-
-@action
-def emit_auth_keyspace_status():
-    '''Spam 'nodetool status system_auth' into the logs.'''
     helpers.emit_auth_keyspace_status()
-
-
-@action
-def emit_netstats():
-    '''Spam 'nodetool netstats' into the logs.'''
     helpers.emit_netstats()
-
-
-@action
-def shutdown_before_joining_peers():
-    '''Shutdown the node before opening firewall ports for our peers.
-
-    When the peer relation is first joined, the node has already been
-    setup and is running as a standalone cluster. This is problematic
-    when the peer relation has been formed, as if it is left running
-    peers may conect to it and initiate replication before this node
-    has been properly reset and bootstrapped. To avoid this, we
-    shutdown the node before opening firewall ports to any peers. The
-    firewall can then be opened, and peers will not find a node here
-    until it starts its bootstrapping.
-    '''
-    relname = rollingrestart.get_peer_relation_name()
-    if hookenv.hook_name() == '{}-relation-joined'.format(relname):
-        if not helpers.is_bootstrapped():
-            helpers.stop_cassandra(immediate=True)
-
-
-@action
-def grant_ssh_access():
-    '''Grant SSH access to run nodetool on remote nodes.
-
-    This is easier than setting up remote JMX access, and more secure.
-    '''
-    unison.ssh_authorized_peers(rollingrestart.get_peer_relation_name(),
-                                'juju_ssh', ensure_local_user=True)
 
 
 @action
@@ -632,13 +717,9 @@ def configure_firewall():
 
     # Rules for peers
     for relinfo in hookenv.relations_of_type('cluster'):
-        for port in peer_ports:
-            desired_rules.add((relinfo['private-address'], 'any', port))
-
-    # External seeds also need access.
-    for seed_ip in helpers.seed_ips():
-        for port in peer_ports:
-            desired_rules.add((seed_ip, 'any', port))
+        if relinfo['private-address']:
+            for port in peer_ports:
+                desired_rules.add((relinfo['private-address'], 'any', port))
 
     previous_rules = set(tuple(rule) for rule in config.get('ufw_rules', []))
 
@@ -683,8 +764,7 @@ def nrpe_external_master_relation():
             description="Check Cassandra Heap",
             check_cmd="check_cassandra_heap.sh {} {} {}"
                       "".format(hookenv.unit_private_ip(), cassandra_heap_warn,
-                                cassandra_heap_crit)
-        )
+                                cassandra_heap_crit))
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
@@ -699,7 +779,116 @@ def nrpe_external_master_relation():
                 description="Check Cassandra Disk {}".format(disk),
                 check_cmd="check_disk -u GB -w {}% -c {}% -K 5% -p {}"
                           "".format(cassandra_disk_warn, cassandra_disk_crit,
-                                    disk)
-            )
-
+                                    disk))
     nrpe_compat.write()
+
+
+@leader_only
+@action
+def maintain_seeds():
+    '''The leader needs to maintain the list of seed nodes'''
+    seed_ips = helpers.get_seed_ips()
+    hookenv.log('Current seeds == {!r}'.format(seed_ips), DEBUG)
+
+    bootstrapped_ips = helpers.get_bootstrapped_ips()
+    hookenv.log('Bootstrapped == {!r}'.format(bootstrapped_ips), DEBUG)
+
+    # Remove any seeds that are no longer bootstrapped, such as dropped
+    # units.
+    seed_ips.intersection_update(bootstrapped_ips)
+
+    # Add more bootstrapped nodes, if necessary, to get to our maximum
+    # of 3 seeds.
+    potential_seed_ips = list(reversed(sorted(bootstrapped_ips)))
+    while len(seed_ips) < 3 and potential_seed_ips:
+        seed_ips.add(potential_seed_ips.pop())
+
+    # If there are no seeds or bootstrapped nodes, start with the leader. Us.
+    if len(seed_ips) == 0:
+        seed_ips.add(hookenv.unit_private_ip())
+
+    hookenv.log('Updated seeds == {!r}'.format(seed_ips), DEBUG)
+
+    hookenv.leader_set(seeds=','.join(sorted(seed_ips)))
+
+
+@leader_only
+@action
+def reset_default_password():
+    if hookenv.leader_get('default_admin_password_changed'):
+        hookenv.log('Default admin password already changed')
+        return
+
+    # Cassandra ships with well known credentials, rather than
+    # providing a tool to reset credentials. This is a huge security
+    # hole we must close.
+    try:
+        # We need a big timeout here, as the cassandra user actually
+        # springs into existence some time after Cassandra has started
+        # up and is accepting connections.
+        with helpers.connect('cassandra', 'cassandra',
+                             timeout=120, auth_timeout=120) as session:
+            # But before we close this security hole, we need to use these
+            # credentials to create a different admin account for the
+            # leader, allowing it to create accounts for other nodes as they
+            # join. The alternative is restarting Cassandra without
+            # authentication, which this charm will likely need to do in the
+            # future when we allow Cassandra services to be related together.
+            helpers.status_set('maintenance',
+                               'Creating initial superuser account')
+            username, password = helpers.superuser_credentials()
+            pwhash = helpers.encrypt_password(password)
+            helpers.ensure_user(session, username, pwhash, superuser=True)
+            helpers.set_unit_superusers([hookenv.local_unit()])
+
+            helpers.status_set('maintenance',
+                               'Changing default admin password')
+            helpers.query(session, 'ALTER USER cassandra WITH PASSWORD %s',
+                          cassandra.ConsistencyLevel.ALL, (host.pwgen(),))
+    except cassandra.AuthenticationFailed:
+        hookenv.log('Default superuser account already reset')
+        try:
+            with helpers.connect():
+                hookenv.log("Leader's superuser account already created")
+        except cassandra.AuthenticationFailed:
+            # We have no known superuser credentials. Create the account
+            # the hard, slow way. This will be the normal method
+            # of creating the service's initial account when we allow
+            # services to be related together.
+            helpers.create_unit_superuser_hard()
+
+    hookenv.leader_set(default_admin_password_changed=True)
+
+
+@action
+def set_active():
+    # If we got this far, the unit is active. Update the status if it is
+    # not already active. We don't do this unconditionally, as the charm
+    # may be active but doing stuff, like active but waiting for restart
+    # permission.
+    if hookenv.status_get() != 'active':
+        helpers.set_active()
+    else:
+        hookenv.log('Unit status already active', DEBUG)
+
+
+@action
+def request_unit_superuser():
+    relid = helpers.peer_relid()
+    if relid is None:
+        hookenv.log('Request deferred until peer relation exists')
+        return
+
+    relinfo = hookenv.relation_get(unit=hookenv.local_unit(),
+                                   rid=relid)
+    if relinfo and relinfo.get('username'):
+        # We must avoid blindly setting the pwhash on the relation,
+        # as we will likely get a different value everytime we
+        # encrypt the password due to the random salt.
+        hookenv.log('Superuser account request previously made')
+    else:
+        # Publish the requested superuser and hash to our peers.
+        username, password = helpers.superuser_credentials()
+        pwhash = helpers.encrypt_password(password)
+        hookenv.relation_set(relid, username=username, pwhash=pwhash)
+        hookenv.log('Requested superuser account creation')

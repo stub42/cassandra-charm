@@ -58,8 +58,7 @@ class TestDeploymentBase(unittest.TestCase):
     deployment = None
 
     common_config = dict(max_heap_size='96M',
-                         heap_newsize='4M',
-                         post_bootstrap_delay=120)
+                         heap_newsize='4M')
     test_config = dict()
 
     @classmethod
@@ -291,6 +290,21 @@ class Test1UnitDeployment(TestDeploymentBase):
             with self.subTest(unit=unit):
                 while True:
                     s = self.deployment.sentry[unit]
+                    # Attempting to diagnose Amulet failures. I suspect
+                    # SSH host keys again, per Bug #802117
+                    try:
+                        s.directory_contents('/')
+                    except subprocess.CalledProcessError:
+                        self.skipTest('sentry[{!r}].directory_contents({!r}) '
+                                      'failed!'.format(unit, '/'))
+                    parents = ['/srv', '/srv/cassandra_{}'.format(unit_num),
+                               '/srv/cassandra_{}/cassandra'.format(unit_num)]
+                    for path in parents:
+                        try:
+                            s.directory_contents('/srv')
+                        except subprocess.CalledProcessError:
+                            raise AssertionError('Failed to scan {!r} on {}'
+                                                 .format(path, unit))
                     try:
                         contents = s.directory_contents(
                             '/srv/cassandra_{}/cassandra/data'.format(
@@ -446,8 +460,11 @@ def _serve(cwd, host, port):
     httpd.serve_forever()
 
 
+_procs = []
+
+
 def get_jre_url():
-    '''Return the URL to the Oracle Java SE 7 Server Runtime tarball, or None.
+    '''Return the URL to the Oracle Java SE 8 Server Runtime tarball, or None.
 
     The tarball needs to be placed in ../lib.
 
@@ -459,7 +476,8 @@ def get_jre_url():
 
     jre_dir = os.path.join(ROOT, 'lib')
 
-    jre_tarballs = glob.glob(os.path.join(jre_dir, 'server-jre-?u*.tar.gz'))
+    jre_tarballs = sorted(glob.glob(os.path.join(jre_dir,
+                                                 'server-jre-?u*.tar.gz')))
     if not jre_tarballs:
         return None
 
@@ -479,9 +497,10 @@ def get_jre_url():
     p = multiprocessing.Process(target=_serve, args=(jre_dir, host, port),
                                 daemon=True)
     p.start()
+    _procs.append(p)
 
     _jre_url = 'http://{}:{}/{}'.format(host, port,
-                                        os.path.basename(jre_tarballs[0]))
+                                        os.path.basename(jre_tarballs[-1]))
     return _jre_url
 
 
@@ -523,14 +542,14 @@ class TestDSEDeployment(Test1UnitDeployment):
         super(TestDSEDeployment, cls).setUpClass()
 
 
-class Test21Deployment(Test1UnitDeployment):
-    """Tests run on a single node Apache Cassandra 2.1 cluster.
+class Test20Deployment(Test1UnitDeployment):
+    """Tests run on a single node Apache Cassandra 2.0 cluster.
     """
     rf = 1
     test_config = dict(
         edition='community',
         install_sources=yaml.safe_dump([
-            'deb http://www.apache.org/dist/cassandra/debian 21x main']),
+            'deb http://www.apache.org/dist/cassandra/debian 20x main']),
         install_keys=yaml.safe_dump([None]))
 
 

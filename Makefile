@@ -34,6 +34,10 @@ SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 PIP=.venv3/bin/pip3.4 -q
 NOSETESTS=.venv3/bin/nosetests-3.4 -sv
 
+# Set pipefail so we can get sane error codes while tagging test output
+# with ts(1)
+SHELL=bash -o pipefail
+
 deps: packages venv3
 
 lint: deps
@@ -41,16 +45,17 @@ lint: deps
 	free --human
 	charm proof $(CHARM_DIR)
 	flake8 \
-	    --ignore=E402 \
+	    --ignore=E402,E265 \
 	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
+	@echo OK: Lint free `date`
 
 unittest: lint
 	$(NOSETESTS) \
 	    tests.test_actions        --cover-package=actions \
 	    tests.test_helpers        --cover-package=helpers \
-	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    tests.test_definitions    --cover-package=definitions \
 	    --with-coverage --cover-branches
+	@echo OK: Unit tests pass `date`
 
 test: unittest
 	AMULET_TIMEOUT=3600 \
@@ -62,11 +67,11 @@ Test1UnitDeployment: deps
 	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:Test1UnitDeployment 2>&1 | ts
 	
-21test: unittest Test21Deployment
-Test21Deployment: deps
+20test: unittest Test21Deployment
+Test20Deployment: deps
 	date
 	AMULET_TIMEOUT=5400 \
-	$(NOSETESTS) tests.test_integration:Test21Deployment 2>&1 | ts
+	$(NOSETESTS) tests.test_integration:Test20Deployment 2>&1 | ts
 	
 3test: unittest Test3UnitDeployment
 Test3UnitDeployment: deps
@@ -95,7 +100,6 @@ coverage: lint
 	$(NOSETESTS) \
 	    tests.test_actions        --cover-package=actions \
 	    tests.test_helpers        --cover-package=helpers \
-	    tests.test_rollingrestart --cover-package=rollingrestart \
 	    tests.test_definitions    --cover-package=definitions \
 	    --with-coverage --cover-branches \
 	    --cover-html --cover-html-dir=coverage \

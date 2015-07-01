@@ -22,8 +22,22 @@ from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
+from coordinator import coordinator
 
-# FOR CHARMHELPERS
+
+class PeerRelation(RelationContext):
+    interface = 'cassandra-cluster'
+    name = 'cluster'
+
+    def is_ready(self):
+        # All units except the leader need to wait until the peer
+        # relation is available.
+        if coordinator.relid is not None or hookenv.is_leader():
+            return True
+        return False
+
+
+# FOR CHARMHELPERS (if we can integrate Juju 1.24 storage too)
 class StorageRelation(RelationContext):
     '''Wait for the block storage mount to become available.
 
@@ -80,7 +94,9 @@ class StorageRelation(RelationContext):
                 return False
         return True
 
-    def provide_data(self):
+    def provide_data(self, remote_service, service_ready):
+        hookenv.log('Requesting mountpoint {} from {}'
+                    .format(self._requested_mountpoint, remote_service))
         return dict(mountpoint=self._requested_mountpoint)
 
     def needs_remount(self):

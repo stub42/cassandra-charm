@@ -15,13 +15,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from charmhelpers.core import hookenv
-from charmhelpers.core.hookenv import ERROR
 from charmhelpers.core import services
 
 import actions
 import helpers
 import relations
-import rollingrestart
 
 
 def get_service_definitions():
@@ -35,7 +33,24 @@ def get_service_definitions():
     config = hookenv.config()
 
     return [
-        # Actions done before or while the Cassandra service is running.
+        # Prepare for the Cassandra service.
+        dict(service='install',
+             data_ready=[actions.set_proxy,
+                         actions.preinstall,
+                         actions.emit_meminfo,
+                         actions.revert_unchangeable_config,
+                         actions.store_unit_private_ip,
+                         actions.add_implicit_package_signing_keys,
+                         actions.configure_sources,
+                         actions.swapoff,
+                         actions.reset_sysctl,
+                         actions.install_oracle_jre,
+                         actions.install_cassandra_packages,
+                         actions.emit_java_version,
+                         actions.ensure_cassandra_package_status],
+             start=[], stop=[]),
+
+        # Get Cassandra running.
         dict(service=helpers.get_cassandra_service(),
 
              # Open access to client and replication ports. Client
@@ -48,85 +63,59 @@ def get_service_definitions():
                     config['storage_port'],           # Plaintext replication
                     config['ssl_storage_port']],      # Encrypted replication.
 
-             required_data=[relations.StorageRelation()],
+             required_data=[relations.StorageRelation(),
+                            relations.PeerRelation()],
              provided_data=[relations.StorageRelation()],
-             data_ready=[actions.set_proxy,
-                         actions.preinstall,
-                         actions.emit_meminfo,
-                         actions.revert_unchangeable_config,
-                         actions.store_unit_private_ip,
-                         actions.set_unit_zero_bootstrapped,
-                         actions.shutdown_before_joining_peers,
-                         # Must open ports before attempting bind to the
-                         # public ip address.
-                         actions.configure_firewall,
-                         actions.grant_ssh_access,
-                         actions.add_implicit_package_signing_keys,
-                         actions.configure_sources,
-                         actions.swapoff,
-                         actions.reset_sysctl,
-                         actions.install_oracle_jre,
-                         actions.install_cassandra_packages,
-                         actions.emit_java_version,
-                         actions.ensure_cassandra_package_status,
+             data_ready=[actions.configure_firewall,
+                         actions.maintain_seeds,
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env,
                          actions.configure_cassandra_rackdc,
                          actions.reset_all_io_schedulers,
-                         actions.nrpe_external_master_relation,
-                         actions.maybe_schedule_restart],
+                         actions.maybe_restart,
+                         actions.request_unit_superuser,
+                         actions.reset_default_password],
              start=[services.open_ports],
              stop=[actions.stop_cassandra, services.close_ports]),
-
-        # Rolling restart. This service will call the restart hook when
-        # it is this units turn to restart. This is also where we do
-        # actions done while Cassandra is not running, and where we do
-        # actions that should only be done by one node at a time.
-        rollingrestart.make_service([helpers.stop_cassandra,
-                                     helpers.remount_cassandra,
-                                     helpers.ensure_database_directories,
-                                     helpers.pre_bootstrap,
-                                     helpers.start_cassandra,
-                                     helpers.post_bootstrap,
-                                     helpers.wait_for_agreed_schema,
-                                     helpers.wait_for_normality,
-                                     helpers.emit_describe_cluster,
-                                     helpers.reset_default_password,
-                                     helpers.ensure_unit_superuser,
-                                     helpers.reset_auth_keyspace_replication]),
 
         # Actions that must be done while Cassandra is running.
         dict(service='post',
              required_data=[RequiresLiveNode()],
-             data_ready=[actions.publish_database_relations,
+             data_ready=[actions.post_bootstrap,
+                         actions.create_unit_superusers,
+                         actions.reset_auth_keyspace_replication,
+                         actions.publish_database_relations,
                          actions.publish_database_admin_relations,
                          actions.install_maintenance_crontab,
-                         actions.emit_describe_cluster,
-                         actions.emit_auth_keyspace_status,
-                         actions.emit_netstats],
+                         actions.nrpe_external_master_relation,
+                         actions.emit_cluster_info,
+                         actions.set_active],
              start=[], stop=[])]
 
 
 class RequiresLiveNode:
     def __bool__(self):
-        return self.is_live()
+        is_live = self.is_live()
+        hookenv.log('Requirement RequiresLiveNode: {}'.format(is_live),
+                    hookenv.DEBUG)
+        return is_live
 
     def is_live(self):
+        if helpers.is_decommissioned():
+            hookenv.log('Node is decommissioned')
+            return False
+
         if helpers.is_cassandra_running():
-            if helpers.is_decommissioned():
-                # Node is decommissioned and will refuse to talk.
-                hookenv.log('Node is decommissioned')
+            hookenv.log('Cassandra is running')
+            if hookenv.local_unit() in helpers.get_unit_superusers():
+                hookenv.log('Credentials created')
+                return True
+            else:
+                hookenv.log('Credentials have not been created')
                 return False
-            try:
-                with helpers.connect():
-                    hookenv.log("Node live and authentication working")
-                    return True
-            except Exception as x:
-                hookenv.log(
-                    'Unable to connect as superuser: {}'.format(str(x)),
-                    ERROR)
-                return False
-        return False
+        else:
+            hookenv.log('Cassandra is not running')
+            return False
 
 
 def get_service_manager():

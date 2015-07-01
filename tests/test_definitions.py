@@ -24,8 +24,6 @@ from unittest.mock import patch
 from charmhelpers.core import hookenv
 from charmhelpers.core.services import ServiceManager
 
-import cassandra
-
 from tests.base import TestCaseBase
 
 import definitions
@@ -58,29 +56,47 @@ class TestDefinitions(TestCaseBase):
         self.assertIsInstance(definitions.get_service_manager(),
                               ServiceManager)
 
-    @patch('helpers.connect')
+    @patch('helpers.get_unit_superusers')
     @patch('helpers.is_decommissioned')
     @patch('helpers.is_cassandra_running')
-    def test_requires_live_node(self, is_running, is_decommissioned, connect):
-        # Is running and can authenticate
-        is_running.return_value = True
-        # Is not decommissioned
-        is_decommissioned.return_value = False
-        # connect().__enter__.return_value = sentinel.session
-        # connect().__exit__.return_value = False
+    def test_requires_live_node(self, is_running, is_decommissioned, get_sup):
+        is_decommissioned.return_value = False  # Is not decommissioned.
+        is_running.return_value = True  # Is running.
+        get_sup.return_value = set([hookenv.local_unit()])  # Creds exist.
+
         self.assertTrue(bool(definitions.RequiresLiveNode()))
 
-        # Is running, but cannot authenticate
-        connect().__enter__.side_effect = cassandra.AuthenticationFailed()
+    @patch('helpers.get_unit_superusers')
+    @patch('helpers.is_decommissioned')
+    @patch('helpers.is_cassandra_running')
+    def test_requires_live_node_decommissioned(self, is_running,
+                                               is_decommissioned, get_sup):
+        is_decommissioned.return_value = True  # Is decommissioned.
+        is_running.return_value = True  # Is running.
+        get_sup.return_value = set([hookenv.local_unit()])  # Creds exist.
+
         self.assertFalse(bool(definitions.RequiresLiveNode()))
 
-        # Is decommissioned
-        is_decommissioned.return_value = True
+    @patch('helpers.get_unit_superusers')
+    @patch('helpers.is_decommissioned')
+    @patch('helpers.is_cassandra_running')
+    def test_requires_live_node_down(self, is_running,
+                                     is_decommissioned, get_sup):
+        is_decommissioned.return_value = False  # Is not decommissioned.
+        is_running.return_value = False  # Is not running.
+        get_sup.return_value = set([hookenv.local_unit()])  # Creds exist.
+
         self.assertFalse(bool(definitions.RequiresLiveNode()))
 
-        # Is not running
-        is_running.return_value = False
-        is_decommissioned.side_effect = RuntimeError('fails if not running')
+    @patch('helpers.get_unit_superusers')
+    @patch('helpers.is_decommissioned')
+    @patch('helpers.is_cassandra_running')
+    def test_requires_live_node_creds(self, is_running,
+                                      is_decommissioned, get_sup):
+        is_decommissioned.return_value = False  # Is not decommissioned.
+        is_running.return_value = True  # Is running.
+        get_sup.return_value = set()  # Creds do not exist.
+
         self.assertFalse(bool(definitions.RequiresLiveNode()))
 
 

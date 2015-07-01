@@ -18,11 +18,10 @@ destination: hooks/charmhelpers
 #branch: lp:charm-helpers
 branch: lp:~stub/charm-helpers/integration
 include:
-    - __init__
+    - coordinator
     - core
     - fetch
     - contrib.charmsupport
     - contrib.templating.jinja
-    - contrib.peerstorage
     - contrib.network.ufw
-    - contrib.unison
+    - contrib.benchmark
