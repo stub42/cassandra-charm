@@ -46,8 +46,7 @@ import helpers
 from testing.amuletfixture import AmuletFixture
 
 
-# SERIES = os.environ.get('SERIES', 'trusty')
-SERIES = 'trusty'  # Hard code trusty for now.
+SERIES = os.environ.get('SERIES', 'trusty')
 
 WAIT_TIMEOUT = int(os.environ.get('AMULET_TIMEOUT', 3600))
 
