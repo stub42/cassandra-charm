@@ -46,7 +46,8 @@ import helpers
 from testing.amuletfixture import AmuletFixture
 
 
-SERIES = os.environ.get('SERIES', 'trusty')
+# SERIES = os.environ.get('SERIES', 'trusty')
+SERIES = 'trusty'  # Hard code trusty for now.
 
 WAIT_TIMEOUT = int(os.environ.get('AMULET_TIMEOUT', 3600))
 
@@ -78,7 +79,8 @@ class TestDeploymentBase(unittest.TestCase):
         # No official trusty branch of the storage charm, yet.
         # This is a problem as it means tests may not be running against
         # the lastest version.
-        deployment.add('storage', 'lp:~stub/charms/trusty/storage/trunk')
+        deployment.add('storage',
+                       'lp:~stub/charms/{}/storage/trunk'.format(SERIES))
         deployment.configure('storage', dict(provider='local'))
 
         # A stub client charm.
@@ -93,7 +95,8 @@ class TestDeploymentBase(unittest.TestCase):
         # This is a problem as it means tests may not be running against
         # the lastest version.
         deployment.add('nrpe',
-                       'lp:~stub/charms/trusty/nrpe-external-master/trunk')
+                       'lp:~stub/charms/{}/nrpe-external-master/trunk'
+                       ''.format(SERIES))
         deployment.relate('cassandra:nrpe-external-master',
                           'nrpe:nrpe-external-master')
 
