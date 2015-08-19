@@ -21,6 +21,9 @@ default:
 	@echo 'Usage: make [ lint | unittest | test | clean | sync ]'
 	env
 
+# Only trusty supported, but wily expected soon.
+SERIES := $(shell juju get-environment default-series)
+
 # Calculate the CHARM_DIR (the directory this Makefile is in)
 THIS_MAKEFILE_PATH:=$(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
 CHARM_DIR:=$(shell cd $(dir $(THIS_MAKEFILE_PATH));pwd)

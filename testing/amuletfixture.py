@@ -27,15 +27,19 @@ import yaml
 
 
 class AmuletFixture(amulet.Deployment):
-    def __init__(self, series):
-        # We use a wrapper around juju-deployer so we can fix how it is
-        # invoked. In particular, turn off all the noise so we can
-        # actually read our test output.
-        juju_deployer = os.path.abspath(os.path.join(
-            os.path.dirname(__file__), os.pardir, 'lib',
-            'juju-deployer-wrapper.py'))
-        super(AmuletFixture, self).__init__(series=series,
-                                            juju_deployer=juju_deployer)
+    def __init__(self, series, verbose=False):
+        if verbose:
+            super(AmuletFixture, self).__init__(series=series)
+        else:
+            # We use a wrapper around juju-deployer so we can fix how it is
+            # invoked. In particular, turn off all the noise so we can
+            # actually read our test output.
+            juju_deployer = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), os.pardir, 'lib',
+                'juju-deployer-wrapper.py'))
+            super(AmuletFixture, self).__init__(series=series,
+                                                juju_deployer=juju_deployer)
+        assert self.series == series
 
     def setUp(self):
         self._temp_dirs = []
@@ -54,7 +58,8 @@ class AmuletFixture(amulet.Deployment):
         with open(os.path.join(self.charm_dir, 'metadata.yaml'), 'r') as s:
             self.charm_name = yaml.safe_load(s)['name']
         self.charm_cache.test_charm = None
-        self.charm_cache.fetch(self.charm_name, self.charm_dir, self.series)
+        self.charm_cache.fetch(self.charm_name, self.charm_dir,
+                               series=self.series)
 
         # Explicitly reset $JUJU_REPOSITORY to ensure amulet and
         # juju-deployer does not mess with the real one, per Bug #1393792
@@ -196,6 +201,10 @@ class AmuletFixture(amulet.Deployment):
 
         repack_root = tempfile.mkdtemp(suffix='.charm')
         self._temp_dirs.append(repack_root)
+        # juju-deployer now requires the series in the path when
+        # deploying from an absolute path.
+        repack_root = os.path.join(repack_root, self.series)
+        os.makedirs(repack_root, mode=0o700)
 
         self.charm_dir = os.path.join(repack_root, self.charm_name)
 
