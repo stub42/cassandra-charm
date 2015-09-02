@@ -772,7 +772,7 @@ def nrpe_external_master_relation():
     dirs = set(dirs['data_file_directories'] +
                [dirs['commitlog_directory'], dirs['saved_caches_directory']])
     for disk in dirs:
-        check_name = re.sub('/', '_', disk)
+        check_name = re.sub('[^A-Za-z0-9_]', '_', disk)
         if cassandra_disk_warn and cassandra_disk_crit:
             shortname = "cassandra_disk{}".format(check_name)
             hookenv.log("Adding disk utilization check {}".format(shortname),
