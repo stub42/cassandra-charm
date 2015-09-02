@@ -773,10 +773,12 @@ def nrpe_external_master_relation():
                [dirs['commitlog_directory'], dirs['saved_caches_directory']])
     for disk in dirs:
         check_name = re.sub('/', '_', disk)
-        check_name = re.sub('^_+', '', check_name)  # Cannot start with _
         if cassandra_disk_warn and cassandra_disk_crit:
+            shortname = "cassandra_disk{}".format(check_name)
+            hookenv.log("Adding disk utilization check {}".format(shortname),
+                        DEBUG)
             nrpe_compat.add_check(
-                shortname="cassandra_disk{}".format(check_name),
+                shortname=shortname,
                 description="Check Cassandra Disk {}".format(disk),
                 check_cmd="check_disk -u GB -w {}% -c {}% -K 5% -p {}"
                           "".format(cassandra_disk_warn, cassandra_disk_crit,
