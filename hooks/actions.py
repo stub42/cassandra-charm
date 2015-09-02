@@ -773,6 +773,7 @@ def nrpe_external_master_relation():
                [dirs['commitlog_directory'], dirs['saved_caches_directory']])
     for disk in dirs:
         check_name = re.sub('/', '_', disk)
+        check_name = re.sub('^_+', '', check_name)  # Cannot start with _
         if cassandra_disk_warn and cassandra_disk_crit:
             nrpe_compat.add_check(
                 shortname="cassandra_disk{}".format(check_name),
