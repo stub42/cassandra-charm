@@ -1301,6 +1301,39 @@ class TestHelpers(TestCaseBase):
         self.assertEqual(helpers.local_plugins_dir(),
                          '/usr/local/lib/nagios/plugins')
 
+    def test_update_hosts_file_new_entry(self):
+        org = dedent("""\
+                     127.0.0.1 localhost
+                     10.0.1.2 existing
+                     """)
+        new = dedent("""\
+                     127.0.0.1 localhost
+                     10.0.1.2 existing
+                     10.0.1.3 newname
+                     """)
+        with tempfile.NamedTemporaryFile(mode='w') as f:
+            f.write(org)
+            f.flush()
+            m = {'10.0.1.3': 'newname'}
+            helpers.update_hosts_file(f.name, m)
+            self.assertEqual(new.strip(), open(f.name, 'r').read().strip())
+
+    def test_update_hosts_file_changed_entry(self):
+        org = dedent("""\
+                     127.0.0.1 localhost
+                     10.0.1.2 existing
+                     """)
+        new = dedent("""\
+                     127.0.0.1 localhost
+                     10.0.1.3 existing
+                     """)
+        with tempfile.NamedTemporaryFile(mode='w') as f:
+            f.write(org)
+            f.flush()
+            m = {'10.0.1.3': 'existing'}
+            helpers.update_hosts_file(f.name, m)
+            self.assertEqual(new.strip(), open(f.name, 'r').read().strip())
+
 
 class TestIsLxc(unittest.TestCase):
     def test_is_lxc(self):

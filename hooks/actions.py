@@ -21,6 +21,7 @@ import glob
 import os.path
 import re
 import shlex
+import socket
 import subprocess
 from textwrap import dedent
 import time
@@ -895,3 +896,12 @@ def request_unit_superuser():
         pwhash = helpers.encrypt_password(password)
         hookenv.relation_set(relid, username=username, pwhash=pwhash)
         hookenv.log('Requested superuser account creation')
+
+
+@action
+def update_etc_hosts():
+    hostname = socket.gethostname()
+    addr = hookenv.unit_get('private-address')
+    hosts_map = {addr: hostname}
+    # only need to add myself to /etc/hosts
+    helpers.update_hosts_file('/etc/hosts', hosts_map)

@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from textwrap import dedent
 import time
 
@@ -986,3 +987,36 @@ def set_active():
         if n == 1:
             n = 'Single'
         service_status_set('active', '{} node cluster'.format(n))
+
+
+def update_hosts_file(hosts_file, hosts_map):
+    """Older versions of Cassandra need own hostname resolution."""
+    with open(hosts_file, 'r') as hosts:
+        lines = hosts.readlines()
+
+    newlines = []
+    for ip, hostname in hosts_map.items():
+        if not ip or not hostname:
+            continue
+
+        keepers = []
+        for line in lines:
+            _line = line.split()
+            if len(_line) < 2 or not (_line[0] == ip or hostname in _line[1:]):
+                keepers.append(line)
+            else:
+                hookenv.log('Marking line {!r} for update or removal'
+                            ''.format(line.strip()), level=DEBUG)
+
+        lines = keepers
+        newlines.append('{} {}\n'.format(ip, hostname))
+
+    lines += newlines
+
+    with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+        with open(tmpfile.name, 'w') as hosts:
+            for line in lines:
+                hosts.write(line)
+
+    os.rename(tmpfile.name, hosts_file)
+    os.chmod(hosts_file, 0o644)
