@@ -901,7 +901,7 @@ def request_unit_superuser():
 @action
 def update_etc_hosts():
     hostname = socket.gethostname()
-    addr = hookenv.unit_get('private-address')
+    addr = hookenv.unit_private_ip()
     hosts_map = {addr: hostname}
     # only need to add myself to /etc/hosts
     helpers.update_hosts_file('/etc/hosts', hosts_map)

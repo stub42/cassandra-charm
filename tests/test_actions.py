@@ -1133,6 +1133,14 @@ class TestActions(TestCaseBase):
             sentinel.peer_relid,
             username=sentinel.username, pwhash=sentinel.pwhash)
 
+    @patch('helpers.update_hosts_file')
+    @patch('socket.gethostname')
+    def test_update_etc_hosts(self, gethostname, update_hosts_file):
+        gethostname.return_value = sentinel.hostname
+        actions.update_etc_hosts('')
+        update_hosts_file.assert_called_once_with(
+            '/etc/hosts', {'10.20.0.1': sentinel.hostname})
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
