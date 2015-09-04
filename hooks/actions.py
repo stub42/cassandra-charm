@@ -21,6 +21,7 @@ import glob
 import os.path
 import re
 import shlex
+import socket
 import subprocess
 from textwrap import dedent
 import time
@@ -772,10 +773,13 @@ def nrpe_external_master_relation():
     dirs = set(dirs['data_file_directories'] +
                [dirs['commitlog_directory'], dirs['saved_caches_directory']])
     for disk in dirs:
-        check_name = re.sub('/', '_', disk)
+        check_name = re.sub('[^A-Za-z0-9_]', '_', disk)
         if cassandra_disk_warn and cassandra_disk_crit:
+            shortname = "cassandra_disk{}".format(check_name)
+            hookenv.log("Adding disk utilization check {}".format(shortname),
+                        DEBUG)
             nrpe_compat.add_check(
-                shortname="cassandra_disk{}".format(check_name),
+                shortname=shortname,
                 description="Check Cassandra Disk {}".format(disk),
                 check_cmd="check_disk -u GB -w {}% -c {}% -K 5% -p {}"
                           "".format(cassandra_disk_warn, cassandra_disk_crit,
@@ -892,3 +896,12 @@ def request_unit_superuser():
         pwhash = helpers.encrypt_password(password)
         hookenv.relation_set(relid, username=username, pwhash=pwhash)
         hookenv.log('Requested superuser account creation')
+
+
+@action
+def update_etc_hosts():
+    hostname = socket.gethostname()
+    addr = hookenv.unit_private_ip()
+    hosts_map = {addr: hostname}
+    # only need to add myself to /etc/hosts
+    helpers.update_hosts_file('/etc/hosts', hosts_map)
