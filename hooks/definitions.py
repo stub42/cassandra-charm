@@ -67,6 +67,7 @@ def get_service_definitions():
                             relations.PeerRelation()],
              provided_data=[relations.StorageRelation()],
              data_ready=[actions.configure_firewall,
+                         actions.update_etc_hosts,
                          actions.maintain_seeds,
                          actions.configure_cassandra_yaml,
                          actions.configure_cassandra_env,
