@@ -928,7 +928,7 @@ class TestActions(TestCaseBase):
             nrpe().add_check.assert_has_calls([
                 call(shortname='cassandra_heap',
                      description='Check Cassandra Heap',
-                     check_cmd='check_cassandra_heap.sh 10.20.0.1 80 90'),
+                     check_cmd='check_cassandra_heap.sh localhost 80 90'),
                 call(description=('Check Cassandra Disk '
                                   '/var/lib/cassandra/data'),
                      shortname='cassandra_disk_var_lib_cassandra_data',

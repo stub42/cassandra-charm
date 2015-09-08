@@ -763,9 +763,8 @@ def nrpe_external_master_relation():
         nrpe_compat.add_check(
             shortname="cassandra_heap",
             description="Check Cassandra Heap",
-            check_cmd="check_cassandra_heap.sh {} {} {}"
-                      "".format(hookenv.unit_private_ip(), cassandra_heap_warn,
-                                cassandra_heap_crit))
+            check_cmd="check_cassandra_heap.sh localhost {} {}"
+                      "".format(cassandra_heap_warn, cassandra_heap_crit))
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')
