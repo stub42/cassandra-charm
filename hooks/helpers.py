@@ -694,7 +694,6 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
 
     seeds = ','.join(seeds or get_seed_ips())  # Don't include whitespace!
     hookenv.log('Configuring seeds as {!r}'.format(seeds), DEBUG)
-    assert seeds, 'Attempting to configure cassandra with empty seed list'
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
