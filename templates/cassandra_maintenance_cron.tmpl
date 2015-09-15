@@ -1,4 +1,4 @@
 # Cassandra maintenance
 # Staggered weekly repairs
 # m h  dom mon dow user  command
-{{minute}} {{hour}} * * {{dow}} cassandra run-one-until-success nodetool repair -pr
+{{minute}} {{hour}} * * {{dow}} cassandra run-one-until-success nodetool repair -pr > /var/log/cassandra/maintenance.log 2>&1
