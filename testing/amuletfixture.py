@@ -114,9 +114,9 @@ class AmuletFixture(amulet.Deployment):
 
     def wait(self, timeout=None):
         '''Wait until the environment has reached a stable state.'''
-        cmd = ['juju', 'wait', '-q']
-        if timeout:
-            cmd = ['timeout', str(timeout)] + cmd
+        if timeout is None:
+            timeout = int(os.environ.get('AMULET_TIMEOUT', 900))
+        cmd = ['timeout', str(timeout), 'juju', 'wait', '-q']
         try:
             subprocess.check_output(cmd, universal_newlines=True)
         except subprocess.CalledProcessError as x:
