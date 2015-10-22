@@ -231,6 +231,34 @@ def reset_sysctl():
 
 
 @action
+def reset_limits():
+    '''Set /etc/security/limits.d correctly for Ubuntu, so the
+    startup scripts don't emit a spurious warning.
+
+    Per Cassandra documentation, Ubuntu needs some extra
+    twiddling in /etc/security/limits.d. I have no idea why
+    the packages don't do this, since they are already
+    setting limits for the cassandra user correctly. The real
+    bug is that the limits of the user running the startup script
+    are being checked, rather than the limits of the user that will
+    actually run the process.
+    '''
+    contents = dedent('''\
+                      # Maintained by Juju
+                      root - memlock unlimited
+                      root - nofile 100000
+                      root - nproc 32768
+                      root - as unlimited
+                      ubuntu - memlock unlimited
+                      ubuntu - nofile 100000
+                      ubuntu - nproc 32768
+                      ubuntu - as unlimited
+                      ''')
+    host.write_file('/etc/security/limits.d/cassandra-charm.conf',
+                    contents)
+
+
+@action
 def install_cassandra_packages():
     helpers.install_packages(helpers.get_cassandra_packages())
     if helpers.get_jre() != 'oracle':

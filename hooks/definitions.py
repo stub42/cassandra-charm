@@ -44,6 +44,7 @@ def get_service_definitions():
                          actions.configure_sources,
                          actions.swapoff,
                          actions.reset_sysctl,
+                         actions.reset_limits,
                          actions.install_oracle_jre,
                          actions.install_cassandra_packages,
                          actions.emit_java_version,
