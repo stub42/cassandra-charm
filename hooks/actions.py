@@ -365,10 +365,10 @@ def configure_cassandra_env():
     for key, regexp in overrides:
         if config[key]:
             val = shlex.quote(str(config[key]))
-            env = regexp.sub(r'\g<1>={}  # Juju service config'.format(val),
+            env = regexp.sub(r'\g<1>={}'.format(val),
                              env)
         else:
-            env = regexp.sub(r'#\1=\2  # Juju service config', env)
+            env = regexp.sub(r'#\1=\2', env)
     host.write_file(cassandra_env_path, env.encode('UTF-8'))
 
 
