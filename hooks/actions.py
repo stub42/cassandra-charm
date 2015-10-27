@@ -59,6 +59,7 @@ RESTART_REQUIRED_KEYS = set([
     'num_tokens',
     'max_heap_size',
     'heap_newsize',
+    'authenticator',
     'authorizer',
     'compaction_throughput_mb_per_sec',
     'stream_throughput_outbound_megabits_per_sec',
