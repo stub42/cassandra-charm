@@ -1261,8 +1261,8 @@ class TestHelpers(TestCaseBase):
         nodetool.assert_called_once_with('describecluster')
 
     @patch('helpers.nodetool')
-    def test_emit_auth_keyspace_status(self, nodetool):
-        helpers.emit_auth_keyspace_status()
+    def test_emit_status(self, nodetool):
+        helpers.emit_status()
         nodetool.assert_called_once_with('status')
 
     @patch('helpers.nodetool')

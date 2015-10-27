@@ -720,7 +720,7 @@ def install_maintenance_crontab():
 @action
 def emit_cluster_info():
     helpers.emit_describe_cluster()
-    helpers.emit_auth_keyspace_status()
+    helpers.emit_status()
     helpers.emit_netstats()
 
 

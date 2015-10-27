@@ -873,7 +873,7 @@ def emit_describe_cluster():
 
 
 @logged
-def emit_auth_keyspace_status():
+def emit_status():
     '''Run 'nodetool status' for the logs.'''
     nodetool('status')  # Implicit emit
 
@@ -886,7 +886,7 @@ def emit_netstats():
 
 def emit_cluster_info():
     emit_describe_cluster()
-    emit_auth_keyspace_status()
+    emit_status()
     emit_netstats()
 
 

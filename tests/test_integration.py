@@ -314,7 +314,6 @@ class Test1UnitDeployment(TestDeploymentBase):
                         found = set(contents['directories'])
                         self.assertIn(keyspace, found)
                         self.assertIn('system', found)
-                        self.assertIn('system_auth', found)
                         break
                     except Exception:
                         if time.time() > timeout:
@@ -546,6 +545,19 @@ class TestDSEDeployment(Test1UnitDeployment):
 
 class TestAllowAllAuthenticatorDeployment(Test3UnitDeployment):
     test_config = dict(authenticator='AllowAllAuthenticator')
+
+    def client_session(self, relname):
+        '''A session using invalid credentials.'''
+        relinfo = self.get_client_relinfo(relname)
+        self.assertIn('host', relinfo.keys())
+        cluster = self.cluster('random', 'nonsense',
+                               [relinfo['host']],
+                               int(relinfo['native_transport_port']))
+        session = cluster.connect()
+        self.addCleanup(session.shutdown)
+        return session
+
+    test_default_superuser_account_closed = None
 
 
 class Test20Deployment(Test1UnitDeployment):

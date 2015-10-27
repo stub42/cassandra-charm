@@ -82,6 +82,13 @@ Test3UnitDeployment: deps
 	AMULET_TIMEOUT=7200 \
 	$(NOSETESTS) tests.test_integration:Test3UnitDeployment 2>&1 | ts
 
+authtest: unittest TestAllowAllAuthenticatorDeployment
+TestAllowAllAuthenticatorDeployment: deps
+	date
+	AMULET_TIMEOUT=7200 \
+	$(NOSETESTS) \
+	tests.test_integration:TestAllowAllAuthenticatorDeployment 2>&1 | ts
+
 # Place a copy of the Oracle Java SE 7 Server Runtime tarball in ./lib
 # to run these tests.
 jretest: unittest
