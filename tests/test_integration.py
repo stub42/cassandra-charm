@@ -544,6 +544,11 @@ class TestDSEDeployment(Test1UnitDeployment):
         super(TestDSEDeployment, cls).setUpClass()
 
 
+class TestAllowAllAuthenticatorDeployment(Test3UnitDeployment):
+    test_config = dict(authenticator='AllowAllAuthenticator')
+
+
+
 class Test20Deployment(Test1UnitDeployment):
     """Tests run on a single node Apache Cassandra 2.0 cluster.
     """

@@ -519,6 +519,10 @@ def encrypt_password(password):
 @logged
 def ensure_user(session, username, encrypted_password, superuser=False):
     '''Create the DB user if it doesn't already exist & reset the password.'''
+    auth = hookenv.config()['authenticator']
+    if auth == 'AllowAllAuthenticator':
+        return  # No authentication means we cannot create users
+
     if superuser:
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
@@ -683,7 +687,7 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     # Using the same name is preferred to match the actual Cassandra
     # documentation.
     simple_config_keys = ['cluster_name', 'num_tokens',
-                          'partitioner', 'authorizer',
+                          'partitioner', 'authorizer', 'authenticator',
                           'compaction_throughput_mb_per_sec',
                           'stream_throughput_outbound_megabits_per_sec',
                           'tombstone_warn_threshold',
@@ -703,11 +707,6 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)
-
-    # The charm only supports password authentication. In the future we
-    # may also support AllowAllAuthenticator. I'm not sure if others
-    # such as Kerboros can be supported or are useful.
-    cassandra_yaml['authenticator'] = 'PasswordAuthenticator'
 
     # GossipingPropertyFileSnitch is the only snitch recommended for
     # production. It we allow others, we need to consider how to deal

@@ -243,6 +243,15 @@ options:
         description: >
             Cluster secure communication port. TODO: Unused. configure SSL.
 
+    authenticator:
+        type: string
+        default: PasswordAuthenticator
+        description: >
+            Authentication backend. Only PasswordAuthenticator and
+            AllowAllAuthenticator are supported. You should only
+            use AllowAllAuthenticator for legacy applications that
+            cannot provide authentication credentials.
+
     authorizer:
         type: string
         default: AllowAllAuthorizer

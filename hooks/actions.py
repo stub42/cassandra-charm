@@ -115,6 +115,20 @@ def leader_only(func):
     return wrapper
 
 
+def authentication(func):
+    '''Decorated function is skipped if authentication is disabled.'''
+    @wraps(func)
+    def wrapper(*args, **kw):
+        auth = hookenv.config()['authenticator']
+        if auth == 'PasswordAuthenticator':
+            return func(*args, **kw)
+        elif auth == 'AllowAllAuthenticator':
+            hookenv.log('Skipped. Authentication disabled.', DEBUG)
+            return None
+        helpers.status_set('blocked', 'Unknown authenticator {}'.format(auth))
+        raise SystemExit(0)
+
+
 @action
 def set_proxy():
     config = hookenv.config()
@@ -432,6 +446,7 @@ def needs_reset_auth_keyspace_replication():
 
 @leader_only
 @action
+@authentication
 @coordinator.require('repair', needs_reset_auth_keyspace_replication)
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
@@ -574,6 +589,7 @@ def start_cassandra():
 
 @leader_only
 @action
+@authentication
 def create_unit_superusers():
     # The leader creates and updates accounts for nodes, using the
     # encrypted password they provide in relations.PeerRelation. We
@@ -852,6 +868,7 @@ def maintain_seeds():
 
 @leader_only
 @action
+@authentication
 def reset_default_password():
     if hookenv.leader_get('default_admin_password_changed'):
         hookenv.log('Default admin password already changed')
@@ -911,6 +928,7 @@ def set_active():
 
 
 @action
+@authentication
 def request_unit_superuser():
     relid = helpers.peer_relid()
     if relid is None:
