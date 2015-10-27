@@ -255,7 +255,7 @@ def reset_limits():
                       ubuntu - as unlimited
                       ''')
     host.write_file('/etc/security/limits.d/cassandra-charm.conf',
-                    contents)
+                    contents.encode('US-ASCII'))
 
 
 @action
