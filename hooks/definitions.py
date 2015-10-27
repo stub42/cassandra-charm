@@ -109,7 +109,10 @@ class RequiresLiveNode:
 
         if helpers.is_cassandra_running():
             hookenv.log('Cassandra is running')
-            if hookenv.local_unit() in helpers.get_unit_superusers():
+            auth = hookenv.config()['authenticator']
+            if auth == 'AllowAllAuthenticator':
+                return True
+            elif hookenv.local_unit() in helpers.get_unit_superusers():
                 hookenv.log('Credentials created')
                 return True
             else:

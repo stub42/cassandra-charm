@@ -459,8 +459,12 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     if username is None or password is None:
         username, password = superuser_credentials()
 
-    auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
-                                                         password=password)
+    auth = hookenv.config()['authenticator']
+    if auth == 'AllowAllAuthenticator':
+        auth_provider = None
+    else:
+        auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
+                                                             password=password)
 
     # Although we specify a reconnection_policy, it does not apply to
     # the initial connection so we retry in a loop.
@@ -744,7 +748,7 @@ def is_cassandra_running():
             # is not running.
             os.kill(pid, 0)
 
-            if subprocess.call(["nodetool", "status", "system_auth"],
+            if subprocess.call(["nodetool", "status"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
                 hookenv.log(
@@ -870,8 +874,8 @@ def emit_describe_cluster():
 
 @logged
 def emit_auth_keyspace_status():
-    '''Run 'nodetool status system_auth' for the logs.'''
-    nodetool('status', 'system_auth')  # Implicit emit
+    '''Run 'nodetool status' for the logs.'''
+    nodetool('status')  # Implicit emit
 
 
 @logged

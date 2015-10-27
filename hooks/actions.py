@@ -127,6 +127,7 @@ def authentication(func):
             return None
         helpers.status_set('blocked', 'Unknown authenticator {}'.format(auth))
         raise SystemExit(0)
+    return wrapper
 
 
 @action
@@ -497,8 +498,8 @@ def needs_restart():
 
     # If our IP address has changed, we need to restart.
     if config.changed('unit_private_ip'):
-        hookenv.log('waiting',
-                    'IP address changed. Waiting for restart permission.')
+        helpers.status_set('waiting', 'IP address changed. '
+                           'Waiting for restart permission.')
         return True
 
     # If the directory paths have changed, we need to migrate data
