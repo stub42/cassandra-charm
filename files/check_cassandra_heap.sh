@@ -22,7 +22,7 @@ if [[ $? -ne 0 ]]; then
     echo "ERROR: Failed to connect to Cassandra"
     exit 2
 fi
-PCT_USED=$(echo "$NODE_INF0" | awk 'BEGIN {FS=":"} $1 ~ /Heap Memory/ {print $2}' | awk '{ printf("%i\n", $1*100/$3) }')
+PCT_USED=$(echo "$NODE_INF0" | awk 'BEGIN {FS=":"} $1 ~ /^Heap Memory/ {print $2}' | awk '{ printf("%i\n", $1*100/$3) }')
 USAGE_INFO="${PCT_USED}% of heap memory used"
 if [[ $PCT_USED -lt $WARN_PCT ]]; then
     echo "OK: ${USAGE_INFO}"

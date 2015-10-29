@@ -86,6 +86,11 @@ class AmuletFixture(amulet.Deployment):
         if timeout is None:
             timeout = int(os.environ.get('AMULET_TIMEOUT', 900))
 
+        # juju-deployer is buried under here, and has race conditions.
+        # Sleep a bit before invoking it, so its cached view of the
+        # environment matches reality.
+        time.sleep(15)
+
         # If setUp fails, tearDown is never called leaving the
         # environment setup. This is useful for debugging.
         self.setup(timeout=timeout)
@@ -109,9 +114,9 @@ class AmuletFixture(amulet.Deployment):
 
     def wait(self, timeout=None):
         '''Wait until the environment has reached a stable state.'''
-        cmd = ['juju', 'wait']
-        if timeout:
-            cmd = ['timeout', str(timeout)] + cmd
+        if timeout is None:
+            timeout = int(os.environ.get('AMULET_TIMEOUT', 900))
+        cmd = ['timeout', str(timeout), 'juju', 'wait', '-q']
         try:
             subprocess.check_output(cmd, universal_newlines=True)
         except subprocess.CalledProcessError as x:

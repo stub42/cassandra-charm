@@ -14,7 +14,7 @@ See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 # Editions
 
 This charm supports Apache Cassandra 2.0, Apache Cassandra 2.1, and
-Datastax Enterprise 4.7. The default is Apache Cassandra 2.1.
+Datastax Enterprise 4.8. The default is Apache Cassandra 2.1.
 
 To use Apache Cassandra 2.0, specify the Apache Cassandra 2.0 archive source
 in the `install_sources` config setting when deploying.

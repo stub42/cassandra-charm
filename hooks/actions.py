@@ -365,10 +365,10 @@ def configure_cassandra_env():
     for key, regexp in overrides:
         if config[key]:
             val = shlex.quote(str(config[key]))
-            env = regexp.sub(r'\g<1>={}  # Juju service config'.format(val),
+            env = regexp.sub(r'\g<1>={}'.format(val),
                              env)
         else:
-            env = regexp.sub(r'#\1=\2  # Juju service config', env)
+            env = regexp.sub(r'#\1=\2', env)
     host.write_file(cassandra_env_path, env.encode('UTF-8'))
 
 
@@ -721,6 +721,13 @@ def configure_firewall():
         if relinfo['private-address']:
             for port in peer_ports:
                 desired_rules.add((relinfo['private-address'], 'any', port))
+    # Rules for admin connections. We allow database-admin relations access
+    # to the cluster communication ports so that tools like sstableloader
+    # can run.
+    for relinfo in hookenv.relations_of_type('database-admin'):
+        if relinfo['private-address']:
+            for port in peer_ports:
+                desired_rules.add((relinfo['private-address'], 'any', port))
 
     previous_rules = set(tuple(rule) for rule in config.get('ufw_rules', []))
 
@@ -763,9 +770,8 @@ def nrpe_external_master_relation():
         nrpe_compat.add_check(
             shortname="cassandra_heap",
             description="Check Cassandra Heap",
-            check_cmd="check_cassandra_heap.sh {} {} {}"
-                      "".format(hookenv.unit_private_ip(), cassandra_heap_warn,
-                                cassandra_heap_crit))
+            check_cmd="check_cassandra_heap.sh localhost {} {}"
+                      "".format(cassandra_heap_warn, cassandra_heap_crit))
 
     cassandra_disk_warn = conf.get('nagios_disk_warn_pct')
     cassandra_disk_crit = conf.get('nagios_disk_crit_pct')

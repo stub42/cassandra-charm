@@ -844,13 +844,13 @@ class TestActions(TestCaseBase):
     @patch('charmhelpers.core.hookenv.relations_of_type')
     @patch('actions.ufw')
     def test_configure_firewall(self, ufw, rel_of_type):
-        rel_of_type.return_value = [{'private-address': '1.1.0.1'},
-                                    {'private-address': '1.1.0.2'}]
-
+        rel_of_type.side_effect = iter([[{'private-address': '1.1.0.1'},
+                                         {'private-address': '1.1.0.2'}],
+                                        []])
         actions.configure_firewall('')
 
         # Confirm our mock provided the expected data.
-        rel_of_type.assert_called_once_with('cluster')
+        rel_of_type.assert_has_calls([call('cluster'), call('database-admin')])
 
         ufw.enable.assert_called_once_with(soft_fail=True)  # Always enabled.
 
@@ -883,6 +883,9 @@ class TestActions(TestCaseBase):
         config['open_client_ports'] = True
         ufw.reset_mock()
 
+        rel_of_type.side_effect = iter([[],
+                                        [{'private-address': '1.1.0.1'},
+                                         {'private-address': '1.1.0.2'}]])
         actions.configure_firewall('')
 
         # Three ports now globally open. Yes, having the globally open
@@ -928,7 +931,7 @@ class TestActions(TestCaseBase):
             nrpe().add_check.assert_has_calls([
                 call(shortname='cassandra_heap',
                      description='Check Cassandra Heap',
-                     check_cmd='check_cassandra_heap.sh 10.20.0.1 80 90'),
+                     check_cmd='check_cassandra_heap.sh localhost 80 90'),
                 call(description=('Check Cassandra Disk '
                                   '/var/lib/cassandra/data'),
                      shortname='cassandra_disk_var_lib_cassandra_data',
