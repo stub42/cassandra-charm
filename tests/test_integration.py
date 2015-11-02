@@ -187,7 +187,7 @@ class TestDeploymentBase(unittest.TestCase):
 
     def get_client_relinfo(self, relname):
         # We only need one unit, even if rf > 1
-        s = self.deployment.sentry['cassandra/0']
+        s = self.deployment.sentry['cassandra'][0]
         relinfo = s.relation(relname, 'client:{}'.format(relname))
         return relinfo
 
@@ -354,7 +354,8 @@ class Test1UnitDeployment(TestDeploymentBase):
                 self.assertIsInstance(fail, AuthenticationFailed)
 
     def test_cqlsh(self):
-        subprocess.check_output(['juju', 'ssh', 'cassandra/0',
+        unit = self.deployment.sentry['cassandra'][0].info['unit_name']
+        subprocess.check_output(['juju', 'ssh', unit,
                                  'sudo -H cqlsh -e exit'],
                                 stderr=subprocess.STDOUT)
 
