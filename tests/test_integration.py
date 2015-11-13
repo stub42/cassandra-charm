@@ -287,11 +287,11 @@ class Test1UnitDeployment(TestDeploymentBase):
         # and data migrated. Instead, keep checking until our condition
         # is met, or a timeout reached.
         timeout = time.time() + 300
-        for unit_num in range(0, self.rf):
-            unit = 'cassandra/{}'.format(unit_num)
+        for s in self.deployment.sentry['cassandra']:
+            unit = s.info['unit_name']
+            unit_num = s.info['unit']
             with self.subTest(unit=unit):
                 while True:
-                    s = self.deployment.sentry[unit]
                     # Attempting to diagnose Amulet failures. I suspect
                     # SSH host keys again, per Bug #802117
                     try:
