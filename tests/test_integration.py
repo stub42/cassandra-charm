@@ -547,6 +547,11 @@ class TestDSEDeployment(Test1UnitDeployment):
 class TestAllowAllAuthenticatorDeployment(Test3UnitDeployment):
     test_config = dict(authenticator='AllowAllAuthenticator')
 
+    def cluster(self, username=None, password=None, hosts=None, port=9042):
+        '''A cluster using invalid credentials.'''
+        return super(TestAllowAllAuthenticatorDeployment,
+                     self).cluster(username='wat', password='eva')
+
     def client_session(self, relname):
         '''A session using invalid credentials.'''
         relinfo = self.get_client_relinfo(relname)
