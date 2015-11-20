@@ -828,7 +828,6 @@ class TestHelpers(TestCaseBase):
 
             # If the credentials have been stored, they are not
             # regenerated.
-            get_username.return_value = 'bar'
             pwgen.return_value = 'secret2'
             username, password = helpers.superuser_credentials()
             self.assertEqual(username, 'foo')

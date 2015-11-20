@@ -586,16 +586,20 @@ def superuser_credentials():
     cqlshrc = configparser.ConfigParser(interpolation=None)
     cqlshrc.read([cqlshrc_path])
 
+    username = superuser_username()
+
     try:
         section = cqlshrc['authentication']
-        return section['username'], section['password']
+        # If there happened to be an existing cqlshrc file, it might
+        # contain invalid credentials. Ignore them.
+        if section['username'] == username:
+            return section['username'], section['password']
     except KeyError:
         hookenv.log('Generating superuser credentials into {}'.format(
             cqlshrc_path))
 
     config = hookenv.config()
 
-    username = superuser_username()
     password = host.pwgen()
 
     hookenv.log('Generated username {}'.format(username))
