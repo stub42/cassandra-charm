@@ -24,8 +24,7 @@ def bootstrap():
         import cassandra  # NOQA: flake8
     except ImportError:
         packages = ['python3-bcrypt', 'python3-cassandra']
-        fetch.add_source('ppa:stub/cassandra')
-        fetch.apt_update(fatal=True)
+        fetch.configure_sources(update=True)
         fetch.apt_install(packages, fatal=True)
         import bcrypt     # NOQA: flake8
         import cassandra  # NOQA: flake8

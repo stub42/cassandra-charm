@@ -35,6 +35,7 @@ options:
             If you are using Datastax Enterprise, you will need to
             override one defaults with your own username and password.
         default: |
+            - ppa:stub/cassandra  # Required for python3-cassandra package
             - deb http://www.apache.org/dist/cassandra/debian 21x main
         #   - deb http://debian.datastax.com/community stable main
         #   DSE requires you to register and add your username/password here.
@@ -45,6 +46,7 @@ options:
             charm-helpers standard listing of package install source
             signing keys, corresponding to install_sources.
         default: |
+            - null  # ppa:stub/cassandra signing key added automatically.
             - null  # Apache package signing key added automatically.
             # - null  # DataStack package signing key added automatically.
     http_proxy:
