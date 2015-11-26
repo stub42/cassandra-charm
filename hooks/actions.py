@@ -693,6 +693,7 @@ def configure_firewall():
     # to control access.
     ufw.service('ssh', 'open')
     ufw.service('nrpe', 'open')  # Also NRPE for nagios checks.
+    ufw.service('rsync', 'open')  # Also rsync for data transfer and backups.
 
     # Clients need client access. These protocols are configured to
     # require authentication.
