@@ -573,6 +573,7 @@ class Test20Deployment(Test1UnitDeployment):
     test_config = dict(
         edition='community',
         install_sources=yaml.safe_dump([
+            'ppa:stub/cassandra',
             'deb http://www.apache.org/dist/cassandra/debian 20x main']),
         install_keys=yaml.safe_dump([None]))
 
