@@ -575,7 +575,7 @@ class Test20Deployment(Test1UnitDeployment):
         install_sources=yaml.safe_dump([
             'ppa:stub/cassandra',
             'deb http://www.apache.org/dist/cassandra/debian 20x main']),
-        install_keys=yaml.safe_dump([None]))
+        install_keys=yaml.safe_dump([None, None]))
 
 
 # Bug #1417097 means we need to monkey patch Amulet for now.
