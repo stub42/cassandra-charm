@@ -10,3 +10,4 @@ makefile:
     - Test1UnitDeployment
     - Test3UnitDeployment
     - Test20Deployment
+    - Test22Deployment
