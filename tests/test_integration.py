@@ -187,7 +187,7 @@ class TestDeploymentBase(unittest.TestCase):
 
     def get_client_relinfo(self, relname):
         # We only need one unit, even if rf > 1
-        s = self.deployment.sentry['cassandra/0']
+        s = self.deployment.sentry['cassandra'][0]
         relinfo = s.relation(relname, 'client:{}'.format(relname))
         return relinfo
 
@@ -287,11 +287,11 @@ class Test1UnitDeployment(TestDeploymentBase):
         # and data migrated. Instead, keep checking until our condition
         # is met, or a timeout reached.
         timeout = time.time() + 300
-        for unit_num in range(0, self.rf):
-            unit = 'cassandra/{}'.format(unit_num)
+        for s in self.deployment.sentry['cassandra']:
+            unit = s.info['unit_name']
+            unit_num = s.info['unit']
             with self.subTest(unit=unit):
                 while True:
-                    s = self.deployment.sentry[unit]
                     # Attempting to diagnose Amulet failures. I suspect
                     # SSH host keys again, per Bug #802117
                     try:
@@ -354,7 +354,8 @@ class Test1UnitDeployment(TestDeploymentBase):
                 self.assertIsInstance(fail, AuthenticationFailed)
 
     def test_cqlsh(self):
-        subprocess.check_output(['juju', 'ssh', 'cassandra/0',
+        unit = self.deployment.sentry['cassandra'][0].info['unit_name']
+        subprocess.check_output(['juju', 'ssh', unit,
                                  'sudo -H cqlsh -e exit'],
                                 stderr=subprocess.STDOUT)
 
