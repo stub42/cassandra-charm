@@ -714,6 +714,11 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     # with the system_auth keyspace replication settings.
     cassandra_yaml['endpoint_snitch'] = 'GossipingPropertyFileSnitch'
 
+    # Per Bug #1523546 and CASSANDRA-9319, Thrift is disabled by default in
+    # Cassandra 2.2. Ensure it is enabled if rpc_port is non-zero.
+    if int(config['rpc_port']) > 0:
+        cassandra_yaml['start_rpc'] = True
+
     cassandra_yaml.update(overrides)
 
     write_cassandra_yaml(cassandra_yaml)
