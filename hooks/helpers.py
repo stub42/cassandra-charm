@@ -16,6 +16,7 @@
 import configparser
 from contextlib import contextmanager
 from datetime import timedelta
+from distutils.version import LooseVersion
 import errno
 from functools import wraps
 import io
@@ -303,8 +304,18 @@ def get_cassandra_service():
 
 def get_cassandra_version():
     if get_cassandra_edition() == 'dse':
-        return '2.1' if get_package_version('dse-full') else None
+        dse_ver = get_package_version('dse-full')
+        if not dse_ver:
+            return None
+        elif LooseVersion(dse_ver) >= LooseVersion('4.7'):
+            return '2.1'
+        else:
+            return '2.0'
     return get_package_version('cassandra')
+
+
+def has_cassandra_version(minimum_ver):
+    return LooseVersion(get_cassandra_version()) >= LooseVersion(minimum_ver)
 
 
 def get_cassandra_config_dir():
@@ -531,13 +542,21 @@ def ensure_user(session, username, encrypted_password, superuser=False):
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
         hookenv.log('Creating user {}'.format(username))
-    query(session,
-          'INSERT INTO system_auth.users (name, super) VALUES (%s, %s)',
-          ConsistencyLevel.ALL, (username, superuser))
-    query(session,
-          'INSERT INTO system_auth.credentials (username, salted_hash) '
-          'VALUES (%s, %s)',
-          ConsistencyLevel.ALL, (username, encrypted_password))
+    if has_cassandra_version('2.2'):
+        query(session,
+              'INSERT INTO system_auth.roles '
+              '(role, can_login, is_superuser, salted_hash) '
+              'VALUES (%s, TRUE, %s, %s)',
+              ConsistencyLevel.ALL,
+              (username, superuser, encrypted_password))
+    else:
+        query(session,
+              'INSERT INTO system_auth.users (name, super) VALUES (%s, %s)',
+              ConsistencyLevel.ALL, (username, superuser))
+        query(session,
+              'INSERT INTO system_auth.credentials (username, salted_hash) '
+              'VALUES (%s, %s)',
+              ConsistencyLevel.ALL, (username, encrypted_password))
 
 
 @logged
