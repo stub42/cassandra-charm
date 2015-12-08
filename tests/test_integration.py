@@ -555,6 +555,17 @@ class Test20Deployment(Test1UnitDeployment):
         install_keys=yaml.safe_dump([None]))
 
 
+class Test22Deployment(Test1UnitDeployment):
+    """Tests run on a single node Apache Cassandra 2.2 cluster.
+    """
+    rf = 1
+    test_config = dict(
+        edition='community',
+        install_sources=yaml.safe_dump([
+            'deb http://www.apache.org/dist/cassandra/debian 22x main']),
+        install_keys=yaml.safe_dump([None]))
+
+
 # Bug #1417097 means we need to monkey patch Amulet for now.
 real_juju = amulet.helpers.juju
 

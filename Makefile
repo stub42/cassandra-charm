@@ -70,7 +70,7 @@ Test1UnitDeployment: deps
 	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:Test1UnitDeployment 2>&1 | ts
 	
-20test: unittest Test21Deployment
+20test: unittest Test20Deployment
 Test20Deployment: deps
 	date
 	AMULET_TIMEOUT=5400 \
