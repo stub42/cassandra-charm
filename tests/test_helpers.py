@@ -731,8 +731,10 @@ class TestHelpers(TestCaseBase):
                           sentinel.consistency, sentinel.args)
         self.assertEqual(session.execute.call_count, 4)
 
+    @patch('helpers.get_cassandra_version')
     @patch('helpers.query')
-    def test_ensure_user(self, query):
+    def test_ensure_user(self, query, ver):
+        ver.return_value = '2.1'
         helpers.ensure_user(sentinel.session,
                             sentinel.username, sentinel.pwhash,
                             superuser=sentinel.supflag)
@@ -745,6 +747,21 @@ class TestHelpers(TestCaseBase):
                  'VALUES (%s, %s)',
                  ConsistencyLevel.ALL,
                  (sentinel.username, sentinel.pwhash))])
+
+    @patch('helpers.get_cassandra_version')
+    @patch('helpers.query')
+    def test_ensure_user_22(self, query, ver):
+        ver.return_value = '2.2'
+        helpers.ensure_user(sentinel.session,
+                            sentinel.username, sentinel.pwhash,
+                            superuser=sentinel.supflag)
+        query.assert_called_once_with(sentinel.session,
+                                      'INSERT INTO system_auth.roles (role, '
+                                      'can_login, is_superuser, salted_hash) '
+                                      'VALUES (%s, TRUE, %s, %s)',
+                                      ConsistencyLevel.ALL,
+                                      (sentinel.username, sentinel.supflag,
+                                       sentinel.pwhash))
 
     @patch('helpers.ensure_user')
     @patch('helpers.encrypt_password')
