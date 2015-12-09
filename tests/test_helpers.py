@@ -1325,7 +1325,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.query')
     def test_get_auth_keyspace_replication_30(self, query, ver):
         ver.return_value = '3.0'
-        query.return_value = [('{"json": true}',)]
+        query.return_value = [({"json": True},)]  # Decoded under 3.0
         settings = helpers.get_auth_keyspace_replication(sentinel.session)
         self.assertDictEqual(settings, dict(json=True))
         query.assert_called_once_with(
