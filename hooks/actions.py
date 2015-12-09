@@ -59,6 +59,7 @@ RESTART_REQUIRED_KEYS = set([
     'num_tokens',
     'max_heap_size',
     'heap_newsize',
+    'authenticator',
     'authorizer',
     'compaction_throughput_mb_per_sec',
     'stream_throughput_outbound_megabits_per_sec',
@@ -112,6 +113,21 @@ def leader_only(func):
             return func(*args, **kw)
         else:
             return None
+    return wrapper
+
+
+def authentication(func):
+    '''Decorated function is skipped if authentication is disabled.'''
+    @wraps(func)
+    def wrapper(*args, **kw):
+        auth = hookenv.config()['authenticator']
+        if auth == 'PasswordAuthenticator':
+            return func(*args, **kw)
+        elif auth == 'AllowAllAuthenticator':
+            hookenv.log('Skipped. Authentication disabled.', DEBUG)
+            return None
+        helpers.status_set('blocked', 'Unknown authenticator {}'.format(auth))
+        raise SystemExit(0)
     return wrapper
 
 
@@ -228,6 +244,34 @@ def reset_sysctl():
                             WARNING)
             else:
                 raise
+
+
+@action
+def reset_limits():
+    '''Set /etc/security/limits.d correctly for Ubuntu, so the
+    startup scripts don't emit a spurious warning.
+
+    Per Cassandra documentation, Ubuntu needs some extra
+    twiddling in /etc/security/limits.d. I have no idea why
+    the packages don't do this, since they are already
+    setting limits for the cassandra user correctly. The real
+    bug is that the limits of the user running the startup script
+    are being checked, rather than the limits of the user that will
+    actually run the process.
+    '''
+    contents = dedent('''\
+                      # Maintained by Juju
+                      root - memlock unlimited
+                      root - nofile 100000
+                      root - nproc 32768
+                      root - as unlimited
+                      ubuntu - memlock unlimited
+                      ubuntu - nofile 100000
+                      ubuntu - nproc 32768
+                      ubuntu - as unlimited
+                      ''')
+    host.write_file('/etc/security/limits.d/cassandra-charm.conf',
+                    contents.encode('US-ASCII'))
 
 
 @action
@@ -404,6 +448,7 @@ def needs_reset_auth_keyspace_replication():
 
 @leader_only
 @action
+@authentication
 @coordinator.require('repair', needs_reset_auth_keyspace_replication)
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
@@ -454,8 +499,8 @@ def needs_restart():
 
     # If our IP address has changed, we need to restart.
     if config.changed('unit_private_ip'):
-        hookenv.log('waiting',
-                    'IP address changed. Waiting for restart permission.')
+        helpers.status_set('waiting', 'IP address changed. '
+                           'Waiting for restart permission.')
         return True
 
     # If the directory paths have changed, we need to migrate data
@@ -546,6 +591,7 @@ def start_cassandra():
 
 @leader_only
 @action
+@authentication
 def create_unit_superusers():
     # The leader creates and updates accounts for nodes, using the
     # encrypted password they provide in relations.PeerRelation. We
@@ -674,7 +720,7 @@ def install_maintenance_crontab():
 @action
 def emit_cluster_info():
     helpers.emit_describe_cluster()
-    helpers.emit_auth_keyspace_status()
+    helpers.emit_status()
     helpers.emit_netstats()
 
 
@@ -824,6 +870,7 @@ def maintain_seeds():
 
 @leader_only
 @action
+@authentication
 def reset_default_password():
     if hookenv.leader_get('default_admin_password_changed'):
         hookenv.log('Default admin password already changed')
@@ -883,6 +930,7 @@ def set_active():
 
 
 @action
+@authentication
 def request_unit_superuser():
     relid = helpers.peer_relid()
     if relid is None:

@@ -921,7 +921,7 @@ class TestHelpers(TestCaseBase):
         is_running.return_value = True
         backoff.return_value = repeat(True)
         check_output.side_effect = iter(['ONE Error: stuff', 'TWO OK'])
-        self.assertEqual(helpers.nodetool('status', 'system_auth'), 'TWO OK')
+        self.assertEqual(helpers.nodetool('status'), 'TWO OK')
 
         # The output was emitted.
         helpers.emit.assert_called_once_with('TWO OK')
@@ -939,7 +939,7 @@ class TestHelpers(TestCaseBase):
             subprocess.CalledProcessError([], 1, 'fail 4'),
             subprocess.CalledProcessError([], 1, 'fail 5'),
             'OK'])
-        self.assertEqual(helpers.nodetool('status', 'system_auth'), 'OK')
+        self.assertEqual(helpers.nodetool('status'), 'OK')
 
         # Later fails and final output was emitted.
         helpers.emit.assert_has_calls([call('fail 5'), call('OK')])
@@ -1381,9 +1381,9 @@ class TestHelpers(TestCaseBase):
         nodetool.assert_called_once_with('describecluster')
 
     @patch('helpers.nodetool')
-    def test_emit_auth_keyspace_status(self, nodetool):
-        helpers.emit_auth_keyspace_status()
-        nodetool.assert_called_once_with('status', 'system_auth')
+    def test_emit_status(self, nodetool):
+        helpers.emit_status()
+        nodetool.assert_called_once_with('status')
 
     @patch('helpers.nodetool')
     def test_emit_netstats(self, nodetool):

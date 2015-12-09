@@ -47,6 +47,7 @@ options:
             charm-helpers standard listing of package install source
             signing keys, corresponding to install_sources.
         default: |
+            - null  # ppa:stub/cassandra signing key added automatically.
             - null  # Apache package signing key added automatically.
             - null  # PPA package signing key added automatically.
             - null  # PPA package signing key added automatically.
@@ -246,7 +247,14 @@ options:
         default: 7001
         description: >
             Cluster secure communication port. TODO: Unused. configure SSL.
-
+    authenticator:
+        type: string
+        default: PasswordAuthenticator
+        description: >
+            Authentication backend. Only PasswordAuthenticator and
+            AllowAllAuthenticator are supported. You should only
+            use AllowAllAuthenticator for legacy applications that
+            cannot provide authentication credentials.
     authorizer:
         type: string
         default: AllowAllAuthorizer

@@ -833,7 +833,7 @@ class TestActions(TestCaseBase):
         self.assertIn(expected, contents)
 
     @patch('helpers.emit_netstats')
-    @patch('helpers.emit_auth_keyspace_status')
+    @patch('helpers.emit_status')
     @patch('helpers.emit_describe_cluster')
     def test_emit_cluster_info(self, emit_desc, emit_status, emit_netstats):
         actions.emit_cluster_info('')
