@@ -50,7 +50,6 @@ options:
             - null  # ppa:stub/cassandra signing key added automatically.
             - null  # Apache package signing key added automatically.
             - null  # PPA package signing key added automatically.
-            - null  # PPA package signing key added automatically.
             # - null  # DataStack package signing key added automatically.
     http_proxy:
         type: string
