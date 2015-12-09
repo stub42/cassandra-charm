@@ -36,6 +36,8 @@ options:
             override one defaults with your own username and password.
         default: |
             - deb http://www.apache.org/dist/cassandra/debian 22x main
+            - ppa:openjdk-r/ppa   # For OpenJDK 8
+            - ppa:stub/cassandra  # For Python driver
         #   - deb http://debian.datastax.com/community stable main
         #   DSE requires you to register and add your username/password here.
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
@@ -46,6 +48,8 @@ options:
             signing keys, corresponding to install_sources.
         default: |
             - null  # Apache package signing key added automatically.
+            - null  # PPA package signing key added automatically.
+            - null  # PPA package signing key added automatically.
             # - null  # DataStack package signing key added automatically.
     http_proxy:
         type: string

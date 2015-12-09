@@ -81,7 +81,13 @@ Test21Deployment: deps
 	date
 	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:Test21Deployment 2>&1 | ts
-		
+
+30test: unittest Test30Deployment
+Test30Deployment: deps
+	date
+	AMULET_TIMEOUT=5400 \
+	$(NOSETESTS) tests.test_integration:Test30Deployment 2>&1 | ts
+			
 3test: unittest Test3UnitDeployment
 Test3UnitDeployment: deps
 	date

@@ -220,14 +220,28 @@ class TestHelpers(TestCaseBase):
         # Absolute paths are absolute and passed through unmolested.
         self.assertEqual(helpers.get_database_directory('/bar'), '/bar')
 
+    @patch('helpers.get_cassandra_version')
     @patch('relations.StorageRelation')
-    def test_get_all_database_directories(self, storage_relation):
+    def test_get_all_database_directories(self, storage_relation, ver):
+        ver.return_value = '2.2'
         storage_relation().mountpoint = '/s'
         self.assertDictEqual(
             helpers.get_all_database_directories(),
             dict(data_file_directories=['/s/cassandra/data'],
                  commitlog_directory='/s/cassandra/commitlog',
                  saved_caches_directory='/s/cassandra/saved_caches'))
+
+    @patch('helpers.get_cassandra_version')
+    @patch('relations.StorageRelation')
+    def test_get_all_database_directories_30(self, storage_relation, ver):
+        ver.return_value = '3.0'
+        storage_relation().mountpoint = '/s'
+        self.assertDictEqual(
+            helpers.get_all_database_directories(),
+            dict(data_file_directories=['/s/cassandra/data'],
+                 commitlog_directory='/s/cassandra/commitlog',
+                 saved_caches_directory='/s/cassandra/saved_caches',
+                 hints_directory='/s/cassandra/hints'))
 
     @patch('helpers.recursive_chown')
     @patch('charmhelpers.core.host.mkdir')
@@ -458,7 +472,7 @@ class TestHelpers(TestCaseBase):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'ntp', 'run-one',
-                                 'netcat', 'openjdk-7-jre-headless']))
+                                 'netcat', 'openjdk-8-jre-headless']))
 
     def test_get_cassandra_packages_oracle_jre(self):
         # Oracle JRE
@@ -1295,14 +1309,29 @@ class TestHelpers(TestCaseBase):
         # Weird errors are reraised.
         self.assertRaises(RuntimeError, helpers.is_cassandra_running)
 
+    @patch('helpers.get_cassandra_version')
     @patch('helpers.query')
-    def test_get_auth_keyspace_replication(self, query):
+    def test_get_auth_keyspace_replication(self, query, ver):
+        ver.return_value = '2.2'
         query.return_value = [('{"json": true}',)]
         settings = helpers.get_auth_keyspace_replication(sentinel.session)
         self.assertDictEqual(settings, dict(json=True))
         query.assert_called_once_with(
             sentinel.session, dedent('''\
                 SELECT strategy_options FROM system.schema_keyspaces
+                WHERE keyspace_name='system_auth'
+                '''), ConsistencyLevel.QUORUM)
+
+    @patch('helpers.get_cassandra_version')
+    @patch('helpers.query')
+    def test_get_auth_keyspace_replication_30(self, query, ver):
+        ver.return_value = '3.0'
+        query.return_value = [('{"json": true}',)]
+        settings = helpers.get_auth_keyspace_replication(sentinel.session)
+        self.assertDictEqual(settings, dict(json=True))
+        query.assert_called_once_with(
+            sentinel.session, dedent('''\
+                SELECT replication FROM system_schema.keyspaces
                 WHERE keyspace_name='system_auth'
                 '''), ConsistencyLevel.QUORUM)
 

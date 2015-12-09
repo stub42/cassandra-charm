@@ -13,7 +13,7 @@ See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 
 # Editions
 
-This charm supports Apache Cassandra 2.0, 2.1 & 2.2, and
+This charm supports Apache Cassandra 2.0, 2.1, 2.2 & 3.0, and
 Datastax Enterprise 4.7 & 4.8. The default is Apache Cassandra 2.2.
 
 To use Apache Cassandra 2.0, specify the Apache Cassandra 2.0 archive source
