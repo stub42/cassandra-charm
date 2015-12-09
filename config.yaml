@@ -35,7 +35,7 @@ options:
             If you are using Datastax Enterprise, you will need to
             override one defaults with your own username and password.
         default: |
-            - deb http://www.apache.org/dist/cassandra/debian 21x main
+            - deb http://www.apache.org/dist/cassandra/debian 22x main
         #   - deb http://debian.datastax.com/community stable main
         #   DSE requires you to register and add your username/password here.
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
@@ -65,7 +65,7 @@ options:
         default: ""
         description: >
             URL for the private jre tar file. DSE requires
-            Oracle Java SE 7 Server JRE (eg. server-jre-7u76-linux-x64.tar.gz).
+            Oracle Java SE 8 Server JRE (eg. server-jre-8u60-linux-x64.tar.gz).
     edition:
         type: string
         default: community

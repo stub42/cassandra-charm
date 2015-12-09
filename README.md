@@ -14,7 +14,7 @@ See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 # Editions
 
 This charm supports Apache Cassandra 2.0, 2.1 & 2.2, and
-Datastax Enterprise 4.8. The default is Apache Cassandra 2.1.
+Datastax Enterprise 4.7 & 4.8. The default is Apache Cassandra 2.2.
 
 To use Apache Cassandra 2.0, specify the Apache Cassandra 2.0 archive source
 in the `install_sources` config setting when deploying.
@@ -60,14 +60,15 @@ environments but will perform poorly with real workloads.
 ## Planning
 
 - Do not attempt to store too much data per node. If you need more space,
-  add more nodes. Most workloads work best with a capacity under 500GB
+  add more nodes. Most workloads work best with a capacity under 1TB
   per node.
 
 - You need to keep 50% of your disk space free for Cassandra maintenance
   operations. If you expect your nodes to hold 500GB of data each, you
-  will need a 1TB partition.
+  will need a 1TB partition. Using non-default compaction such as
+  LeveledCompactionStrategy can lower this waste.
 
-- Much more information can be found in the [Cassandra 2.1 documentation](http://www.datastax.com/documentation/cassandra/2.1/cassandra/planning/architecturePlanningAbout_c.html)
+- Much more information can be found in the [Cassandra 2.2 documentation](http://docs.datastax.com/en/cassandra/2.2/cassandra/planning/planPlanningAbout.html)
 
 
 ## Network Access
