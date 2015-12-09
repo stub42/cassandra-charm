@@ -857,6 +857,7 @@ class TestActions(TestCaseBase):
         # SSH and the client protocol ports are always fully open.
         ufw.service.assert_has_calls([call('ssh', 'open'),
                                       call('nrpe', 'open'),
+                                      call('rsync', 'open'),
                                       call(9042, 'open'),
                                       call(9160, 'open')])
 
