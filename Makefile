@@ -21,8 +21,15 @@ default:
 	@echo 'Usage: make [ lint | unittest | test | clean | sync ]'
 	env
 
-# Only trusty supported, but wily expected soon.
+# Only trusty supported, but xenial expected soon.
 SERIES := $(shell juju get-environment default-series)
+
+
+# /!\ Ensure that errors early in pipes cause failures, rather than
+# overridden by the last stage of the pipe. cf. 'test.py | ts'
+SHELL := /bin/bash
+export SHELLOPTS:=errexit:pipefail
+
 
 # Calculate the CHARM_DIR (the directory this Makefile is in)
 THIS_MAKEFILE_PATH:=$(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
@@ -81,6 +88,13 @@ Test3UnitDeployment: deps
 	date
 	AMULET_TIMEOUT=7200 \
 	$(NOSETESTS) tests.test_integration:Test3UnitDeployment 2>&1 | ts
+
+authtest: unittest TestAllowAllAuthenticatorDeployment
+TestAllowAllAuthenticatorDeployment: deps
+	date
+	AMULET_TIMEOUT=7200 \
+	$(NOSETESTS) \
+	tests.test_integration:TestAllowAllAuthenticatorDeployment 2>&1 | ts
 
 # Place a copy of the Oracle Java SE 7 Server Runtime tarball in ./lib
 # to run these tests.

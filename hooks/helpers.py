@@ -459,8 +459,12 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT,
     if username is None or password is None:
         username, password = superuser_credentials()
 
-    auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
-                                                         password=password)
+    auth = hookenv.config()['authenticator']
+    if auth == 'AllowAllAuthenticator':
+        auth_provider = None
+    else:
+        auth_provider = cassandra.auth.PlainTextAuthProvider(username=username,
+                                                             password=password)
 
     # Although we specify a reconnection_policy, it does not apply to
     # the initial connection so we retry in a loop.
@@ -519,6 +523,10 @@ def encrypt_password(password):
 @logged
 def ensure_user(session, username, encrypted_password, superuser=False):
     '''Create the DB user if it doesn't already exist & reset the password.'''
+    auth = hookenv.config()['authenticator']
+    if auth == 'AllowAllAuthenticator':
+        return  # No authentication means we cannot create users
+
     if superuser:
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
@@ -578,16 +586,20 @@ def superuser_credentials():
     cqlshrc = configparser.ConfigParser(interpolation=None)
     cqlshrc.read([cqlshrc_path])
 
+    username = superuser_username()
+
     try:
         section = cqlshrc['authentication']
-        return section['username'], section['password']
+        # If there happened to be an existing cqlshrc file, it might
+        # contain invalid credentials. Ignore them.
+        if section['username'] == username:
+            return section['username'], section['password']
     except KeyError:
         hookenv.log('Generating superuser credentials into {}'.format(
             cqlshrc_path))
 
     config = hookenv.config()
 
-    username = superuser_username()
     password = host.pwgen()
 
     hookenv.log('Generated username {}'.format(username))
@@ -683,7 +695,7 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     # Using the same name is preferred to match the actual Cassandra
     # documentation.
     simple_config_keys = ['cluster_name', 'num_tokens',
-                          'partitioner', 'authorizer',
+                          'partitioner', 'authorizer', 'authenticator',
                           'compaction_throughput_mb_per_sec',
                           'stream_throughput_outbound_megabits_per_sec',
                           'tombstone_warn_threshold',
@@ -703,11 +715,6 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)
-
-    # The charm only supports password authentication. In the future we
-    # may also support AllowAllAuthenticator. I'm not sure if others
-    # such as Kerboros can be supported or are useful.
-    cassandra_yaml['authenticator'] = 'PasswordAuthenticator'
 
     # GossipingPropertyFileSnitch is the only snitch recommended for
     # production. It we allow others, we need to consider how to deal
@@ -745,7 +752,7 @@ def is_cassandra_running():
             # is not running.
             os.kill(pid, 0)
 
-            if subprocess.call(["nodetool", "status", "system_auth"],
+            if subprocess.call(["nodetool", "status"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
                 hookenv.log(
@@ -870,9 +877,9 @@ def emit_describe_cluster():
 
 
 @logged
-def emit_auth_keyspace_status():
-    '''Run 'nodetool status system_auth' for the logs.'''
-    nodetool('status', 'system_auth')  # Implicit emit
+def emit_status():
+    '''Run 'nodetool status' for the logs.'''
+    nodetool('status')  # Implicit emit
 
 
 @logged
@@ -883,7 +890,7 @@ def emit_netstats():
 
 def emit_cluster_info():
     emit_describe_cluster()
-    emit_auth_keyspace_status()
+    emit_status()
     emit_netstats()
 
 
