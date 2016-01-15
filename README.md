@@ -119,8 +119,8 @@ following connection settings and cluster information on the client's relation:
     Authentication credentials. The cluster is configured to use
     the standard PasswordAuthenticator authentication provider, rather
     than the insecure default. You can use different credentials
-    if you wish, using and account created through some other mechanism.
-    
+    if you wish, using an account created through some other mechanism.
+
 `host`:
 
     IP address to connect to.
