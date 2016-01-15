@@ -42,8 +42,8 @@ def default_hook():
 
     # Only useful for debugging, or perhaps have this enabled with a config
     # option?
-    ## from loglog import loglog
-    ## loglog('/var/log/cassandra/system.log', prefix='C*: ')
+    # from loglog import loglog
+    # loglog('/var/log/cassandra/system.log', prefix='C*: ')
 
     hookenv.log('*** {} Hook Start'.format(hookenv.hook_name()))
     sm = definitions.get_service_manager()
