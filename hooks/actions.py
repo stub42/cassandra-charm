@@ -825,7 +825,10 @@ def nrpe_external_master_relation():
     dirs = helpers.get_all_database_directories()
     dirs = set(dirs['data_file_directories'] +
                [dirs['commitlog_directory'], dirs['saved_caches_directory']])
-    for disk in dirs:
+    # We need to check the space on the mountpoint, not on the actual
+    # directory, as the nagios user won't have access to the actual directory.
+    mounts = set(helpers.mountpoint(d) for d in dirs)
+    for disk in mounts:
         check_name = re.sub('[^A-Za-z0-9_]', '_', disk)
         if cassandra_disk_warn and cassandra_disk_crit:
             shortname = "cassandra_disk{}".format(check_name)

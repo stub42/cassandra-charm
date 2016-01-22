@@ -187,6 +187,14 @@ def get_all_database_directories():
             config['saved_caches_directory'] or 'saved_caches'))
 
 
+def mountpoint(path):
+    '''Return the mountpoint that path exists on.'''
+    path = os.path.realpath(path)
+    while path != '/' and not os.path.ismount(path):
+        path = os.path.dirname(path)
+    return path
+
+
 # FOR CHARMHELPERS
 def is_lxc():
     '''Return True if we are running inside an LXC container.'''
