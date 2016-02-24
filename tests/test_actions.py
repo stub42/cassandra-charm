@@ -535,7 +535,7 @@ class TestActions(TestCaseBase):
         connect().__enter__.return_value = sentinel.session
         connect().__exit__.return_value = False
 
-        num_nodes.return_value = 4
+        num_nodes.return_value = 3
         get_auth_ks_rep.return_value = {'another': '8',
                                         'mydc': '3'}
         self.assertFalse(actions.needs_reset_auth_keyspace_replication())
@@ -565,7 +565,7 @@ class TestActions(TestCaseBase):
         actions.reset_auth_keyspace_replication('')
         set_auth_ks_rep.assert_called_once_with(
             sentinel.session,
-            {'class': 'NetworkTopologyStrategy', 'another': '8', 'mydc': 3})
+            {'class': 'NetworkTopologyStrategy', 'another': '8', 'mydc': 4})
         repair.assert_called_once_with()
         set_active.assert_called_once_with()
 

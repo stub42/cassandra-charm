@@ -432,18 +432,13 @@ def configure_cassandra_rackdc():
 def needs_reset_auth_keyspace_replication():
     '''Guard for reset_auth_keyspace_replication.'''
     num_nodes = helpers.num_nodes()
-    n = min(num_nodes, 3)
     datacenter = hookenv.config()['datacenter']
     with helpers.connect() as session:
         strategy_opts = helpers.get_auth_keyspace_replication(session)
         rf = int(strategy_opts.get(datacenter, -1))
         hookenv.log('system_auth rf={!r}'.format(strategy_opts))
-        # If the node count has increased, we will change the rf.
-        # If the node count is decreasing, we do nothing as the service
-        # may be being destroyed.
-        if rf < n:
-            return True
-    return False
+        # If the node count has changed, we should change the rf.
+        return rf != num_nodes
 
 
 @leader_only
@@ -453,23 +448,23 @@ def needs_reset_auth_keyspace_replication():
 def reset_auth_keyspace_replication():
     # Cassandra requires you to manually set the replication factor of
     # the system_auth keyspace, to ensure availability and redundancy.
-    # We replication factor in this service's DC can be no higher than
-    # the number of bootstrapped nodes. We also cap this at 3 to ensure
-    # we don't have too many seeds.
+    # The recommendation is to set the replication factor so that every
+    # node has a copy.
     num_nodes = helpers.num_nodes()
-    n = min(num_nodes, 3)
     datacenter = hookenv.config()['datacenter']
     with helpers.connect() as session:
         strategy_opts = helpers.get_auth_keyspace_replication(session)
         rf = int(strategy_opts.get(datacenter, -1))
         hookenv.log('system_auth rf={!r}'.format(strategy_opts))
-        if rf != n:
+        if rf != num_nodes:
             strategy_opts['class'] = 'NetworkTopologyStrategy'
-            strategy_opts[datacenter] = n
+            strategy_opts[datacenter] = num_nodes
             if 'replication_factor' in strategy_opts:
                 del strategy_opts['replication_factor']
             helpers.set_auth_keyspace_replication(session, strategy_opts)
-            helpers.repair_auth_keyspace()
+            if rf < num_nodes:
+                # Increasing rf, need to run repair.
+                helpers.repair_auth_keyspace()
             helpers.set_active()
 
 
@@ -565,13 +560,37 @@ def post_bootstrap():
 
     Per documented procedure for adding new units to a cluster, wait 2
     minutes if the unit has just bootstrapped to ensure other units
-    do not attempt bootstrap too soon.
+    do not attempt bootstrap too soon. Also, wait until completed joining
+    to ensure we keep the lock and ensure other nodes don't restart or
+    bootstrap.
     '''
     if not helpers.is_bootstrapped():
         if coordinator.relid is not None:
             helpers.status_set('maintenance', 'Post-bootstrap 2 minute delay')
             hookenv.log('Post-bootstrap 2 minute delay')
             time.sleep(120)  # Must wait 2 minutes between bootstrapping nodes.
+
+        join_msg_set = False
+        while True:
+            status = helpers.get_node_status()
+            if status == 'NORMAL':
+                break
+            elif status == 'JOINING':
+                if not join_msg_set:
+                    helpers.status_set('maintenance', 'Still joining cluster')
+                    join_msg_set = True
+                time.sleep(10)
+                continue
+            else:
+                if status is None:
+                    helpers.status_set('blocked',
+                                       'Unexpectedly shutdown during '
+                                       'bootstrap')
+                else:
+                    helpers.status_set('blocked',
+                                       'Failed to bootstrap ({})'
+                                       ''.format(status))
+                raise SystemExit(0)
 
     # Unconditionally call this to publish the bootstrapped flag to
     # the peer relation, as the first unit was bootstrapped before
