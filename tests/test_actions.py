@@ -906,11 +906,13 @@ class TestActions(TestCaseBase):
                                            call('1.1.0.2', 'any', 7002)],
                                           any_order=True)
 
+    @patch('helpers.mountpoint')
     @patch('charmhelpers.core.host.write_file')
     @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
     @patch('helpers.local_plugins_dir')
     def test_nrpe_external_master_relation(self, local_plugins_dir, nrpe,
-                                           write_file):
+                                           write_file, mountpoint):
+        mountpoint.side_effect = os.path.dirname
         # The fake charm_dir() needs populating.
         plugin_src_dir = os.path.join(os.path.dirname(__file__),
                                       os.pardir, 'files')
@@ -934,16 +936,10 @@ class TestActions(TestCaseBase):
                      description='Check Cassandra Heap',
                      check_cmd='check_cassandra_heap.sh localhost 80 90'),
                 call(description=('Check Cassandra Disk '
-                                  '/var/lib/cassandra/data'),
-                     shortname='cassandra_disk_var_lib_cassandra_data',
+                                  '/var/lib/cassandra'),
+                     shortname='cassandra_disk_var_lib_cassandra',
                      check_cmd=('check_disk -u GB -w 50% -c 25% -K 5% '
-                                '-p /var/lib/cassandra/data')),
-                call(description=ANY,
-                     shortname='cassandra_disk_var_lib_cassandra_saved_caches',
-                     check_cmd=ANY),
-                call(description=ANY,
-                     shortname='cassandra_disk_var_lib_cassandra_commitlog',
-                     check_cmd=ANY)],
+                                '-p /var/lib/cassandra'))],
                 any_order=True)
 
             nrpe().write.assert_called_once_with()
@@ -960,10 +956,13 @@ class TestActions(TestCaseBase):
         actions.nrpe_external_master_relation('')
         self.assertFalse(write_file.called)
 
+    @patch('helpers.mountpoint')
     @patch('os.path.exists')
     @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
-    def test_nrpe_external_master_relation_disable_heapchk(self, nrpe, exists):
+    def test_nrpe_external_master_relation_disable_heapchk(self, nrpe, exists,
+                                                           mountpoint):
         exists.return_value = False
+        mountpoint.side_effect = os.path.dirname
 
         # Disable our checks
         config = hookenv.config()
@@ -974,11 +973,7 @@ class TestActions(TestCaseBase):
         exists.assert_called_once_with(helpers.local_plugins_dir())
 
         nrpe().add_check.assert_has_calls([
-            call(shortname='cassandra_disk_var_lib_cassandra_data',
-                 description=ANY, check_cmd=ANY),
-            call(shortname='cassandra_disk_var_lib_cassandra_saved_caches',
-                 description=ANY, check_cmd=ANY),
-            call(shortname='cassandra_disk_var_lib_cassandra_commitlog',
+            call(shortname='cassandra_disk_var_lib_cassandra',
                  description=ANY, check_cmd=ANY)], any_order=True)
 
     @patch('os.path.exists')
