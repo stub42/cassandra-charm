@@ -220,14 +220,28 @@ class TestHelpers(TestCaseBase):
         # Absolute paths are absolute and passed through unmolested.
         self.assertEqual(helpers.get_database_directory('/bar'), '/bar')
 
+    @patch('helpers.get_cassandra_version')
     @patch('relations.StorageRelation')
-    def test_get_all_database_directories(self, storage_relation):
+    def test_get_all_database_directories(self, storage_relation, ver):
+        ver.return_value = '2.2'
         storage_relation().mountpoint = '/s'
         self.assertDictEqual(
             helpers.get_all_database_directories(),
             dict(data_file_directories=['/s/cassandra/data'],
                  commitlog_directory='/s/cassandra/commitlog',
                  saved_caches_directory='/s/cassandra/saved_caches'))
+
+    @patch('helpers.get_cassandra_version')
+    @patch('relations.StorageRelation')
+    def test_get_all_database_directories_30(self, storage_relation, ver):
+        ver.return_value = '3.0'
+        storage_relation().mountpoint = '/s'
+        self.assertDictEqual(
+            helpers.get_all_database_directories(),
+            dict(data_file_directories=['/s/cassandra/data'],
+                 commitlog_directory='/s/cassandra/commitlog',
+                 saved_caches_directory='/s/cassandra/saved_caches',
+                 hints_directory='/s/cassandra/hints'))
 
     @patch('helpers.recursive_chown')
     @patch('charmhelpers.core.host.mkdir')
@@ -458,7 +472,7 @@ class TestHelpers(TestCaseBase):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
                             set(['cassandra', 'ntp', 'run-one',
-                                 'netcat', 'openjdk-7-jre-headless']))
+                                 'netcat', 'openjdk-8-jre-headless']))
 
     def test_get_cassandra_packages_oracle_jre(self):
         # Oracle JRE
@@ -731,8 +745,10 @@ class TestHelpers(TestCaseBase):
                           sentinel.consistency, sentinel.args)
         self.assertEqual(session.execute.call_count, 4)
 
+    @patch('helpers.get_cassandra_version')
     @patch('helpers.query')
-    def test_ensure_user(self, query):
+    def test_ensure_user(self, query, ver):
+        ver.return_value = '2.1'
         helpers.ensure_user(sentinel.session,
                             sentinel.username, sentinel.pwhash,
                             superuser=sentinel.supflag)
@@ -745,6 +761,21 @@ class TestHelpers(TestCaseBase):
                  'VALUES (%s, %s)',
                  ConsistencyLevel.ALL,
                  (sentinel.username, sentinel.pwhash))])
+
+    @patch('helpers.get_cassandra_version')
+    @patch('helpers.query')
+    def test_ensure_user_22(self, query, ver):
+        ver.return_value = '2.2'
+        helpers.ensure_user(sentinel.session,
+                            sentinel.username, sentinel.pwhash,
+                            superuser=sentinel.supflag)
+        query.assert_called_once_with(sentinel.session,
+                                      'INSERT INTO system_auth.roles (role, '
+                                      'can_login, is_superuser, salted_hash) '
+                                      'VALUES (%s, TRUE, %s, %s)',
+                                      ConsistencyLevel.ALL,
+                                      (sentinel.username, sentinel.supflag,
+                                       sentinel.pwhash))
 
     @patch('helpers.ensure_user')
     @patch('helpers.encrypt_password')
@@ -991,6 +1022,79 @@ class TestHelpers(TestCaseBase):
                 stream_throughput_outbound_megabits_per_sec: 200
                 tombstone_warn_threshold: 1000
                 tombstone_failure_threshold: 100000
+                start_rpc: true
+                ''')
+            self.maxDiff = None
+            self.assertEqual(yaml.safe_load(new_config),
+                             yaml.safe_load(expected_config))
+
+            # Confirm we can use an explicit cluster_name too.
+            write_file.reset_mock()
+            hookenv.config()['cluster_name'] = 'fubar'
+            helpers.configure_cassandra_yaml()
+            new_config = write_file.call_args[0][1]
+            self.assertEqual(yaml.safe_load(new_config)['cluster_name'],
+                             'fubar')
+
+    @patch('helpers.get_cassandra_version')
+    @patch('helpers.get_cassandra_yaml_file')
+    @patch('helpers.get_seed_ips')
+    @patch('charmhelpers.core.host.write_file')
+    def test_configure_cassandra_yaml_22(self, write_file, seed_ips, yaml_file,
+                                         get_cassandra_version):
+        get_cassandra_version.return_value = '2.0'
+        hookenv.config().update(dict(num_tokens=128,
+                                     cluster_name='test_cluster_name',
+                                     partitioner='test_partitioner'))
+
+        seed_ips.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
+
+        existing_config = '''
+            seed_provider:
+                - class_name: blah.SimpleSeedProvider
+                  parameters:
+                      - seeds: 127.0.0.1  # Comma separated list.
+            start_rpc: false  # Defaults to False starting 2.2
+            '''
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yaml_config = os.path.join(tmpdir, 'c.yaml')
+            yaml_file.return_value = yaml_config
+            with open(yaml_config, 'w', encoding='UTF-8') as f:
+                f.write(existing_config)
+
+            helpers.configure_cassandra_yaml()
+
+            self.assertEqual(write_file.call_count, 2)
+            new_config = write_file.call_args[0][1]
+
+            expected_config = dedent('''\
+                start_rpc: true
+                cluster_name: test_cluster_name
+                authenticator: PasswordAuthenticator
+                num_tokens: 128
+                partitioner: test_partitioner
+                listen_address: 10.20.0.1
+                rpc_address: 0.0.0.0
+                rpc_port: 9160
+                native_transport_port: 9042
+                storage_port: 7000
+                ssl_storage_port: 7001
+                authorizer: AllowAllAuthorizer
+                seed_provider:
+                    - class_name: blah.SimpleSeedProvider
+                      parameters:
+                        # No whitespace in seeds is important.
+                        - seeds: '10.20.0.1,10.20.0.2,10.20.0.3'
+                endpoint_snitch: GossipingPropertyFileSnitch
+                data_file_directories:
+                    - /var/lib/cassandra/data
+                commitlog_directory: /var/lib/cassandra/commitlog
+                saved_caches_directory: /var/lib/cassandra/saved_caches
+                compaction_throughput_mb_per_sec: 16
+                stream_throughput_outbound_megabits_per_sec: 200
+                tombstone_warn_threshold: 1000
+                tombstone_failure_threshold: 100000
                 ''')
             self.maxDiff = None
             self.assertEqual(yaml.safe_load(new_config),
@@ -1043,6 +1147,7 @@ class TestHelpers(TestCaseBase):
                 listen_address: 10.20.0.1
                 rpc_address: 0.0.0.0
                 broadcast_rpc_address: 10.30.0.1
+                start_rpc: true
                 rpc_port: 9160
                 native_transport_port: 9042
                 storage_port: 7000
@@ -1203,14 +1308,29 @@ class TestHelpers(TestCaseBase):
         # Weird errors are reraised.
         self.assertRaises(RuntimeError, helpers.is_cassandra_running)
 
+    @patch('helpers.get_cassandra_version')
     @patch('helpers.query')
-    def test_get_auth_keyspace_replication(self, query):
+    def test_get_auth_keyspace_replication(self, query, ver):
+        ver.return_value = '2.2'
         query.return_value = [('{"json": true}',)]
         settings = helpers.get_auth_keyspace_replication(sentinel.session)
         self.assertDictEqual(settings, dict(json=True))
         query.assert_called_once_with(
             sentinel.session, dedent('''\
                 SELECT strategy_options FROM system.schema_keyspaces
+                WHERE keyspace_name='system_auth'
+                '''), ConsistencyLevel.QUORUM)
+
+    @patch('helpers.get_cassandra_version')
+    @patch('helpers.query')
+    def test_get_auth_keyspace_replication_30(self, query, ver):
+        ver.return_value = '3.0'
+        query.return_value = [({"json": True},)]  # Decoded under 3.0
+        settings = helpers.get_auth_keyspace_replication(sentinel.session)
+        self.assertDictEqual(settings, dict(json=True))
+        query.assert_called_once_with(
+            sentinel.session, dedent('''\
+                SELECT replication FROM system_schema.keyspaces
                 WHERE keyspace_name='system_auth'
                 '''), ConsistencyLevel.QUORUM)
 

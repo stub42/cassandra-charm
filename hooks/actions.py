@@ -280,7 +280,7 @@ def install_cassandra_packages():
     if helpers.get_jre() != 'oracle':
         subprocess.check_call(['update-java-alternatives',
                                '--jre-headless',
-                               '--set', 'java-1.7.0-openjdk-amd64'])
+                               '--set', 'java-1.8.0-openjdk-amd64'])
 
 
 @action
