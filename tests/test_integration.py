@@ -532,9 +532,8 @@ class TestDSEDeployment(Test1UnitDeployment):
     rf = 1
     test_config = dict(
         edition='DSE',  # Forces Oracle JRE
-        install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
-                                        'ppa:stub/cassandra']),
-        install_keys=yaml.safe_dump([None, None]),
+        install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE')]),
+        install_keys=yaml.safe_dump([None]),
         private_jre_url=get_jre_url())
 
     @classmethod
@@ -574,36 +573,8 @@ class Test20Deployment(Test1UnitDeployment):
     test_config = dict(
         edition='community',
         install_sources=yaml.safe_dump([
-            'ppa:stub/cassandra',
-            'ppa:openjdk-r/ppa',
             'deb http://www.apache.org/dist/cassandra/debian 20x main']),
-        install_keys=yaml.safe_dump([None, None, None]))
-
-
-class Test21Deployment(Test1UnitDeployment):
-    """Tests run on a single node Apache Cassandra 2.1 cluster.
-    """
-    rf = 1
-    test_config = dict(
-        edition='community',
-        install_sources=yaml.safe_dump([
-            'ppa:stub/cassandra',
-            'ppa:openjdk-r/ppa',
-            'deb http://www.apache.org/dist/cassandra/debian 21x main']),
-        install_keys=yaml.safe_dump([None, None, None]))
-
-
-class Test30Deployment(Test1UnitDeployment):
-    """Tests run on a single node Apache Cassandra 3.0 cluster.
-    """
-    rf = 1
-    test_config = dict(
-        edition='community',
-        install_sources=yaml.safe_dump([
-            'ppa:stub/cassandra',
-            'ppa:openjdk-r/ppa',
-            'deb http://www.apache.org/dist/cassandra/debian 30x main']),
-        install_keys=yaml.safe_dump([None, None, None]))
+        install_keys=yaml.safe_dump([None]))
 
 
 # Bug #1417097 means we need to monkey patch Amulet for now.
