@@ -16,6 +16,7 @@
 import configparser
 from contextlib import contextmanager
 from datetime import timedelta
+from distutils.version import LooseVersion
 import errno
 from functools import wraps
 import io
@@ -177,7 +178,7 @@ def ensure_database_directory(config_path):
 
 def get_all_database_directories():
     config = hookenv.config()
-    return dict(
+    dirs = dict(
         data_file_directories=[get_database_directory(d)
                                for d in (config['data_file_directories'] or
                                          'data').split()],
@@ -185,6 +186,10 @@ def get_all_database_directories():
             config['commitlog_directory'] or 'commitlog'),
         saved_caches_directory=get_database_directory(
             config['saved_caches_directory'] or 'saved_caches'))
+    if has_cassandra_version('3.0'):
+        # Not yet configurable. Make configurable with Juju native storage.
+        dirs['hints_directory'] = get_database_directory('hints')
+    return dirs
 
 
 # FOR CHARMHELPERS
@@ -303,8 +308,20 @@ def get_cassandra_service():
 
 def get_cassandra_version():
     if get_cassandra_edition() == 'dse':
-        return '2.1' if get_package_version('dse-full') else None
+        dse_ver = get_package_version('dse-full')
+        if not dse_ver:
+            return None
+        elif LooseVersion(dse_ver) >= LooseVersion('4.7'):
+            return '2.1'
+        else:
+            return '2.0'
     return get_package_version('cassandra')
+
+
+def has_cassandra_version(minimum_ver):
+    cassandra_version = get_cassandra_version()
+    assert cassandra_version is not None, 'Cassandra package not yet installed'
+    return LooseVersion(cassandra_version) >= LooseVersion(minimum_ver)
 
 
 def get_cassandra_config_dir():
@@ -354,8 +371,9 @@ def get_cassandra_packages():
         # agreement.
         pass
     else:
-        # NB. OpenJDK 8 not available in trusty.
-        packages.add('openjdk-7-jre-headless')
+        # NB. OpenJDK 8 not available in trusty. This needs to come
+        # from a PPA or some other configured source.
+        packages.add('openjdk-8-jre-headless')
 
     return packages
 
@@ -434,10 +452,11 @@ def ensure_database_directories():
     # harmless, it causes shutil.chown() to fail.
     assert not is_cassandra_running()
     db_dirs = get_all_database_directories()
-    unpacked_db_dirs = (db_dirs['data_file_directories'] +
-                        [db_dirs['commitlog_directory']] +
-                        [db_dirs['saved_caches_directory']])
-    for db_dir in unpacked_db_dirs:
+    ensure_database_directory(db_dirs['commitlog_directory'])
+    ensure_database_directory(db_dirs['saved_caches_directory'])
+    if 'hints_directory' in db_dirs:
+        ensure_database_directory(db_dirs['hints_directory'])
+    for db_dir in db_dirs['data_file_directories']:
         ensure_database_directory(db_dir)
 
 
@@ -531,13 +550,21 @@ def ensure_user(session, username, encrypted_password, superuser=False):
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
         hookenv.log('Creating user {}'.format(username))
-    query(session,
-          'INSERT INTO system_auth.users (name, super) VALUES (%s, %s)',
-          ConsistencyLevel.ALL, (username, superuser))
-    query(session,
-          'INSERT INTO system_auth.credentials (username, salted_hash) '
-          'VALUES (%s, %s)',
-          ConsistencyLevel.ALL, (username, encrypted_password))
+    if has_cassandra_version('2.2'):
+        query(session,
+              'INSERT INTO system_auth.roles '
+              '(role, can_login, is_superuser, salted_hash) '
+              'VALUES (%s, TRUE, %s, %s)',
+              ConsistencyLevel.ALL,
+              (username, superuser, encrypted_password))
+    else:
+        query(session,
+              'INSERT INTO system_auth.users (name, super) VALUES (%s, %s)',
+              ConsistencyLevel.ALL, (username, superuser))
+        query(session,
+              'INSERT INTO system_auth.credentials (username, salted_hash) '
+              'VALUES (%s, %s)',
+              ConsistencyLevel.ALL, (username, encrypted_password))
 
 
 @logged
@@ -721,6 +748,11 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     # with the system_auth keyspace replication settings.
     cassandra_yaml['endpoint_snitch'] = 'GossipingPropertyFileSnitch'
 
+    # Per Bug #1523546 and CASSANDRA-9319, Thrift is disabled by default in
+    # Cassandra 2.2. Ensure it is enabled if rpc_port is non-zero.
+    if int(config['rpc_port']) > 0:
+        cassandra_yaml['start_rpc'] = True
+
     cassandra_yaml.update(overrides)
 
     write_cassandra_yaml(cassandra_yaml)
@@ -773,12 +805,20 @@ def is_cassandra_running():
 
 
 def get_auth_keyspace_replication(session):
-    statement = dedent('''\
-        SELECT strategy_options FROM system.schema_keyspaces
-        WHERE keyspace_name='system_auth'
-        ''')
-    r = query(session, statement, ConsistencyLevel.QUORUM)
-    return json.loads(r[0][0])
+    if has_cassandra_version('3.0'):
+        statement = dedent('''\
+            SELECT replication FROM system_schema.keyspaces
+            WHERE keyspace_name='system_auth'
+            ''')
+        r = query(session, statement, ConsistencyLevel.QUORUM)
+        return dict(r[0][0])
+    else:
+        statement = dedent('''\
+            SELECT strategy_options FROM system.schema_keyspaces
+            WHERE keyspace_name='system_auth'
+            ''')
+        r = query(session, statement, ConsistencyLevel.QUORUM)
+        return json.loads(r[0][0])
 
 
 @logged
