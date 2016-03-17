@@ -298,7 +298,7 @@ def _fetch_oracle_jre():
             helpers.status_set('blocked',
                                'Invalid private_jre_url {}'.format(url))
             raise SystemExit(0)
-        helpers.status_set(hookenv.status_get(),
+        helpers.status_set(hookenv.status_get()[0],
                            'Downloading Oracle JRE')
         hookenv.log('Oracle JRE URL is {}'.format(url))
         urllib.request.urlretrieve(url, filename)
@@ -502,7 +502,7 @@ def needs_restart():
     # during a restart.
     storage = relations.StorageRelation()
     if storage.needs_remount():
-        helpers.status_set(hookenv.status_get(),
+        helpers.status_set(hookenv.status_get()[0],
                            'New mounts. Waiting for restart permission')
         return True
 
@@ -512,7 +512,7 @@ def needs_restart():
             hookenv.log('{} changed. Restart required.'.format(key))
     for key in RESTART_REQUIRED_KEYS:
         if config.changed(key):
-            helpers.status_set(hookenv.status_get(),
+            helpers.status_set(hookenv.status_get()[0],
                                'Config changes. '
                                'Waiting for restart permission.')
             return True
@@ -525,7 +525,7 @@ def needs_restart():
         # We don't care about the local node in the changes.
         changed.discard(hookenv.unit_private_ip())
         if changed:
-            helpers.status_set(hookenv.status_get(),
+            helpers.status_set(hookenv.status_get()[0],
                                'Updated seeds {!r}. '
                                'Waiting for restart permission.'
                                ''.format(new_seeds))
@@ -946,7 +946,7 @@ def set_active():
     # not already active. We don't do this unconditionally, as the charm
     # may be active but doing stuff, like active but waiting for restart
     # permission.
-    if hookenv.status_get() != 'active':
+    if hookenv.status_get()[0] != 'active':
         helpers.set_active()
     else:
         hookenv.log('Unit status already active', DEBUG)

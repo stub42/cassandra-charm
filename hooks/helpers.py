@@ -832,7 +832,7 @@ def get_auth_keyspace_replication(session):
 @logged
 def set_auth_keyspace_replication(session, settings):
     # Live operation, so keep status the same.
-    status_set(hookenv.status_get(),
+    status_set(hookenv.status_get()[0],
                'Updating system_auth rf to {!r}'.format(settings))
     statement = 'ALTER KEYSPACE system_auth WITH REPLICATION = %s'
     query(session, statement, ConsistencyLevel.ALL, (settings,))
@@ -843,7 +843,7 @@ def repair_auth_keyspace():
     # Repair takes a long time, and may need to be retried due to 'snapshot
     # creation' errors, but should certainly complete within an hour since
     # the keyspace is tiny.
-    status_set(hookenv.status_get(),
+    status_set(hookenv.status_get()[0],
                'Repairing system_auth keyspace')
     nodetool('repair', 'system_auth', timeout=3600)
 
