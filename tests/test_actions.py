@@ -294,7 +294,7 @@ class TestActions(TestCaseBase):
         install_packages.assert_called_once_with(sentinel.cassandra_packages)
         check_call.assert_called_once_with(['update-java-alternatives',
                                             '--jre-headless', '--set',
-                                            'java-1.7.0-openjdk-amd64'])
+                                            'java-1.8.0-openjdk-amd64'])
 
     @patch('subprocess.check_call')
     @patch('helpers.get_jre')
@@ -907,12 +907,15 @@ class TestActions(TestCaseBase):
                                           any_order=True)
 
     @patch('helpers.mountpoint')
+    @patch('helpers.get_cassandra_version')
     @patch('charmhelpers.core.host.write_file')
     @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
     @patch('helpers.local_plugins_dir')
     def test_nrpe_external_master_relation(self, local_plugins_dir, nrpe,
-                                           write_file, mountpoint):
+                                           write_file, cassandra_version,
+                                           mountpoint):
         mountpoint.side_effect = os.path.dirname
+        cassandra_version.return_value = '2.2'
         # The fake charm_dir() needs populating.
         plugin_src_dir = os.path.join(os.path.dirname(__file__),
                                       os.pardir, 'files')
@@ -944,11 +947,13 @@ class TestActions(TestCaseBase):
 
             nrpe().write.assert_called_once_with()
 
+    @patch('helpers.get_cassandra_version')
     @patch('charmhelpers.core.host.write_file')
     @patch('os.path.exists')
     @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
-    def test_nrpe_external_master_relation_no_local(self, nrpe,
-                                                    exists, write_file):
+    def test_nrpe_external_master_relation_no_local(self, nrpe, exists,
+                                                    write_file, ver):
+        ver.return_value = '2.2'
         # If the local plugins directory doesn't exist, we don't attempt
         # to write files to it. Wait until the subordinate has set it
         # up.
@@ -957,10 +962,14 @@ class TestActions(TestCaseBase):
         self.assertFalse(write_file.called)
 
     @patch('helpers.mountpoint')
+    @patch('helpers.get_cassandra_version')
     @patch('os.path.exists')
     @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
     def test_nrpe_external_master_relation_disable_heapchk(self, nrpe, exists,
-                                                           mountpoint):
+                                                           ver, mountpoint):
+
+
+        ver.return_value = '2.2'
         exists.return_value = False
         mountpoint.side_effect = os.path.dirname
 
@@ -976,9 +985,12 @@ class TestActions(TestCaseBase):
             call(shortname='cassandra_disk_var_lib_cassandra',
                  description=ANY, check_cmd=ANY)], any_order=True)
 
+    @patch('helpers.get_cassandra_version')
     @patch('os.path.exists')
     @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
-    def test_nrpe_external_master_relation_disable_diskchk(self, nrpe, exists):
+    def test_nrpe_external_master_relation_disable_diskchk(self, nrpe,
+                                                           exists, ver):
+        ver.return_value = '2.2'
         exists.return_value = False
 
         # Disable our checks
