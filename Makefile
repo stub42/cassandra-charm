@@ -24,6 +24,13 @@ default:
 # Only trusty supported, but xenial expected soon.
 SERIES := $(shell juju get-environment default-series)
 
+HOST_SERIES := $(shell lsb_release -sc)
+ifeq ($(HOST_SERIES),trusty)
+    PYVER := 3.4
+else
+    PYVER := 3.5
+endif
+
 
 # /!\ Ensure that errors early in pipes cause failures, rather than
 # overridden by the last stage of the pipe. cf. 'test.py | ts'
@@ -41,8 +48,8 @@ export PATH:=$(VENV3)/bin:$(PATH)
 
 SITE_PACKAGES=$(wildcard $(VENV3)/lib/python*/site-packages)
 
-PIP=.venv3/bin/pip3.4 -q
-NOSETESTS=.venv3/bin/nosetests-3.4 -sv
+PIP=.venv3/bin/pip$(PYVER) -q
+NOSETESTS=.venv3/bin/nosetests-3.4 -sv  # Yes, even with 3.5
 
 # Set pipefail so we can get sane error codes while tagging test output
 # with ts(1)
@@ -177,7 +184,7 @@ venv3: packages .stamp-venv3
 	# Create a .pth so our tests can locate everything without
 	# sys.path hacks.
 	(echo ${CHARM_DIR}/hooks; echo ${CHARM_DIR}) \
-	    > ${VENV3}/lib/python3.4/site-packages/tests.pth
+	    > ${VENV3}/lib/python${PYVER}/site-packages/tests.pth
 
 	echo 'pip: ' `which pip`
 
