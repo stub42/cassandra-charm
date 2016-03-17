@@ -1339,7 +1339,7 @@ class TestHelpers(TestCaseBase):
     @patch('helpers.query')
     def test_set_auth_keyspace_replication(self, query,
                                            status_get, status_set):
-        status_get.return_value = 'active'
+        status_get.return_value = ('active', '')
         settings = dict(json=True)
         helpers.set_auth_keyspace_replication(sentinel.session, settings)
         query.assert_called_once_with(sentinel.session,
@@ -1351,7 +1351,7 @@ class TestHelpers(TestCaseBase):
     @patch('charmhelpers.core.hookenv.status_get')
     @patch('helpers.nodetool')
     def test_repair_auth_keyspace(self, nodetool, status_get, status_set):
-        status_get.return_value = sentinel.status
+        status_get.return_value = (sentinel.status, '')
         helpers.repair_auth_keyspace()
         status_set.assert_called_once_with(sentinel.status,
                                            'Repairing system_auth keyspace')
