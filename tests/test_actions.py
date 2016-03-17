@@ -967,8 +967,6 @@ class TestActions(TestCaseBase):
     @patch('charmhelpers.contrib.charmsupport.nrpe.NRPE')
     def test_nrpe_external_master_relation_disable_heapchk(self, nrpe, exists,
                                                            ver, mountpoint):
-
-
         ver.return_value = '2.2'
         exists.return_value = False
         mountpoint.side_effect = os.path.dirname
