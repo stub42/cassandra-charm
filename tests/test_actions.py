@@ -1095,7 +1095,7 @@ class TestActions(TestCaseBase):
     @patch('charmhelpers.core.hookenv.is_leader')
     def test_set_active(self, is_leader, status_get, status_set, seed_ips):
         is_leader.return_value = False
-        status_get.return_value = 'waiting'
+        status_get.return_value = ('waiting', '')
         seed_ips.return_value = set()
         actions.set_active('')
         status_set.assert_called_once_with('active', 'Live node')
@@ -1107,7 +1107,7 @@ class TestActions(TestCaseBase):
     def test_set_active_seed(self, is_leader,
                              status_get, status_set, seed_ips):
         is_leader.return_value = False
-        status_get.return_value = 'waiting'
+        status_get.return_value = ('waiting', '')
         seed_ips.return_value = set([hookenv.unit_private_ip()])
         actions.set_active('')
         status_set.assert_called_once_with('active', 'Live seed')
@@ -1121,6 +1121,7 @@ class TestActions(TestCaseBase):
     def test_set_active_service(self, is_leader,
                                 status_get, status_set, service_status_set,
                                 seed_ips, num_nodes):
+        status_get.return_value = ('waiting', '')
         is_leader.return_value = True
         seed_ips.return_value = set([hookenv.unit_private_ip()])
         num_nodes.return_value = 1
