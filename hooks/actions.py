@@ -663,6 +663,12 @@ def _publish_database_relation(relid, superuser):
             # even after the relation is dropped and recreated, or the
             # juju environment rebuild and the database restored from
             # backups.
+            service_name = helpers.get_service_name(relid)
+            if not service_name:
+                # Per Bug #1555261, we might not yet have related units,
+                # so no way to calculate the remote service name and thus
+                # the user.
+                return  # Try again later.
             username = 'juju_{}'.format(helpers.get_service_name(relid))
             if superuser:
                 username += '_admin'
