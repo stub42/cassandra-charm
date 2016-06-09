@@ -15,6 +15,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+JUJU = juju
 
 default:
 	@echo Missing target
@@ -22,7 +25,7 @@ default:
 	env
 
 # Only trusty supported, but xenial expected soon.
-SERIES := $(shell juju get-environment default-series)
+SERIES := $(shell $(JUJU) get-environment default-series)
 
 HOST_SERIES := $(shell lsb_release -sc)
 ifeq ($(HOST_SERIES),trusty)
@@ -192,7 +195,7 @@ venv3: packages .stamp-venv3
 	# by the charm.
 	$(PIP) install bcrypt cassandra-driver blist
 	$(PIP) install --upgrade -I nose flake8
-	$(PIP) install --upgrade coverage amulet mock
+	$(PIP) install --upgrade coverage amulet mock juju-deployer juju-wait
 
 	echo 'nosetests:' `which nosetests`
 	echo 'flake8:' `which flake8`

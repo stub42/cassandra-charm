@@ -222,7 +222,12 @@ def set_io_scheduler(io_scheduler, directory):
     if not is_lxc():
         hookenv.log("Setting block device of {} to IO scheduler {}"
                     "".format(directory, io_scheduler))
-        block_dev = re.findall(block_regex, output)[0]
+        try:
+            block_dev = re.findall(block_regex, output)[0]
+        except IndexError:
+            hookenv.log("Unable to locate block device of {} (in container?)"
+                        "".format(directory))
+            return
         sys_file = os.path.join("/", "sys", "block", block_dev,
                                 "queue", "scheduler")
         try:
@@ -890,8 +895,9 @@ def unit_to_ip(unit):
     if unit is None or unit == hookenv.local_unit():
         return hookenv.unit_private_ip()
     elif coordinator.relid:
-        return hookenv.relation_get(rid=coordinator.relid,
-                                    unit=unit).get('private-address')
+        pa = hookenv.relation_get(rid=coordinator.relid,
+                                  unit=unit).get('private-address')
+        return hookenv._ensure_ip(pa)
     else:
         return None
 

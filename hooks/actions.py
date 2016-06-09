@@ -791,15 +791,17 @@ def configure_firewall():
     # Rules for peers
     for relinfo in hookenv.relations_of_type('cluster'):
         if relinfo['private-address']:
+            pa = hookenv._ensure_ip(relinfo['private-address'])
             for port in peer_ports:
-                desired_rules.add((relinfo['private-address'], 'any', port))
+                desired_rules.add((pa, 'any', port))
     # Rules for admin connections. We allow database-admin relations access
     # to the cluster communication ports so that tools like sstableloader
     # can run.
     for relinfo in hookenv.relations_of_type('database-admin'):
         if relinfo['private-address']:
+            pa = hookenv._ensure_ip(relinfo['private-address'])
             for port in peer_ports:
-                desired_rules.add((relinfo['private-address'], 'any', port))
+                desired_rules.add((pa, 'any', port))
 
     previous_rules = set(tuple(rule) for rule in config.get('ufw_rules', []))
 

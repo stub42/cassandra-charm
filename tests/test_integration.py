@@ -75,11 +75,8 @@ class TestDeploymentBase(unittest.TestCase):
         config.update(cls.test_config)  # Test subclass overrides
         deployment.configure('cassandra', config)
 
-        # No official trusty branch of the storage charm, yet.
-        # This is a problem as it means tests may not be running against
-        # the lastest version.
         deployment.add('storage',
-                       'lp:~stub/charms/{}/storage/trunk'.format(SERIES))
+                       'cs:~stub/{}/storage'.format(SERIES))
         deployment.configure('storage', dict(provider='local'))
 
         # A stub client charm.
@@ -94,7 +91,7 @@ class TestDeploymentBase(unittest.TestCase):
         # This is a problem as it means tests may not be running against
         # the lastest version.
         deployment.add('nrpe',
-                       'lp:~stub/charms/{}/nrpe-external-master/trunk'
+                       'cs:~stub/{}/nrpe-external-master'
                        ''.format(SERIES))
         deployment.relate('cassandra:nrpe-external-master',
                           'nrpe:nrpe-external-master')
