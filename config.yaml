@@ -83,6 +83,12 @@ options:
         description: >
             Which Java runtime environment to use. May be 'openjdk' or
             'oracle'.
+    snap:
+        type: boolean
+        default: True
+        description: >
+            Use a snap instead of a deb for installing Cassandra. Makes 'jre'
+            and 'edition' options irrelevant.
             
     # Storage configuration
     wait_for_storage_broker:

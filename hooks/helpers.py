@@ -125,6 +125,35 @@ def ensure_package_status(packages):
     dpkg.communicate(input=''.join(selections).encode('US-ASCII'))
 
 
+# FOR CHARMHELPERS
+@logged
+def install_cassandra_snap():
+    output = subprocess.check_output(['snap', 'list', 'cassandra'])
+    if b'cassandra' not in output:
+        with autostart_disabled(['snap.cassandra.cassandra']):
+            subprocess.check_call(['snap', 'install', 'cassandra'])
+    else:
+        # snap will exit 1 if the snap is already the newest version.
+        subprocess.call(['snap', 'refresh', 'cassandra'])
+
+    plug = 'cassandra:mount-observe'
+    slot = 'ubuntu-core:mount-observe'
+    subprocess.check_call(['snap', 'connect', plug, slot])
+
+
+# FOR CHARMHELPERS
+@logged
+def ensure_cassandra_snap_installed():
+    output = subprocess.check_output(['snap', 'list', 'cassandra'])
+    if b'cassandra' not in output:
+        raise RuntimeError('Cassandra snap not installed.')
+
+
+def get_snap_env(envar):
+    cmd = ['/snap/bin/cassandra.env-get', envar]
+    return subprocess.check_output(cmd).strip('\n')
+
+
 def get_seed_ips():
     '''Return the set of seed ip addresses.
 
@@ -149,7 +178,9 @@ def get_database_directory(config_path):
     '''
     import relations
     storage = relations.StorageRelation()
-    if storage.mountpoint:
+    if snap_delivery():
+        root = get_snap_env('SNAP_DATA')
+    elif storage.mountpoint:
         root = os.path.join(storage.mountpoint, 'cassandra')
     else:
         root = '/var/lib/cassandra'
@@ -272,6 +303,15 @@ def maybe_backup(path):
             host.write_file(backup_path, f.read(), perms=0o600)
 
 
+def get_snap_version(snap):
+    '''Get the version string for an installed snap.'''
+
+    out = subprocess.check_output(['snap', 'list', snap])
+    match = re.search('\n{}\s*(\S*)'.format(snap), out)
+    if match:
+        return match.groups(0)[0]
+
+
 # FOR CHARMHELPERS
 def get_package_version(package):
     cache = fetch.apt_cache()
@@ -297,6 +337,10 @@ def get_jre():
     return jre
 
 
+def snap_delivery():
+    return hookenv.config('snap')
+
+
 def get_cassandra_edition():
     config = hookenv.config()
     edition = config['edition'].lower()
@@ -309,12 +353,16 @@ def get_cassandra_edition():
 
 def get_cassandra_service():
     '''Cassandra upstart service'''
-    if get_cassandra_edition() == 'dse':
+    if snap_delivery():
+        return 'snap.cassandra.cassandra'
+    elif get_cassandra_edition() == 'dse':
         return 'dse'
     return 'cassandra'
 
 
 def get_cassandra_version():
+    if snap_delivery():
+        return get_snap_version('cassandra')
     if get_cassandra_edition() == 'dse':
         dse_ver = get_package_version('dse-full')
         if not dse_ver:
@@ -337,6 +385,22 @@ def get_cassandra_config_dir():
         return '/etc/dse/cassandra'
     else:
         return '/etc/cassandra'
+
+
+def get_snap_config_file(filename):
+    cmd = ['/snap/bin/cassandra.config-get', filename]
+    return subprocess.check_output(cmd)
+
+
+def set_snap_config_file(filename, contents):
+    cmd = ['/snap/bin/cassandra.config-set', filename]
+    config_set = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    output, err = config_set.communicate(input=contents)
+    if err:
+        hookenv.log('Error calling {}:\n{}'.format(cmd, err))
+    if config_set.returncode != 0:
+        msg = '{} exited with code {}'.format(cmd, config_set.returncode)
+        raise RuntimeError(msg)
 
 
 def get_cassandra_yaml_file():
@@ -362,15 +426,21 @@ def get_cassandra_pid_file():
 
 
 def get_cassandra_packages():
-    edition = get_cassandra_edition()
-    if edition == 'dse':
-        packages = set(['dse-full'])
-    else:
-        packages = set(['cassandra'])  # 'cassandra-tools'
+    packages = set()
 
     packages.add('ntp')
     packages.add('run-one')
     packages.add('netcat')
+
+    if snap_delivery():
+        packages.add('snapd')
+        return packages
+        
+    edition = get_cassandra_edition()
+    if edition == 'dse':
+        packages.add('dse-full')
+    else:
+        packages.add('cassandra')  # 'cassandra-tools'
 
     jre = get_jre()
     if jre == 'oracle':
@@ -459,6 +529,7 @@ def ensure_database_directories():
     # Guard against changing perms on a running db. Although probably
     # harmless, it causes shutil.chown() to fail.
     assert not is_cassandra_running()
+
     db_dirs = get_all_database_directories()
     ensure_database_directory(db_dirs['commitlog_directory'])
     ensure_database_directory(db_dirs['saved_caches_directory'])
@@ -544,7 +615,7 @@ def query(session, statement, consistency_level, args=None):
 
 
 def encrypt_password(password):
-    return bcrypt.hashpw(password, bcrypt.gensalt())
+    return bcrypt.hashpw(password.encode('ascii'), bcrypt.gensalt())
 
 
 @logged
@@ -667,7 +738,11 @@ def emit(*args, **kw):
 
 
 def nodetool(*cmd, timeout=120):
-    cmd = ['nodetool'] + [str(i) for i in cmd]
+    if snap_delivery():
+        nodetool_cmd = '/snap/bin/cassandra.nodetool'
+    else:
+        nodetool_cmd = 'nodetool'
+    cmd = [nodetool_cmd] + [str(i) for i in cmd]
     i = 0
     until = time.time() + timeout
     for _ in backoff('nodetool to work'):
@@ -706,23 +781,31 @@ def num_nodes():
 
 
 def read_cassandra_yaml():
-    cassandra_yaml_path = get_cassandra_yaml_file()
-    with open(cassandra_yaml_path, 'rb') as f:
+    if snap_delivery():
+        f = get_snap_config_file('cassandra.yaml')
         return yaml.safe_load(f)
+    else:
+        cassandra_yaml_path = get_cassandra_yaml_file()
+        with open(cassandra_yaml_path, 'rb') as f:
+            return yaml.safe_load(f)
 
 
 @logged
 def write_cassandra_yaml(cassandra_yaml):
-    cassandra_yaml_path = get_cassandra_yaml_file()
-    host.write_file(cassandra_yaml_path,
-                    yaml.safe_dump(cassandra_yaml).encode('UTF-8'))
+    contents = yaml.safe_dump(cassandra_yaml).encode('UTF-8')
+    if snap_delivery():
+        set_snap_config_file('cassandra.yaml', contents)
+    else:
+        cassandra_yaml_path = get_cassandra_yaml_file()
+        host.write_file(cassandra_yaml_path, contents)
 
 
 def configure_cassandra_yaml(overrides={}, seeds=None):
-    cassandra_yaml_path = get_cassandra_yaml_file()
     config = hookenv.config()
 
-    maybe_backup(cassandra_yaml_path)  # Its comments may be useful.
+    if not snap_delivery():
+        cassandra_yaml_path = get_cassandra_yaml_file()
+        maybe_backup(cassandra_yaml_path)  # Its comments may be useful.
 
     cassandra_yaml = read_cassandra_yaml()
 
@@ -779,6 +862,10 @@ def get_pid_from_file(pid_file):
 
 
 def is_cassandra_running():
+    if snap_delivery():
+        status = ['systemctl', 'status', 'snap.cassandra.cassandra.service']
+        return subprocess.call(status) == 0
+
     pid_file = get_cassandra_pid_file()
 
     try:
@@ -792,7 +879,12 @@ def is_cassandra_running():
             # is not running.
             os.kill(pid, 0)
 
-            if subprocess.call(["nodetool", "status"],
+            if snap_delivery():
+                # /snap/bin is not on PATH for the root user.
+                nodetool = '/snap/bin/cassandra.nodetool'
+            else:
+                nodetool = 'nodetool'
+            if subprocess.call([nodetool, "status"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
                 hookenv.log(
