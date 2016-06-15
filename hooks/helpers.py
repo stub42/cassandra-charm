@@ -307,6 +307,7 @@ def get_snap_version(snap):
     '''Get the version string for an installed snap.'''
 
     out = subprocess.check_output(['snap', 'list', snap])
+    out = str(out, 'utf8')
     match = re.search('\n{}\s*(\S*)'.format(snap), out)
     if match:
         return match.groups(0)[0]
