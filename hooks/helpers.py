@@ -151,7 +151,9 @@ def ensure_cassandra_snap_installed():
 
 def get_snap_env(envar):
     cmd = ['/snap/bin/cassandra.env-get', envar]
-    return subprocess.check_output(cmd).strip('\n')
+    out = subprocess.check_output(cmd)
+    out = str(out, 'utf8').strip('\n')
+    return out
 
 
 def get_seed_ips():
@@ -382,6 +384,8 @@ def has_cassandra_version(minimum_ver):
 
 
 def get_cassandra_config_dir():
+    if snap_delivery():
+        return get_snap_env('CASSANDRA_CONF')
     if get_cassandra_edition() == 'dse':
         return '/etc/dse/cassandra'
     else:
