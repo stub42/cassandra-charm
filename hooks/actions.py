@@ -679,9 +679,10 @@ def _publish_database_relation(relid, superuser):
             if superuser:
                 username += '_admin'
             password = host.pwgen()
-            pwhash = helpers.encrypt_password(password)
+            if not helpers.snap_delivery():
+                password = helpers.encrypt_password(password)
             with helpers.connect() as session:
-                helpers.ensure_user(session, username, pwhash, superuser)
+                helpers.ensure_user(session, username, password, superuser)
             # Wake the peers, if any.
             helpers.leader_ping()
         else:
@@ -910,8 +911,9 @@ def reset_default_password():
             helpers.status_set('maintenance',
                                'Creating initial superuser account')
             username, password = helpers.superuser_credentials()
-            pwhash = helpers.encrypt_password(password)
-            helpers.ensure_user(session, username, pwhash, superuser=True)
+            if not helpers.snap_delivery():
+                password = helpers.encrypt_password(password)
+            helpers.ensure_user(session, username, password, superuser=True)
             helpers.set_unit_superusers([hookenv.local_unit()])
 
             helpers.status_set('maintenance',
@@ -963,8 +965,9 @@ def request_unit_superuser():
     else:
         # Publish the requested superuser and hash to our peers.
         username, password = helpers.superuser_credentials()
-        pwhash = helpers.encrypt_password(password)
-        hookenv.relation_set(relid, username=username, pwhash=pwhash)
+        if not helpers.snap_delivery():
+            password = helpers.encrypt_password(password)
+        hookenv.relation_set(relid, username=username, password=password)
         hookenv.log('Requested superuser account creation')
 
 

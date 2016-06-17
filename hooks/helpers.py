@@ -205,7 +205,10 @@ def ensure_database_directory(config_path):
         if not os.path.exists(p):
             host.mkdir(component)
     assert component == os.path.split(absdir)[0]
-    host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o750)
+    if snap_delivery():
+        host.mkdir(absdir, owner='root', group='root', perms=0o750)
+    else:
+        host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o750)
     return absdir
 
 
@@ -624,7 +627,7 @@ def encrypt_password(password):
 
 
 @logged
-def ensure_user(session, username, encrypted_password, superuser=False):
+def ensure_user(session, username, password, superuser=False):
     '''Create the DB user if it doesn't already exist & reset the password.'''
     auth = hookenv.config()['authenticator']
     if auth == 'AllowAllAuthenticator':
@@ -634,13 +637,30 @@ def ensure_user(session, username, encrypted_password, superuser=False):
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
         hookenv.log('Creating user {}'.format(username))
-    if has_cassandra_version('2.2'):
+
+    if has_cassandra_version('3.0'):
+        if superuser:
+            suffix = ' SUPERUSER'
+        else:
+            suffix = ''
+        try:
+            query(session,
+                  'CREATE USER %s WITH PASSWORD %s' + suffix,
+                  ConsistencyLevel.ALL, (username, password))
+        except cassandra.InvalidRequest as e:
+            if 'already exists' in str(e):
+                query(session,
+                      'ALTER USER %s WITH PASSWORD %s' + suffix,
+                      ConsistencyLevel.ALL, (username, password))
+            else:
+                raise
+    elif has_cassandra_version('2.2'):
         query(session,
               'INSERT INTO system_auth.roles '
               '(role, can_login, is_superuser, salted_hash) '
               'VALUES (%s, TRUE, %s, %s)',
               ConsistencyLevel.ALL,
-              (username, superuser, encrypted_password))
+              (username, superuser, password))
     else:
         query(session,
               'INSERT INTO system_auth.users (name, super) VALUES (%s, %s)',
@@ -648,7 +668,7 @@ def ensure_user(session, username, encrypted_password, superuser=False):
         query(session,
               'INSERT INTO system_auth.credentials (username, salted_hash) '
               'VALUES (%s, %s)',
-              ConsistencyLevel.ALL, (username, encrypted_password))
+              ConsistencyLevel.ALL, (username, password))
 
 
 @logged
@@ -660,7 +680,8 @@ def create_unit_superuser_hard():
     insert our credentials directly into the system_auth keyspace.
     '''
     username, password = superuser_credentials()
-    pwhash = encrypt_password(password)
+    if not snap_delivery():
+        password = encrypt_password(password)
     hookenv.log('Creating unit superuser {}'.format(username))
 
     # Restart cassandra without authentication & listening on localhost.
@@ -669,7 +690,7 @@ def create_unit_superuser_hard():
     for _ in backoff('superuser creation'):
         try:
             with connect() as session:
-                ensure_user(session, username, pwhash, superuser=True)
+                ensure_user(session, username, password, superuser=True)
                 break
         except Exception as x:
             print(str(x))
@@ -680,7 +701,11 @@ def create_unit_superuser_hard():
 
 
 def get_cqlshrc_path():
-    return os.path.expanduser('~root/.cassandra/cqlshrc')
+    if snap_delivery():
+        base = get_cassandra_config_dir()
+        return os.path.join(base, 'cql/cqlshrc')
+    else:
+        return os.path.expanduser('~root/.cassandra/cqlshrc')
 
 
 def superuser_username():
