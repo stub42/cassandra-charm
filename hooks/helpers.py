@@ -128,8 +128,11 @@ def ensure_package_status(packages):
 # FOR CHARMHELPERS
 @logged
 def install_cassandra_snap():
-    output = subprocess.check_output(['snap', 'list', 'cassandra'])
-    if b'cassandra' not in output:
+    '''Ensure that the Cassandra snap is installed at the current revision.
+    '''
+    cmd = ['snap', 'list', 'cassandra']
+    output = subprocess.check_output(cmd, universal_newlines=True)
+    if 'cassandra' not in output:
         with autostart_disabled(['snap.cassandra.cassandra']):
             subprocess.check_call(['snap', 'install', 'cassandra'])
     else:
@@ -144,16 +147,21 @@ def install_cassandra_snap():
 # FOR CHARMHELPERS
 @logged
 def ensure_cassandra_snap_installed():
-    output = subprocess.check_output(['snap', 'list', 'cassandra'])
-    if b'cassandra' not in output:
+    '''Check if the cassandra snap is installed and raise RuntimeError if it is
+    not.
+    '''
+    cmd = ['snap', 'list', 'cassandra']
+    output = subprocess.check_output(cmd, universal_newlines=True)
+    if 'cassandra' not in output:
         raise RuntimeError('Cassandra snap not installed.')
 
 
 def get_snap_env(envar):
+    '''Return the value of an environment variable present in the snap wrapper
+    scripts.
+    '''
     cmd = ['/snap/bin/cassandra.env-get', envar]
-    out = subprocess.check_output(cmd)
-    out = str(out, 'utf8').strip('\n')
-    return out
+    return subprocess.check_output(cmd, universal_newlines=True).strip('\n')
 
 
 def get_seed_ips():
@@ -310,9 +318,8 @@ def maybe_backup(path):
 
 def get_snap_version(snap):
     '''Get the version string for an installed snap.'''
-
-    out = subprocess.check_output(['snap', 'list', snap])
-    out = str(out, 'utf8')
+    cmd = ['snap', 'list', snap]
+    out = subprocess.check_output(cmd, universal_newlines=True)
     match = re.search('\n{}\s*(\S*)'.format(snap), out)
     if match:
         return match.groups(0)[0]
@@ -394,18 +401,24 @@ def get_cassandra_config_dir():
 
 
 def get_snap_config_file(filename):
+    '''Get the contents of the named configuration file from the current snap
+    data directory.
+    '''
     cmd = ['/snap/bin/cassandra.config-get', filename]
-    return subprocess.check_output(cmd)
+    return subprocess.check_output(cmd, universal_newlines=True)
 
 
 def set_snap_config_file(filename, contents):
+    '''Install a new copy of the configuration file with the provided contents
+    in the current snap data directory.
+    '''
     cmd = ['/snap/bin/cassandra.config-set', filename]
-    config_set = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    output, err = config_set.communicate(input=contents)
+    cs = subprocess.Popen(cmd, stdin=subprocess.PIPE, universal_newlines=True)
+    _, err = cs.communicate(input=contents)
     if err:
-        hookenv.log('Error calling {}:\n{}'.format(cmd, err))
-    if config_set.returncode != 0:
-        msg = '{} exited with code {}'.format(cmd, config_set.returncode)
+        hookenv.log('Error calling {}:\n{}'.format(' '.join(cmd), err))
+    if cs.returncode != 0:
+        msg = '{} exited with code {}'.format(' '.join(cmd), cs.returncode)
         raise RuntimeError(msg)
 
 
