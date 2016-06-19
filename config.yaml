@@ -74,22 +74,16 @@ options:
         type: string
         default: community
         description: >
-            One of 'community' or 'dse'. 'community' uses the
-            Apache Cassandra packages. 'dse' is for DataStax
-            Enterprise. Selecting 'dse' overrides the jvm setting.
+            One of 'community', 'dse', or 'apache-snap'. 'community' uses the
+            Apache Cassandra packages. 'dse' is for DataStax Enterprise.
+            Selecting 'dse' overrides the jvm setting. 'apache-snap' uses a
+            snap package of Apache Cassandra.
     jre:
         type: string
         default: openjdk
         description: >
             Which Java runtime environment to use. May be 'openjdk' or
             'oracle'.
-    snap:
-        type: boolean
-        default: True
-        description: >
-            Use a snap instead of a deb for installing Cassandra. Makes 'jre'
-            and 'edition' options irrelevant.
-            
     # Storage configuration
     wait_for_storage_broker:
         type: boolean

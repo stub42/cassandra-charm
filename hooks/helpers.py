@@ -180,7 +180,7 @@ def get_database_directory(config_path):
     '''
     import relations
     storage = relations.StorageRelation()
-    if snap_delivery():
+    if get_cassandra_edition() == 'apache-snap':
         root = get_snap_env('SNAP_DATA')
     elif storage.mountpoint:
         root = os.path.join(storage.mountpoint, 'cassandra')
@@ -205,7 +205,7 @@ def ensure_database_directory(config_path):
         if not os.path.exists(p):
             host.mkdir(component)
     assert component == os.path.split(absdir)[0]
-    if snap_delivery():
+    if get_cassandra_edition() == 'apache-snap':
         host.mkdir(absdir, owner='root', group='root', perms=0o750)
     else:
         host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o750)
@@ -343,14 +343,10 @@ def get_jre():
     return jre
 
 
-def snap_delivery():
-    return hookenv.config('snap')
-
-
 def get_cassandra_edition():
     config = hookenv.config()
     edition = config['edition'].lower()
-    if edition not in ('community', 'dse'):
+    if edition not in ('community', 'dse', 'apache-snap'):
         hookenv.log('Unknown edition {!r}. Using community.'.format(edition),
                     ERROR)
         edition = 'community'
@@ -359,7 +355,7 @@ def get_cassandra_edition():
 
 def get_cassandra_service():
     '''Cassandra upstart service'''
-    if snap_delivery():
+    if get_cassandra_edition() == 'apache-snap':
         return 'snap.cassandra.cassandra'
     elif get_cassandra_edition() == 'dse':
         return 'dse'
@@ -367,9 +363,10 @@ def get_cassandra_service():
 
 
 def get_cassandra_version():
-    if snap_delivery():
+    edition = get_cassandra_edition()
+    if edition == 'apache-snap':
         return get_snap_version('cassandra')
-    if get_cassandra_edition() == 'dse':
+    elif edition == 'dse':
         dse_ver = get_package_version('dse-full')
         if not dse_ver:
             return None
@@ -387,9 +384,10 @@ def has_cassandra_version(minimum_ver):
 
 
 def get_cassandra_config_dir():
-    if snap_delivery():
+    edition = get_cassandra_edition()
+    if edition == 'apache-snap':
         return get_snap_env('CASSANDRA_CONF')
-    if get_cassandra_edition() == 'dse':
+    elif edition == 'dse':
         return '/etc/dse/cassandra'
     else:
         return '/etc/cassandra'
@@ -440,11 +438,11 @@ def get_cassandra_packages():
     packages.add('run-one')
     packages.add('netcat')
 
-    if snap_delivery():
+    edition = get_cassandra_edition()
+    if edition == 'apache-snap':
         packages.add('snapd')
         return packages
         
-    edition = get_cassandra_edition()
     if edition == 'dse':
         packages.add('dse-full')
     else:
@@ -680,7 +678,7 @@ def create_unit_superuser_hard():
     insert our credentials directly into the system_auth keyspace.
     '''
     username, password = superuser_credentials()
-    if not snap_delivery():
+    if get_cassandra_edition() != 'apache-snap':
         password = encrypt_password(password)
     hookenv.log('Creating unit superuser {}'.format(username))
 
@@ -701,7 +699,7 @@ def create_unit_superuser_hard():
 
 
 def get_cqlshrc_path():
-    if snap_delivery():
+    if get_cassandra_edition() == 'apache-snap':
         base = get_cassandra_config_dir()
         return os.path.join(base, 'cql/cqlshrc')
     else:
@@ -768,7 +766,7 @@ def emit(*args, **kw):
 
 
 def nodetool(*cmd, timeout=120):
-    if snap_delivery():
+    if get_cassandra_edition() == 'apache-snap':
         nodetool_cmd = '/snap/bin/cassandra.nodetool'
     else:
         nodetool_cmd = 'nodetool'
@@ -811,7 +809,7 @@ def num_nodes():
 
 
 def read_cassandra_yaml():
-    if snap_delivery():
+    if get_cassandra_edition() == 'apache-snap':
         f = get_snap_config_file('cassandra.yaml')
         return yaml.safe_load(f)
     else:
@@ -823,7 +821,7 @@ def read_cassandra_yaml():
 @logged
 def write_cassandra_yaml(cassandra_yaml):
     contents = yaml.safe_dump(cassandra_yaml).encode('UTF-8')
-    if snap_delivery():
+    if get_cassandra_edition() == 'apache-snap':
         set_snap_config_file('cassandra.yaml', contents)
     else:
         cassandra_yaml_path = get_cassandra_yaml_file()
@@ -833,7 +831,7 @@ def write_cassandra_yaml(cassandra_yaml):
 def configure_cassandra_yaml(overrides={}, seeds=None):
     config = hookenv.config()
 
-    if not snap_delivery():
+    if get_cassandra_edition() != 'apache-snap':
         cassandra_yaml_path = get_cassandra_yaml_file()
         maybe_backup(cassandra_yaml_path)  # Its comments may be useful.
 
@@ -892,7 +890,8 @@ def get_pid_from_file(pid_file):
 
 
 def is_cassandra_running():
-    if snap_delivery():
+    edition = get_cassandra_edition()
+    if edition == 'apache-snap':
         status = ['systemctl', 'status', 'snap.cassandra.cassandra.service']
         return subprocess.call(status) == 0
 
@@ -909,7 +908,7 @@ def is_cassandra_running():
             # is not running.
             os.kill(pid, 0)
 
-            if snap_delivery():
+            if edition == 'apache-snap':
                 # /snap/bin is not on PATH for the root user.
                 nodetool = '/snap/bin/cassandra.nodetool'
             else:

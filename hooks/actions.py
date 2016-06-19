@@ -277,7 +277,7 @@ def reset_limits():
 @action
 def install_cassandra_packages():
     helpers.install_packages(helpers.get_cassandra_packages())
-    if helpers.snap_delivery():
+    if helpers.get_cassandra_edition() == 'apache-snap':
         helpers.install_cassandra_snap()
     elif helpers.get_jre() != 'oracle':
         subprocess.check_call(['update-java-alternatives',
@@ -364,7 +364,7 @@ def _install_oracle_jre_tarball(tarball):
 def install_oracle_jre():
     if helpers.get_jre() != 'oracle':
         return
-    if helpers.snap_delivery():
+    if helpers.get_cassandra_edition() == 'apache-snap':
         return
 
     tarball = _fetch_oracle_jre()
@@ -373,7 +373,7 @@ def install_oracle_jre():
 
 @action
 def emit_java_version():
-    if helpers.snap_delivery():
+    if helpers.get_cassandra_edition() == 'apache-snap':
         return
 
     # Log the version for posterity. Could be useful since Oracle JRE
@@ -433,7 +433,7 @@ def configure_cassandra_rackdc():
                                dc={}
                                rack={}
                                ''').format(datacenter, rack)
-    if helpers.snap_delivery():
+    if helpers.get_cassandra_edition() == 'apache-snap':
         contents = rackdc_properties.encode('UTF-8')
         helpers.set_snap_config_file('cassandra-rackdc.properties', contents)
     else:
@@ -679,7 +679,7 @@ def _publish_database_relation(relid, superuser):
             if superuser:
                 username += '_admin'
             password = host.pwgen()
-            if not helpers.snap_delivery():
+            if helpers.get_cassandra_edition() != 'apache-snap':
                 password = helpers.encrypt_password(password)
             with helpers.connect() as session:
                 helpers.ensure_user(session, username, password, superuser)
@@ -911,7 +911,7 @@ def reset_default_password():
             helpers.status_set('maintenance',
                                'Creating initial superuser account')
             username, password = helpers.superuser_credentials()
-            if not helpers.snap_delivery():
+            if helpers.get_cassandra_edition() != 'apache-snap':
                 password = helpers.encrypt_password(password)
             helpers.ensure_user(session, username, password, superuser=True)
             helpers.set_unit_superusers([hookenv.local_unit()])
@@ -965,7 +965,7 @@ def request_unit_superuser():
     else:
         # Publish the requested superuser and hash to our peers.
         username, password = helpers.superuser_credentials()
-        if not helpers.snap_delivery():
+        if helpers.get_cassandra_edition() != 'apache-snap':
             password = helpers.encrypt_password(password)
         hookenv.relation_set(relid, username=username, password=password)
         hookenv.log('Requested superuser account creation')
