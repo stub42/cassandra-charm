@@ -904,10 +904,6 @@ def get_pid_from_file(pid_file):
 
 def is_cassandra_running():
     edition = get_cassandra_edition()
-    if edition == 'apache-snap':
-        status = ['systemctl', 'status', 'snap.cassandra.cassandra.service']
-        return subprocess.call(status) == 0
-
     pid_file = get_cassandra_pid_file()
 
     try:
