@@ -649,7 +649,7 @@ def encrypt_password(password):
 
 
 @logged
-def ensure_user(session, username, password, superuser=False):
+def ensure_user(session, username, encrypted_password, superuser=False):
     '''Create the DB user if it doesn't already exist & reset the password.'''
     auth = hookenv.config()['authenticator']
     if auth == 'AllowAllAuthenticator':
@@ -660,29 +660,13 @@ def ensure_user(session, username, password, superuser=False):
     else:
         hookenv.log('Creating user {}'.format(username))
 
-    if has_cassandra_version('3.0'):
-        if superuser:
-            suffix = ' SUPERUSER'
-        else:
-            suffix = ''
-        try:
-            query(session,
-                  'CREATE USER %s WITH PASSWORD %s' + suffix,
-                  ConsistencyLevel.ALL, (username, password))
-        except cassandra.InvalidRequest as e:
-            if 'already exists' in str(e):
-                query(session,
-                      'ALTER USER %s WITH PASSWORD %s' + suffix,
-                      ConsistencyLevel.ALL, (username, password))
-            else:
-                raise
-    elif has_cassandra_version('2.2'):
+    if has_cassandra_version('2.2'):
         query(session,
               'INSERT INTO system_auth.roles '
               '(role, can_login, is_superuser, salted_hash) '
               'VALUES (%s, TRUE, %s, %s)',
               ConsistencyLevel.ALL,
-              (username, superuser, password))
+              (username, superuser, encrypted_password))
     else:
         query(session,
               'INSERT INTO system_auth.users (name, super) VALUES (%s, %s)',
@@ -690,7 +674,7 @@ def ensure_user(session, username, password, superuser=False):
         query(session,
               'INSERT INTO system_auth.credentials (username, salted_hash) '
               'VALUES (%s, %s)',
-              ConsistencyLevel.ALL, (username, password))
+              ConsistencyLevel.ALL, (username, encrypted_password))
 
 
 @logged
@@ -702,8 +686,7 @@ def create_unit_superuser_hard():
     insert our credentials directly into the system_auth keyspace.
     '''
     username, password = superuser_credentials()
-    if get_cassandra_edition() != 'apache-snap':
-        password = encrypt_password(password)
+    pwhash = encrypt_password(password)
     hookenv.log('Creating unit superuser {}'.format(username))
 
     # Restart cassandra without authentication & listening on localhost.
@@ -712,7 +695,7 @@ def create_unit_superuser_hard():
     for _ in backoff('superuser creation'):
         try:
             with connect() as session:
-                ensure_user(session, username, password, superuser=True)
+                ensure_user(session, username, pwhash, superuser=True)
                 break
         except Exception as x:
             print(str(x))
