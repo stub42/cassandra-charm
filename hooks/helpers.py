@@ -437,7 +437,10 @@ def get_cassandra_rackdc_file():
 
 def get_cassandra_pid_file():
     edition = get_cassandra_edition()
-    if edition == 'dse':
+    if edition == 'apache-snap':
+        home = get_snap_env('CASSANDRA_HOME')
+        pid_file = os.path.join(home, 'cassandra.pid')
+    elif edition == 'dse':
         pid_file = "/var/run/dse/dse.pid"
     else:
         pid_file = "/var/run/cassandra/cassandra.pid"
