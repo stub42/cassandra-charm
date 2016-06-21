@@ -644,7 +644,8 @@ def query(session, statement, consistency_level, args=None):
 
 
 def encrypt_password(password):
-    return bcrypt.hashpw(password.encode('ascii'), bcrypt.gensalt())
+    password = password.encode('ascii')
+    return bcrypt.hashpw(password, bcrypt.gensalt()).decode('ascii')
 
 
 @logged

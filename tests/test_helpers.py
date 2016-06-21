@@ -163,6 +163,10 @@ class TestHelpers(TestCaseBase):
         # Autostart wasn't messed with.
         self.assertFalse(autostart_disabled.called)
 
+    def test_encrypt_password(self):
+        self.assertEqual(type(helpers.encrypt_password('')), str)
+
+
     @patch('subprocess.Popen')
     def test_ensure_package_status(self, popen):
         for status in ['install', 'hold']:
