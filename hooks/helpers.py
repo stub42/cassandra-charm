@@ -645,7 +645,16 @@ def query(session, statement, consistency_level, args=None):
 
 def encrypt_password(password):
     password = password.encode('ascii')
-    return bcrypt.hashpw(password, bcrypt.gensalt()).decode('ascii')
+    # Java doesn't understand bcrypt 2b yet:
+    # cassandra.AuthenticationFailed: Failed to authenticate to localhost:
+    # code=0000 [Server error] message="java.lang.IllegalArgumentException:
+    # Invalid salt revision"
+    try:
+        salt = bcrypt.gensalt(prefix=b'2a')
+    except TypeError:
+        # Trusty bcrypt doesn't support prefix=
+        salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password, salt).decode('ascii')
 
 
 @logged
