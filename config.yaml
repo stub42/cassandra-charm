@@ -72,7 +72,7 @@ options:
             Oracle Java SE 8 Server JRE (eg. server-jre-8u60-linux-x64.tar.gz).
     edition:
         type: string
-        default: community
+        default: apache-snap
         description: >
             One of 'community', 'dse', or 'apache-snap'. 'community' uses the
             Apache Cassandra packages. 'dse' is for DataStax Enterprise.

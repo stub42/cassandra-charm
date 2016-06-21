@@ -837,10 +837,10 @@ def write_config(path, contents):
     in UTF-8 first. If using a snap edition, write to the snap config
     directory.
     '''
-    contents = contents.encode('UTF-8')
     if get_cassandra_edition() == 'apache-snap':
         set_snap_config_file(os.path.basename(path), contents)
     else:
+        contents = contents.encode('UTF-8')
         host.write_file(path, contents)
 
 

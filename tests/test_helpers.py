@@ -487,12 +487,12 @@ class TestHelpers(TestCaseBase):
 
     @patch('subprocess.Popen')
     @patch('helpers.get_cassandra_edition')
-    def test_write_config(self, get_edition, popen):
+    def test_write_config_snap(self, get_edition, popen):
         get_edition.return_value = 'apache-snap'
         popen.return_value.returncode = 0
         popen.return_value.communicate.return_value = ('', '')
         helpers.write_config('/some/path/to/config.yaml', 'some config')
-        expected = 'some config'.encode('UTF-8')
+        expected = 'some config'
         self.assertEqual(
             [call(['/snap/bin/cassandra.config-set', 'config.yaml'],
             stdin=subprocess.PIPE, universal_newlines=True),
