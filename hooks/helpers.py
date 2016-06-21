@@ -210,7 +210,7 @@ def ensure_database_directory(config_path):
     component = os.sep
     for p in absdir.split(os.sep)[1:-1]:
         component = os.path.join(component, p)
-        if not os.path.exists(p):
+        if not os.path.exists(component):
             host.mkdir(component)
     assert component == os.path.split(absdir)[0]
     if get_cassandra_edition() == 'apache-snap':
