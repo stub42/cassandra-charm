@@ -433,12 +433,8 @@ def configure_cassandra_rackdc():
                                dc={}
                                rack={}
                                ''').format(datacenter, rack)
-    if helpers.get_cassandra_edition() == 'apache-snap':
-        contents = rackdc_properties.encode('UTF-8')
-        helpers.set_snap_config_file('cassandra-rackdc.properties', contents)
-    else:
-        rackdc_path = helpers.get_cassandra_rackdc_file()
-        host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
+    rackdc_path = helpers.get_cassandra_rackdc_file()
+    helpers.write_config(rackdc_path, rackdc_properties)
 
 
 def needs_reset_auth_keyspace_replication():

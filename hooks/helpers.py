@@ -831,6 +831,18 @@ def num_nodes():
     return len(get_bootstrapped_ips())
 
 
+def write_config(path, contents):
+    '''Write out the config file at path with the provided contents, encoding
+    in UTF-8 first. If using a snap edition, write to the snap config
+    directory.
+    '''
+    contents = contents.encode('UTF-8')
+    if get_cassandra_edition() == 'apache-snap':
+        set_snap_config_file(os.path.basename(path), contents)
+    else:
+        host.write_file(path, contents)
+
+
 def read_cassandra_yaml():
     if get_cassandra_edition() == 'apache-snap':
         f = get_snap_config_file('cassandra.yaml')
@@ -843,12 +855,7 @@ def read_cassandra_yaml():
 
 @logged
 def write_cassandra_yaml(cassandra_yaml):
-    contents = yaml.safe_dump(cassandra_yaml).encode('UTF-8')
-    if get_cassandra_edition() == 'apache-snap':
-        set_snap_config_file('cassandra.yaml', contents)
-    else:
-        cassandra_yaml_path = get_cassandra_yaml_file()
-        host.write_file(cassandra_yaml_path, contents)
+    write_config(get_cassandra_yaml_file(), yaml.safe_dump(cassandra_yaml))
 
 
 def configure_cassandra_yaml(overrides={}, seeds=None):

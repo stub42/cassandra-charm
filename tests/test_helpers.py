@@ -472,6 +472,30 @@ class TestHelpers(TestCaseBase):
                          '/foo/cassandra-rackdc.properties')
 
     @patch('helpers.get_cassandra_edition')
+    def test_write_config(self, get_edition):
+        get_edition.return_value = 'whatever'
+        expected = 'some config'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'foo')
+            helpers.write_config(path, expected)
+            with open(path, 'r') as fp:
+                self.assertEqual(fp.read(), expected)
+
+    @patch('subprocess.Popen')
+    @patch('helpers.get_cassandra_edition')
+    def test_write_config(self, get_edition, popen):
+        get_edition.return_value = 'apache-snap'
+        popen.return_value.returncode = 0
+        popen.return_value.communicate.return_value = ('', '')
+        helpers.write_config('/some/path/to/config.yaml', 'some config')
+        expected = 'some config'.encode('UTF-8')
+        self.assertEqual(
+            [call(['/snap/bin/cassandra.config-set', 'config.yaml'],
+            stdin=subprocess.PIPE, universal_newlines=True),
+            call().communicate(input=expected)], popen.mock_calls)
+
+
+    @patch('helpers.get_cassandra_edition')
     def test_get_cassandra_pid_file(self, get_edition):
         get_edition.return_value = 'whatever'
         self.assertEqual(helpers.get_cassandra_pid_file(),
