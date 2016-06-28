@@ -137,6 +137,7 @@ def install_cassandra_snap():
             subprocess.check_call(['snap', 'install', 'cassandra'])
     else:
         # snap will exit 1 if the snap is already the newest version.
+        # Filed as http://pad.lv/1595064
         subprocess.call(['snap', 'refresh', 'cassandra'])
 
     plug = 'cassandra:mount-observe'
