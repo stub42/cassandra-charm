@@ -29,7 +29,6 @@ import sys
 import tempfile
 from textwrap import dedent
 import time
-import platform
 
 import bcrypt
 from cassandra import ConsistencyLevel
@@ -359,7 +358,7 @@ def get_cassandra_edition():
         hookenv.log('Unknown edition {!r}. Using community.'.format(edition),
                     ERROR)
         edition = 'community'
-    release = platform.dist()[2]
+    release = host.lsb_release()['DISTRIB_CODENAME']
     if edition == 'apache-snap' and release in ['precise', 'trusty']:
         msg = '{!r} cannot be used with {!r}. Using community.'
         msg = msg.format(release, edition)
