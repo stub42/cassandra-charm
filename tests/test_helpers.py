@@ -384,9 +384,9 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['edition'] = 'dse'
         self.assertEqual(helpers.get_jre(), 'oracle')
 
-    @patch('charmhelpers.core.host.lsb_release')
-    def test_get_cassandra_edition(self, lsb_release):
-        lsb_release.return_value = {'DISTRIB_CODENAME': 'trusty'}
+    @patch('platform.dist')
+    def test_get_cassandra_edition(self, dist):
+        dist.return_value = ('Ubuntu', '14.04', 'trusty')
 
         hookenv.config()['edition'] = 'community'
         self.assertEqual(helpers.get_cassandra_edition(), 'community')
@@ -396,16 +396,18 @@ class TestHelpers(TestCaseBase):
 
         self.assertFalse(hookenv.log.called)
 
+        hookenv.log.reset_mock()
         hookenv.config()['edition'] = 'typo'  # Default to community
         self.assertEqual(helpers.get_cassandra_edition(), 'community')
         hookenv.log.assert_any_call(ANY, hookenv.ERROR)  # Logs an error.
 
+        hookenv.log.reset_mock()
         hookenv.config()['edition'] = 'apache-snap'  # Default to community
         self.assertEqual(helpers.get_cassandra_edition(), 'community')
         hookenv.log.assert_any_call(ANY, hookenv.ERROR)  # Logs an error.
 
-        lsb_release.reset_mock()
-        lsb_release.return_value = {'DISTRIB_CODENAME': 'xenial'}
+        dist.reset_mock()
+        dist.return_value = ('Ubuntu', '16.04', 'xenial')
         hookenv.config()['edition'] = 'apache-snap'
         self.assertEqual(helpers.get_cassandra_edition(), 'apache-snap')
 
