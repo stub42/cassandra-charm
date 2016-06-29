@@ -653,10 +653,12 @@ def encrypt_password(password):
     # Invalid salt revision"
     try:
         salt = bcrypt.gensalt(prefix=b'2a')
+        # Newer versions of bcrypt return a bytestring.
+        return bcrypt.hashpw(password, salt).decode('ascii')
     except TypeError:
         # Trusty bcrypt doesn't support prefix=
         salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password, salt).decode('ascii')
+        return bcrypt.hashpw(password, salt)
 
 
 @logged
