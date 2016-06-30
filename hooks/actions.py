@@ -133,10 +133,8 @@ def authentication(func):
 
 @action
 def set_proxy():
-    config = hookenv.config()
-    if config['http_proxy']:
-        os.environ['http_proxy'] = config['http_proxy']
-        os.environ['https_proxy'] = config['http_proxy']
+    import hooks
+    hooks.set_proxy()
 
 
 @action

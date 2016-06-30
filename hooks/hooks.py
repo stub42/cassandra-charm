@@ -17,7 +17,14 @@
 from charmhelpers import fetch
 from charmhelpers.core import hookenv
 
-from actions import set_proxy
+
+def set_proxy():
+    import os
+    config = hookenv.config()
+    if config['http_proxy']:
+        os.environ['ftp_proxy'] = config['http_proxy']
+        os.environ['http_proxy'] = config['http_proxy']
+        os.environ['https_proxy'] = config['http_proxy']
 
 
 def bootstrap():
