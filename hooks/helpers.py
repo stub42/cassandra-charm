@@ -186,7 +186,7 @@ def get_all_database_directories():
             config['commitlog_directory'] or 'commitlog'),
         saved_caches_directory=get_database_directory(
             config['saved_caches_directory'] or 'saved_caches'))
-    if has_cassandra_version('3.0'):
+    if has_cassandra_version('2.1'):
         # Not yet configurable. Make configurable with Juju native storage.
         dirs['hints_directory'] = get_database_directory('hints')
     return dirs
@@ -334,7 +334,6 @@ def get_cassandra_version():
 def has_cassandra_version(minimum_ver):
     cassandra_version = get_cassandra_version()
     assert cassandra_version is not None, 'Cassandra package not yet installed'
-    hookenv.log('Installed version is %s, minimum version is %s' % (cassandra_version, minimum_ver))
     return LooseVersion(cassandra_version) >= LooseVersion(minimum_ver)
 
 
