@@ -566,7 +566,7 @@ def ensure_user(session, username, encrypted_password, superuser=False):
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
         hookenv.log('Creating user {}'.format(username))
-    if has_cassandra_version('2.2'):
+    if has_cassandra_version('2.1'):
         query(session,
               'INSERT INTO system_auth.roles '
               '(role, can_login, is_superuser, salted_hash) '
