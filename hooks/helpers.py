@@ -334,6 +334,7 @@ def get_cassandra_version():
 def has_cassandra_version(minimum_ver):
     cassandra_version = get_cassandra_version()
     assert cassandra_version is not None, 'Cassandra package not yet installed'
+    hookenv.log('Installed version is %s, minimum version is %s' % (cassandra_version, minimum_ver))
     return LooseVersion(cassandra_version) >= LooseVersion(minimum_ver)
 
 
@@ -469,6 +470,9 @@ def ensure_database_directories():
     ensure_database_directory(db_dirs['saved_caches_directory'])
     if 'hints_directory' in db_dirs:
         ensure_database_directory(db_dirs['hints_directory'])
+        hookenv.log('Should have created %s' % db_dirs['hints_directory'])
+    else:
+        hookenv.log('No hints_directory in db_dirs')
     for db_dir in db_dirs['data_file_directories']:
         ensure_database_directory(db_dir)
 
