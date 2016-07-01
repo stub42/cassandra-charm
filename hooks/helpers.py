@@ -322,7 +322,6 @@ def get_cassandra_service():
 def get_cassandra_version():
     if get_cassandra_edition() == 'dse':
         dse_ver = get_package_version('dse-full')
-        hookenv.log('dse-full package version %s' % (dse_ver,))
         if not dse_ver:
             return None
         elif LooseVersion(dse_ver) >= LooseVersion('5.0'):
@@ -472,9 +471,6 @@ def ensure_database_directories():
     ensure_database_directory(db_dirs['saved_caches_directory'])
     if 'hints_directory' in db_dirs:
         ensure_database_directory(db_dirs['hints_directory'])
-        hookenv.log('Should have created %s' % db_dirs['hints_directory'])
-    else:
-        hookenv.log('No hints_directory in db_dirs')
     for db_dir in db_dirs['data_file_directories']:
         ensure_database_directory(db_dir)
 
