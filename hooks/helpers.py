@@ -186,7 +186,7 @@ def get_all_database_directories():
             config['commitlog_directory'] or 'commitlog'),
         saved_caches_directory=get_database_directory(
             config['saved_caches_directory'] or 'saved_caches'))
-    if has_cassandra_version('2.1'):
+    if has_cassandra_version('3.0'):
         # Not yet configurable. Make configurable with Juju native storage.
         dirs['hints_directory'] = get_database_directory('hints')
     return dirs
@@ -322,8 +322,11 @@ def get_cassandra_service():
 def get_cassandra_version():
     if get_cassandra_edition() == 'dse':
         dse_ver = get_package_version('dse-full')
+        hookenv.log('dse-full package version %s' % (dse_ver,))
         if not dse_ver:
             return None
+        elif LooseVersion(dse_ver) >= LooseVersion('5.0'):
+            return '3.0'
         elif LooseVersion(dse_ver) >= LooseVersion('4.7'):
             return '2.1'
         else:
@@ -566,7 +569,7 @@ def ensure_user(session, username, encrypted_password, superuser=False):
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
         hookenv.log('Creating user {}'.format(username))
-    if has_cassandra_version('2.1'):
+    if has_cassandra_version('2.2'):
         query(session,
               'INSERT INTO system_auth.roles '
               '(role, can_login, is_superuser, salted_hash) '
