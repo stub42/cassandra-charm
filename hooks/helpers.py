@@ -324,6 +324,8 @@ def get_cassandra_version():
         dse_ver = get_package_version('dse-full')
         if not dse_ver:
             return None
+        elif LooseVersion(dse_ver) >= LooseVersion('5.0'):
+            return '3.0'
         elif LooseVersion(dse_ver) >= LooseVersion('4.7'):
             return '2.1'
         else:

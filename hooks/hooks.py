@@ -18,12 +18,22 @@ from charmhelpers import fetch
 from charmhelpers.core import hookenv
 
 
+def set_proxy():
+    import os
+    config = hookenv.config()
+    if config['http_proxy']:
+        os.environ['ftp_proxy'] = config['http_proxy']
+        os.environ['http_proxy'] = config['http_proxy']
+        os.environ['https_proxy'] = config['http_proxy']
+
+
 def bootstrap():
     try:
         import bcrypt     # NOQA: flake8
         import cassandra  # NOQA: flake8
     except ImportError:
         packages = ['python3-bcrypt', 'python3-cassandra']
+        set_proxy()
         fetch.configure_sources(update=True)
         fetch.apt_install(packages, fatal=True)
         import bcrypt     # NOQA: flake8
