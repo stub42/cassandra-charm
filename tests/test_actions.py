@@ -272,14 +272,17 @@ class TestActions(TestCaseBase):
         hookenv.log.assert_any_call('In an LXC. '
                                     'Leaving sysctl unchanged.')
 
+    @patch('helpers.ensure_cassandra_snap_installed')
     @patch('helpers.get_cassandra_packages')
     @patch('helpers.ensure_package_status')
     def test_ensure_cassandra_package_status(self, ensure_package_status,
-                                             get_cassandra_packages):
+                                             get_cassandra_packages,
+                                             ensure_snap_installed):
         get_cassandra_packages.return_value = sentinel.cassandra_packages
         actions.ensure_cassandra_package_status('')
         ensure_package_status.assert_called_once_with(
             sentinel.cassandra_packages)
+        ensure_snap_installed.assert_called_once_with()
 
     @patch('subprocess.check_call')
     @patch('helpers.get_jre')
