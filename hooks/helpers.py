@@ -473,7 +473,7 @@ def get_cassandra_packages():
     if edition == 'apache-snap':
         packages.add('snapd')
         return packages
-        
+
     if edition == 'dse':
         packages.add('dse-full')
     else:

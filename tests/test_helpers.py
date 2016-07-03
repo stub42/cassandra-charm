@@ -166,7 +166,6 @@ class TestHelpers(TestCaseBase):
     def test_encrypt_password(self):
         self.assertEqual(type(helpers.encrypt_password('')), str)
 
-
     @patch('subprocess.Popen')
     def test_ensure_package_status(self, popen):
         for status in ['install', 'hold']:
@@ -495,11 +494,11 @@ class TestHelpers(TestCaseBase):
         popen.return_value.communicate.return_value = ('', '')
         helpers.write_config('/some/path/to/config.yaml', 'some config')
         expected = 'some config'
-        self.assertEqual(
-            [call(['/snap/bin/cassandra.config-set', 'config.yaml'],
-            stdin=subprocess.PIPE, universal_newlines=True),
-            call().communicate(input=expected)], popen.mock_calls)
-
+        self.assertEqual([call(['/snap/bin/cassandra.config-set',
+                                'config.yaml'],
+                               stdin=subprocess.PIPE, universal_newlines=True),
+                          call().communicate(input=expected)],
+                         popen.mock_calls)
 
     @patch('helpers.get_cassandra_edition')
     def test_get_cassandra_pid_file(self, get_edition):
