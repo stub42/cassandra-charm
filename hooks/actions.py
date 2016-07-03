@@ -275,7 +275,9 @@ def reset_limits():
 @action
 def install_cassandra_packages():
     helpers.install_packages(helpers.get_cassandra_packages())
-    if helpers.get_jre() != 'oracle':
+    if helpers.get_cassandra_edition() == 'apache-snap':
+        helpers.install_cassandra_snap()
+    elif helpers.get_jre() != 'oracle':
         subprocess.check_call(['update-java-alternatives',
                                '--jre-headless',
                                '--set', 'java-1.8.0-openjdk-amd64'])
@@ -284,6 +286,7 @@ def install_cassandra_packages():
 @action
 def ensure_cassandra_package_status():
     helpers.ensure_package_status(helpers.get_cassandra_packages())
+    helpers.ensure_cassandra_snap_installed()
 
 
 def _fetch_oracle_jre():
@@ -359,6 +362,8 @@ def _install_oracle_jre_tarball(tarball):
 def install_oracle_jre():
     if helpers.get_jre() != 'oracle':
         return
+    if helpers.get_cassandra_edition() == 'apache-snap':
+        return
 
     tarball = _fetch_oracle_jre()
     _install_oracle_jre_tarball(tarball)
@@ -366,6 +371,9 @@ def install_oracle_jre():
 
 @action
 def emit_java_version():
+    if helpers.get_cassandra_edition() == 'apache-snap':
+        return
+
     # Log the version for posterity. Could be useful since Oracle JRE
     # security updates are not automated.
     version = subprocess.check_output(['java', '-version'],
@@ -424,7 +432,7 @@ def configure_cassandra_rackdc():
                                rack={}
                                ''').format(datacenter, rack)
     rackdc_path = helpers.get_cassandra_rackdc_file()
-    host.write_file(rackdc_path, rackdc_properties.encode('UTF-8'))
+    helpers.write_config(rackdc_path, rackdc_properties)
 
 
 def needs_reset_auth_keyspace_replication():

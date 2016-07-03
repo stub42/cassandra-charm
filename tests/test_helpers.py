@@ -163,6 +163,10 @@ class TestHelpers(TestCaseBase):
         # Autostart wasn't messed with.
         self.assertFalse(autostart_disabled.called)
 
+    def test_encrypt_password(self):
+        self.assertEqual(type(helpers.encrypt_password('')), str)
+
+
     @patch('subprocess.Popen')
     def test_ensure_package_status(self, popen):
         for status in ['install', 'hold']:
@@ -380,7 +384,10 @@ class TestHelpers(TestCaseBase):
         hookenv.config()['edition'] = 'dse'
         self.assertEqual(helpers.get_jre(), 'oracle')
 
-    def test_get_cassandra_edition(self):
+    @patch('charmhelpers.core.host.lsb_release')
+    def test_get_cassandra_edition(self, lsb_release):
+        lsb_release.return_value = {'DISTRIB_CODENAME': 'trusty'}
+
         hookenv.config()['edition'] = 'community'
         self.assertEqual(helpers.get_cassandra_edition(), 'community')
 
@@ -389,9 +396,20 @@ class TestHelpers(TestCaseBase):
 
         self.assertFalse(hookenv.log.called)
 
+        hookenv.log.reset_mock()
         hookenv.config()['edition'] = 'typo'  # Default to community
         self.assertEqual(helpers.get_cassandra_edition(), 'community')
         hookenv.log.assert_any_call(ANY, hookenv.ERROR)  # Logs an error.
+
+        hookenv.log.reset_mock()
+        hookenv.config()['edition'] = 'apache-snap'  # Default to community
+        self.assertEqual(helpers.get_cassandra_edition(), 'community')
+        hookenv.log.assert_any_call(ANY, hookenv.ERROR)  # Logs an error.
+
+        lsb_release.reset_mock()
+        lsb_release.return_value = {'DISTRIB_CODENAME': 'xenial'}
+        hookenv.config()['edition'] = 'apache-snap'
+        self.assertEqual(helpers.get_cassandra_edition(), 'apache-snap')
 
     @patch('helpers.get_cassandra_edition')
     def test_get_cassandra_service(self, get_edition):
@@ -458,6 +476,30 @@ class TestHelpers(TestCaseBase):
         get_cassandra_config_dir.return_value = '/foo'
         self.assertEqual(helpers.get_cassandra_rackdc_file(),
                          '/foo/cassandra-rackdc.properties')
+
+    @patch('helpers.get_cassandra_edition')
+    def test_write_config(self, get_edition):
+        get_edition.return_value = 'whatever'
+        expected = 'some config'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'foo')
+            helpers.write_config(path, expected)
+            with open(path, 'r') as fp:
+                self.assertEqual(fp.read(), expected)
+
+    @patch('subprocess.Popen')
+    @patch('helpers.get_cassandra_edition')
+    def test_write_config_snap(self, get_edition, popen):
+        get_edition.return_value = 'apache-snap'
+        popen.return_value.returncode = 0
+        popen.return_value.communicate.return_value = ('', '')
+        helpers.write_config('/some/path/to/config.yaml', 'some config')
+        expected = 'some config'
+        self.assertEqual(
+            [call(['/snap/bin/cassandra.config-set', 'config.yaml'],
+            stdin=subprocess.PIPE, universal_newlines=True),
+            call().communicate(input=expected)], popen.mock_calls)
+
 
     @patch('helpers.get_cassandra_edition')
     def test_get_cassandra_pid_file(self, get_edition):

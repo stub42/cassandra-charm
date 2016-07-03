@@ -125,6 +125,46 @@ def ensure_package_status(packages):
     dpkg.communicate(input=''.join(selections).encode('US-ASCII'))
 
 
+# FOR CHARMHELPERS
+@logged
+def install_cassandra_snap():
+    '''Ensure that the Cassandra snap is installed at the current revision.
+    '''
+    cmd = ['snap', 'list', 'cassandra']
+    output = subprocess.check_output(cmd, universal_newlines=True)
+    if 'cassandra' not in output:
+        with autostart_disabled(['snap.cassandra.cassandra']):
+            subprocess.check_call(['snap', 'install', 'cassandra'])
+    else:
+        # snap will exit 1 if the snap is already the newest version.
+        # Filed as http://pad.lv/1595064
+        subprocess.call(['snap', 'refresh', 'cassandra'])
+
+    plug = 'cassandra:mount-observe'
+    slot = 'ubuntu-core:mount-observe'
+    subprocess.check_call(['snap', 'connect', plug, slot])
+
+
+# FOR CHARMHELPERS
+@logged
+def ensure_cassandra_snap_installed():
+    '''Check if the cassandra snap is installed and raise RuntimeError if it is
+    not.
+    '''
+    cmd = ['snap', 'list', 'cassandra']
+    output = subprocess.check_output(cmd, universal_newlines=True)
+    if 'cassandra' not in output:
+        raise RuntimeError('Cassandra snap not installed.')
+
+
+def get_snap_env(envar):
+    '''Return the value of an environment variable present in the snap wrapper
+    scripts.
+    '''
+    cmd = ['/snap/bin/cassandra.env-get', envar]
+    return subprocess.check_output(cmd, universal_newlines=True).strip('\n')
+
+
 def get_seed_ips():
     '''Return the set of seed ip addresses.
 
@@ -149,7 +189,9 @@ def get_database_directory(config_path):
     '''
     import relations
     storage = relations.StorageRelation()
-    if storage.mountpoint:
+    if get_cassandra_edition() == 'apache-snap':
+        root = get_snap_env('SNAP_DATA')
+    elif storage.mountpoint:
         root = os.path.join(storage.mountpoint, 'cassandra')
     else:
         root = '/var/lib/cassandra'
@@ -169,10 +211,13 @@ def ensure_database_directory(config_path):
     component = os.sep
     for p in absdir.split(os.sep)[1:-1]:
         component = os.path.join(component, p)
-        if not os.path.exists(p):
+        if not os.path.exists(component):
             host.mkdir(component)
     assert component == os.path.split(absdir)[0]
-    host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o750)
+    if get_cassandra_edition() == 'apache-snap':
+        host.mkdir(absdir, owner='root', group='root', perms=0o750)
+    else:
+        host.mkdir(absdir, owner='cassandra', group='cassandra', perms=0o750)
     return absdir
 
 
@@ -277,6 +322,15 @@ def maybe_backup(path):
             host.write_file(backup_path, f.read(), perms=0o600)
 
 
+def get_snap_version(snap):
+    '''Get the version string for an installed snap.'''
+    cmd = ['snap', 'list', snap]
+    out = subprocess.check_output(cmd, universal_newlines=True)
+    match = re.search('\n{}\s*(\S*)'.format(snap), out)
+    if match:
+        return match.groups(0)[0]
+
+
 # FOR CHARMHELPERS
 def get_package_version(package):
     cache = fetch.apt_cache()
@@ -305,22 +359,34 @@ def get_jre():
 def get_cassandra_edition():
     config = hookenv.config()
     edition = config['edition'].lower()
-    if edition not in ('community', 'dse'):
+    if edition not in ('community', 'dse', 'apache-snap'):
         hookenv.log('Unknown edition {!r}. Using community.'.format(edition),
                     ERROR)
         edition = 'community'
+    release = host.lsb_release()['DISTRIB_CODENAME']
+    if edition == 'apache-snap' and release in ['precise', 'trusty']:
+        msg = '{!r} cannot be used with {!r}. Using community.'
+        msg = msg.format(release, edition)
+        hookenv.log(msg, ERROR)
+        edition = 'community'
+
     return edition
 
 
 def get_cassandra_service():
     '''Cassandra upstart service'''
-    if get_cassandra_edition() == 'dse':
+    if get_cassandra_edition() == 'apache-snap':
+        return 'snap.cassandra.cassandra'
+    elif get_cassandra_edition() == 'dse':
         return 'dse'
     return 'cassandra'
 
 
 def get_cassandra_version():
-    if get_cassandra_edition() == 'dse':
+    edition = get_cassandra_edition()
+    if edition == 'apache-snap':
+        return get_snap_version('cassandra')
+    elif edition == 'dse':
         dse_ver = get_package_version('dse-full')
         if not dse_ver:
             return None
@@ -340,10 +406,35 @@ def has_cassandra_version(minimum_ver):
 
 
 def get_cassandra_config_dir():
-    if get_cassandra_edition() == 'dse':
+    edition = get_cassandra_edition()
+    if edition == 'apache-snap':
+        return get_snap_env('CASSANDRA_CONF')
+    elif edition == 'dse':
         return '/etc/dse/cassandra'
     else:
         return '/etc/cassandra'
+
+
+def get_snap_config_file(filename):
+    '''Get the contents of the named configuration file from the current snap
+    data directory.
+    '''
+    cmd = ['/snap/bin/cassandra.config-get', filename]
+    return subprocess.check_output(cmd, universal_newlines=True)
+
+
+def set_snap_config_file(filename, contents):
+    '''Install a new copy of the configuration file with the provided contents
+    in the current snap data directory.
+    '''
+    cmd = ['/snap/bin/cassandra.config-set', filename]
+    cs = subprocess.Popen(cmd, stdin=subprocess.PIPE, universal_newlines=True)
+    _, err = cs.communicate(input=contents)
+    if err:
+        hookenv.log('Error calling {}:\n{}'.format(' '.join(cmd), err))
+    if cs.returncode != 0:
+        msg = '{} exited with code {}'.format(' '.join(cmd), cs.returncode)
+        raise RuntimeError(msg)
 
 
 def get_cassandra_yaml_file():
@@ -361,7 +452,10 @@ def get_cassandra_rackdc_file():
 
 def get_cassandra_pid_file():
     edition = get_cassandra_edition()
-    if edition == 'dse':
+    if edition == 'apache-snap':
+        home = get_snap_env('CASSANDRA_HOME')
+        pid_file = os.path.join(home, 'cassandra.pid')
+    elif edition == 'dse':
         pid_file = "/var/run/dse/dse.pid"
     else:
         pid_file = "/var/run/cassandra/cassandra.pid"
@@ -369,15 +463,21 @@ def get_cassandra_pid_file():
 
 
 def get_cassandra_packages():
-    edition = get_cassandra_edition()
-    if edition == 'dse':
-        packages = set(['dse-full'])
-    else:
-        packages = set(['cassandra'])  # 'cassandra-tools'
+    packages = set()
 
     packages.add('ntp')
     packages.add('run-one')
     packages.add('netcat')
+
+    edition = get_cassandra_edition()
+    if edition == 'apache-snap':
+        packages.add('snapd')
+        return packages
+        
+    if edition == 'dse':
+        packages.add('dse-full')
+    else:
+        packages.add('cassandra')  # 'cassandra-tools'
 
     jre = get_jre()
     if jre == 'oracle':
@@ -466,6 +566,7 @@ def ensure_database_directories():
     # Guard against changing perms on a running db. Although probably
     # harmless, it causes shutil.chown() to fail.
     assert not is_cassandra_running()
+
     db_dirs = get_all_database_directories()
     ensure_database_directory(db_dirs['commitlog_directory'])
     ensure_database_directory(db_dirs['saved_caches_directory'])
@@ -551,7 +652,19 @@ def query(session, statement, consistency_level, args=None):
 
 
 def encrypt_password(password):
-    return bcrypt.hashpw(password, bcrypt.gensalt())
+    password = password.encode('ascii')
+    # Java doesn't understand bcrypt 2b yet:
+    # cassandra.AuthenticationFailed: Failed to authenticate to localhost:
+    # code=0000 [Server error] message="java.lang.IllegalArgumentException:
+    # Invalid salt revision"
+    try:
+        salt = bcrypt.gensalt(prefix=b'2a')
+        # Newer versions of bcrypt return a bytestring.
+        return bcrypt.hashpw(password, salt).decode('ascii')
+    except TypeError:
+        # Trusty bcrypt doesn't support prefix=
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(password, salt)
 
 
 @logged
@@ -565,6 +678,7 @@ def ensure_user(session, username, encrypted_password, superuser=False):
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
         hookenv.log('Creating user {}'.format(username))
+
     if has_cassandra_version('2.2'):
         query(session,
               'INSERT INTO system_auth.roles '
@@ -611,7 +725,11 @@ def create_unit_superuser_hard():
 
 
 def get_cqlshrc_path():
-    return os.path.expanduser('~root/.cassandra/cqlshrc')
+    if get_cassandra_edition() == 'apache-snap':
+        base = get_cassandra_config_dir()
+        return os.path.join(base, 'cql/cqlshrc')
+    else:
+        return os.path.expanduser('~root/.cassandra/cqlshrc')
 
 
 def superuser_username():
@@ -674,7 +792,11 @@ def emit(*args, **kw):
 
 
 def nodetool(*cmd, timeout=120):
-    cmd = ['nodetool'] + [str(i) for i in cmd]
+    if get_cassandra_edition() == 'apache-snap':
+        nodetool_cmd = '/snap/bin/cassandra.nodetool'
+    else:
+        nodetool_cmd = 'nodetool'
+    cmd = [nodetool_cmd] + [str(i) for i in cmd]
     i = 0
     until = time.time() + timeout
     for _ in backoff('nodetool to work'):
@@ -712,24 +834,39 @@ def num_nodes():
     return len(get_bootstrapped_ips())
 
 
+def write_config(path, contents):
+    '''Write out the config file at path with the provided contents, encoding
+    in UTF-8 first. If using a snap edition, write to the snap config
+    directory.
+    '''
+    if get_cassandra_edition() == 'apache-snap':
+        set_snap_config_file(os.path.basename(path), contents)
+    else:
+        contents = contents.encode('UTF-8')
+        host.write_file(path, contents)
+
+
 def read_cassandra_yaml():
-    cassandra_yaml_path = get_cassandra_yaml_file()
-    with open(cassandra_yaml_path, 'rb') as f:
+    if get_cassandra_edition() == 'apache-snap':
+        f = get_snap_config_file('cassandra.yaml')
         return yaml.safe_load(f)
+    else:
+        cassandra_yaml_path = get_cassandra_yaml_file()
+        with open(cassandra_yaml_path, 'rb') as f:
+            return yaml.safe_load(f)
 
 
 @logged
 def write_cassandra_yaml(cassandra_yaml):
-    cassandra_yaml_path = get_cassandra_yaml_file()
-    host.write_file(cassandra_yaml_path,
-                    yaml.safe_dump(cassandra_yaml).encode('UTF-8'))
+    write_config(get_cassandra_yaml_file(), yaml.safe_dump(cassandra_yaml))
 
 
 def configure_cassandra_yaml(overrides={}, seeds=None):
-    cassandra_yaml_path = get_cassandra_yaml_file()
     config = hookenv.config()
 
-    maybe_backup(cassandra_yaml_path)  # Its comments may be useful.
+    if get_cassandra_edition() != 'apache-snap':
+        cassandra_yaml_path = get_cassandra_yaml_file()
+        maybe_backup(cassandra_yaml_path)  # Its comments may be useful.
 
     cassandra_yaml = read_cassandra_yaml()
 
@@ -786,6 +923,7 @@ def get_pid_from_file(pid_file):
 
 
 def is_cassandra_running():
+    edition = get_cassandra_edition()
     pid_file = get_cassandra_pid_file()
 
     try:
@@ -799,7 +937,12 @@ def is_cassandra_running():
             # is not running.
             os.kill(pid, 0)
 
-            if subprocess.call(["nodetool", "status"],
+            if edition == 'apache-snap':
+                # /snap/bin is not on PATH for the root user.
+                nodetool = '/snap/bin/cassandra.nodetool'
+            else:
+                nodetool = 'nodetool'
+            if subprocess.call([nodetool, "status"],
                                stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL) == 0:
                 hookenv.log(
