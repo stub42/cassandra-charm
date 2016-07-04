@@ -173,6 +173,12 @@ update the `system_auth` keyspace replication settings.
 
 # Contact Information
 
+## Charm
+
+- [Cassandra Charm homepage](https://launchpad.net/cassandra-charm/)
+- [Source Code](https://code.launchpad.net/~cassandra-charmers/cassandra-charm/+git/cassandra-charm)
+- [Bug Reports](https://bugs.launchpad.net/cassandra-charm/)
+
 ## Cassandra
 
 - [Apache Cassandra homepage](http://cassandra.apache.org/)
