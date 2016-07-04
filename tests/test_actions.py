@@ -272,13 +272,31 @@ class TestActions(TestCaseBase):
         hookenv.log.assert_any_call('In an LXC. '
                                     'Leaving sysctl unchanged.')
 
+    @patch('helpers.get_cassandra_edition')
     @patch('helpers.ensure_cassandra_snap_installed')
     @patch('helpers.get_cassandra_packages')
     @patch('helpers.ensure_package_status')
     def test_ensure_cassandra_package_status(self, ensure_package_status,
                                              get_cassandra_packages,
-                                             ensure_snap_installed):
+                                             ensure_snap_installed,
+                                             get_cassandra_edition):
         get_cassandra_packages.return_value = sentinel.cassandra_packages
+        get_cassandra_edition.return_value = 'community'
+        actions.ensure_cassandra_package_status('')
+        ensure_package_status.assert_called_once_with(
+            sentinel.cassandra_packages)
+        self.assertFalse(ensure_snap_installed.called)
+
+    @patch('helpers.get_cassandra_edition')
+    @patch('helpers.ensure_cassandra_snap_installed')
+    @patch('helpers.get_cassandra_packages')
+    @patch('helpers.ensure_package_status')
+    def test_ensure_cassandra_package_status_snap(self, ensure_package_status,
+                                                  get_cassandra_packages,
+                                                  ensure_snap_installed,
+                                                  get_cassandra_edition):
+        get_cassandra_packages.return_value = sentinel.cassandra_packages
+        get_cassandra_edition.return_value = 'apache-snap'
         actions.ensure_cassandra_package_status('')
         ensure_package_status.assert_called_once_with(
             sentinel.cassandra_packages)

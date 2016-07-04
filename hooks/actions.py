@@ -286,7 +286,8 @@ def install_cassandra_packages():
 @action
 def ensure_cassandra_package_status():
     helpers.ensure_package_status(helpers.get_cassandra_packages())
-    helpers.ensure_cassandra_snap_installed()
+    if helpers.get_cassandra_edition() == 'apache-snap':
+        helpers.ensure_cassandra_snap_installed()
 
 
 def _fetch_oracle_jre():
