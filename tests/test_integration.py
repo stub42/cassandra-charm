@@ -42,7 +42,6 @@ from cassandra.cluster import Cluster, NoHostAvailable
 from cassandra.query import SimpleStatement
 import yaml
 
-import helpers
 from testing.amuletfixture import AmuletFixture
 
 
@@ -121,8 +120,8 @@ class TestDeploymentBase(unittest.TestCase):
         if username is None or password is None:
             # Get some valid credentials - unit's superuser account will do.
             unit = sorted(status['services']['cassandra']['units'].keys())[0]
-            cqlshrc_path = helpers.get_cqlshrc_path()
             cqlshrc = configparser.ConfigParser(interpolation=None)
+            cqlshrc_path = os.path.expanduser('~root/.cassandra/cqlshrc')
             cqlshrc.read_string(
                 self.deployment.sentry[unit].file_contents(cqlshrc_path))
             username = cqlshrc['authentication']['username']
