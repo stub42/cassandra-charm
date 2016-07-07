@@ -148,6 +148,7 @@ coverage: lint
 clean:
 	rm -rf .venv? tests/.venv? .stamp-* coverage .coverage
 	find . -name __pycache__ -type d | xargs rm -rf
+	find . -name \*~ -type f | xargs rm -f
 
 
 # Attempt to diagnose environment for test failures.

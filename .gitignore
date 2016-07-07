@@ -1,6 +1,9 @@
 *~
-*.pyc
 __pycache__/
-.venv3/
+.venv?/
 .coverage
-.stamp*
+revision
+*.pyc
+.stamp-*
+.coverage
+coverage
