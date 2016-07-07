@@ -589,8 +589,8 @@ class Test21Deployment(Test1UnitDeployment):
         install_keys=yaml.safe_dump([None, None, None]))
 
 
-class Test30Deployment(Test1UnitDeployment):
-    """Tests run on a single node Apache Cassandra 3.0 cluster.
+class Test22Deployment(Test1UnitDeployment):
+    """Tests run on a single node Apache Cassandra 2.2 cluster.
     """
     rf = 1
     test_config = dict(
@@ -598,7 +598,7 @@ class Test30Deployment(Test1UnitDeployment):
         install_sources=yaml.safe_dump([
             'ppa:stub/cassandra',
             'ppa:openjdk-r/ppa',
-            'deb http://www.apache.org/dist/cassandra/debian 30x main']),
+            'deb http://www.apache.org/dist/cassandra/debian 22x main']),
         install_keys=yaml.safe_dump([None, None, None]))
 
 

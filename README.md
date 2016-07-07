@@ -14,14 +14,28 @@ See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 # Editions
 
 This charm supports Apache Cassandra 2.0, 2.1, 2.2 & 3.0, and
-Datastax Enterprise 4.7 & 4.8. The default is Apache Cassandra 2.2.
+Datastax Enterprise 4.7, 4.8 & 5.0. The default is Apache Cassandra 3.0.
 
-To use Apache Cassandra 2.0, specify the Apache Cassandra 2.0 archive source
-in the `install_sources` config setting when deploying.
+To use a particular Apache Cassandra release, specify the relevant
+deb archive in in the `install_sources` config setting when deploying.
+
+```yaml
+    install_sources:
+      - deb http://www.apache.org/dist/cassandra/debian 22x main
+      - ppa:openjdk-r/ppa   # For OpenJDK 8
+      - ppa:stub/cassandra  # For Python driver
+```
 
 To use Datastax Enterprise, set the `edition` config setting to `dse`
 and the Datastax Enterprise archive URL in `install_sources` (including your
 username and password).
+
+```yaml
+    install_sources:
+      - deb http://un:pw@debian.datastax.com/enterprise stable main
+      - ppa:openjdk-r/ppa   # For OpenJDK 8
+      - ppa:stub/cassandra  # For Python driver
+```
 
 
 # Deployment

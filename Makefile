@@ -99,11 +99,11 @@ Test21Deployment: deps
 	AMULET_TIMEOUT=5400 \
 	$(NOSETESTS) tests.test_integration:Test21Deployment 2>&1 | ts
 
-30test: unittest Test30Deployment
-Test30Deployment: deps
+22test: unittest Test22Deployment
+Test22Deployment: deps
 	date
 	AMULET_TIMEOUT=5400 \
-	$(NOSETESTS) tests.test_integration:Test30Deployment 2>&1 | ts
+	$(NOSETESTS) tests.test_integration:Test22Deployment 2>&1 | ts
 			
 3test: unittest Test3UnitDeployment
 Test3UnitDeployment: deps
@@ -118,7 +118,7 @@ TestAllowAllAuthenticatorDeployment: deps
 	$(NOSETESTS) \
 	tests.test_integration:TestAllowAllAuthenticatorDeployment 2>&1 | ts
 
-# Place a copy of the Oracle Java SE 7 Server Runtime tarball in ./lib
+# Place a copy of the Oracle Java SE 8 Server Runtime tarball in ./lib
 # to run these tests.
 jretest: unittest
 	AMULET_TIMEOUT=5400 \

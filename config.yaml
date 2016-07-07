@@ -35,7 +35,7 @@ options:
             If you are using Datastax Enterprise, you will need to
             override one defaults with your own username and password.
         default: |
-            - deb http://www.apache.org/dist/cassandra/debian 22x main
+            - deb http://www.apache.org/dist/cassandra/debian 30x main
             - ppa:openjdk-r/ppa   # For OpenJDK 8
             - ppa:stub/cassandra  # For Python driver
         #   - deb http://debian.datastax.com/community stable main
