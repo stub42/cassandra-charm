@@ -22,6 +22,7 @@ from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import log, WARNING
 from charmhelpers.core.services.helpers import RelationContext
 
+import helpers
 from coordinator import coordinator
 
 
@@ -35,6 +36,9 @@ class PeerRelation(RelationContext):
         if coordinator.relid is not None or hookenv.is_leader():
             return True
         return False
+
+    def provide_data(self, remote_service, service_ready):
+        return dict(listen_ip=helpers.listen_ip_address())
 
 
 # FOR CHARMHELPERS (if we can integrate Juju 1.24 storage too)

@@ -1,3 +1,5 @@
+# vim:filetype=yaml sw=4
+#
 # Copyright 2015 Canonical Ltd.
 #
 # This file is part of the Cassandra Charm for Juju.
@@ -237,6 +239,13 @@ options:
         type: int
         default: 9160
         description: Thrift protocol port for legacy clients.
+    rpc_interface:
+        type: string
+        default: ""
+        description: >
+            Network interface used for client connections. Must correspond
+            to a single IP address. By default, the unit's public IP address
+            is used.
     storage_port:
         type: int
         default: 7000
@@ -246,6 +255,13 @@ options:
         default: 7001
         description: >
             Cluster secure communication port. TODO: Unused. configure SSL.
+    listen_interface:
+        type: string
+        default: ""
+        description: >
+            Network interface used for connecting to other Cassandra nodes.
+            Must correspond to a single IP address. By default, the unit's
+            public IP address is used.
     authenticator:
         type: string
         default: PasswordAuthenticator

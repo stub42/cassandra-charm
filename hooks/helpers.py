@@ -35,6 +35,7 @@ from cassandra import ConsistencyLevel
 import cassandra.auth
 import cassandra.cluster
 import cassandra.query
+import netifaces
 import yaml
 
 from charmhelpers.core import hookenv, host
@@ -771,7 +772,7 @@ def superuser_credentials():
     cqlshrc['authentication']['username'] = username
     cqlshrc['authentication']['password'] = password
     cqlshrc.setdefault('connection', {})
-    cqlshrc['connection']['hostname'] = hookenv.unit_public_ip()
+    cqlshrc['connection']['hostname'] = rpc_broadcast_ip_address()
     if get_cassandra_version().startswith('2.0'):
         cqlshrc['connection']['port'] = str(config['rpc_port'])
     else:
@@ -887,10 +888,15 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     hookenv.log('Configuring seeds as {!r}'.format(seeds), DEBUG)
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
-    cassandra_yaml['listen_address'] = hookenv.unit_private_ip()
-    cassandra_yaml['rpc_address'] = '0.0.0.0'
-    if not get_cassandra_version().startswith('2.0'):
-        cassandra_yaml['broadcast_rpc_address'] = hookenv.unit_public_ip()
+    cassandra_yaml['listen_address'] = listen_ip_address()
+    if config['rpc_interface']:
+        cassandra_yaml['rpc_address'] = rpc_broadcast_ip_address()
+    else:
+        # If no specific interface, we listen on all interfaces.
+        cassandra_yaml['rpc_address'] = '0.0.0.0'
+        if not get_cassandra_version().startswith('2.0'):
+            rpc_addr = rpc_broadcast_ip_address()
+            cassandra_yaml['broadcast_rpc_address'] = rpc_addr
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)
@@ -1033,16 +1039,15 @@ def get_bootstrapped():
 
 
 def get_bootstrapped_ips():
-    return set([unit_to_ip(unit) for unit in get_bootstrapped()])
+    return set([unit_to_listen_ip(unit) for unit in get_bootstrapped()])
 
 
-def unit_to_ip(unit):
+def unit_to_listen_ip(unit):
     if unit is None or unit == hookenv.local_unit():
-        return hookenv.unit_private_ip()
+        return listen_ip_address()
     elif coordinator.relid:
-        pa = hookenv.relation_get(rid=coordinator.relid,
-                                  unit=unit).get('private-address')
-        return hookenv._ensure_ip(pa)
+        return hookenv.relation_get(rid=coordinator.relid,
+                                    unit=unit).get('listen_ip')
     else:
         return None
 
@@ -1181,7 +1186,7 @@ def peer_relid():
 @logged
 def set_active():
     '''Set happy state'''
-    if hookenv.unit_private_ip() in get_seed_ips():
+    if listen_ip_address() in get_seed_ips():
         msg = 'Live seed'
     else:
         msg = 'Live node'
@@ -1225,3 +1230,40 @@ def update_hosts_file(hosts_file, hosts_map):
 
     os.rename(tmpfile.name, hosts_file)
     os.chmod(hosts_file, 0o644)
+
+
+def rpc_broadcast_ip_address():
+    config = hookenv.config()
+    return (interface_to_ip(config['rpc_interface']) or
+            hookenv.unit_public_ip())
+
+
+def listen_ip_address():
+    config = hookenv.config()
+    return (interface_to_ip(config['listen_interface']) or
+            hookenv.unit_private_ip())
+
+
+def interface_to_ip(interface):
+    '''The IP address for interface, or None.
+
+    Also returns None if there are multiple IP addresses.
+    '''
+    if interface not in netifaces.interfaces():
+        hookenv.log('No interface {}'.format(interface), ERROR)
+        return None
+    full = netifaces.ifaddresses(interface)
+    if full.get(netifaces.AF_INET) and full.get(netifaces.AF_INET6):
+        hookenv.log('Interface {} has both IPv4 and IPv6 addresses'
+                    ''.format(interface), ERROR)
+        return None
+    if netifaces.AF_INET in full:
+        addrs = full[netifaces.AF_INET]
+    else:
+        addrs = full[netifaces.AF_INET6]
+    addrs = set(filter(None, (a.get('addr') for a in addrs)))
+    if len(addrs) != 1:
+        hookenv.log('Interface {} has {} IP addresses'
+                    ''.format(interface, len(addrs)), ERROR)
+        return None
+    return addrs.pop()

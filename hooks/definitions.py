@@ -39,7 +39,7 @@ def get_service_definitions():
                          actions.preinstall,
                          actions.emit_meminfo,
                          actions.revert_unchangeable_config,
-                         actions.store_unit_private_ip,
+                         actions.store_ip_addresses,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
                          actions.swapoff,
@@ -64,7 +64,8 @@ def get_service_definitions():
 
              required_data=[relations.StorageRelation(),
                             relations.PeerRelation()],
-             provided_data=[relations.StorageRelation()],
+             provided_data=[relations.StorageRelation(),
+                            relations.PeerRelation()],
              data_ready=[actions.configure_firewall,
                          actions.update_etc_hosts,
                          actions.maintain_seeds,

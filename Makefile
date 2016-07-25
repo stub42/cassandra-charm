@@ -199,7 +199,8 @@ venv3: packages .stamp-venv3
 	# by the charm.
 	$(PIP) install bcrypt cassandra-driver blist
 	$(PIP) install --upgrade -I nose flake8
-	$(PIP) install --upgrade coverage amulet mock juju-deployer juju-wait
+	$(PIP) install --upgrade \
+	    coverage amulet mock juju-deployer juju-wait netifaces
 
 	echo 'nosetests:' `which nosetests`
 	echo 'flake8:' `which flake8`
