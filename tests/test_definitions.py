@@ -46,9 +46,7 @@ class TestDefinitions(TestCaseBase):
         config = hookenv.config()
         defs = definitions.get_service_definitions()
         expected_ports = set([config['rpc_port'],
-                              config['native_transport_port'],
-                              config['storage_port'],
-                              config['ssl_storage_port']])
+                              config['native_transport_port']])
         opened_ports = set(chain(*(d.get('ports', []) for d in defs)))
         self.assertSetEqual(opened_ports, expected_ports)
 

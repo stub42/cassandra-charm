@@ -59,10 +59,8 @@ def get_service_definitions():
              # the unauthenticated replication ports is protected via
              # ufw firewall rules. We do not open the JMX port, although
              # we could since it is similarly protected by ufw.
-             ports=[config['rpc_port'],               # Thrift clients
-                    config['native_transport_port'],  # Native clients.
-                    config['storage_port'],           # Plaintext replication
-                    config['ssl_storage_port']],      # Encrypted replication.
+             ports=[config['rpc_port'],                # Thrift clients
+                    config['native_transport_port']],  # Native clients.
 
              required_data=[relations.StorageRelation(),
                             relations.PeerRelation()],
