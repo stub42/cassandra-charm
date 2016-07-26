@@ -64,8 +64,6 @@ SHELL=bash -o pipefail
 deps: packages venv3
 
 lint: deps
-	date
-	free --human
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402,E265 \
@@ -81,6 +79,7 @@ unittest: lint
 	@echo OK: Unit tests pass `date`
 
 test: unittest
+	date
 	AMULET_TIMEOUT=3600 \
 	$(NOSETESTS) tests.test_integration
 	
@@ -174,7 +173,7 @@ packages: .stamp-packages
 	# Install bootstrap debs, and Python packages used by the charm
 	# to ensure versions match.
 	sudo add-apt-repository -y ppa:stub/juju
-	sudo add-apt-repository -y ppa:stub/cassandra
+	sudo add-apt-repository -y ppa:cassandra-charmers/stable
 	sudo apt-get update
 	sudo apt-get install -y \
 	    python3 python3-pip python3-apt python3-dev python-virtualenv \

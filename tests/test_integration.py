@@ -529,7 +529,7 @@ class TestDSEDeployment(Test1UnitDeployment):
     test_config = dict(
         edition='DSE',  # Forces Oracle JRE
         install_sources=yaml.safe_dump([os.environ.get('DSE_SOURCE'),
-                                        'ppa:stub/cassandra']),
+                                        'ppa:cassandra-charmers/stable']),
         install_keys=yaml.safe_dump([None, None]),
         private_jre_url=get_jre_url())
 
@@ -570,7 +570,7 @@ class Test20Deployment(Test1UnitDeployment):
     test_config = dict(
         edition='community',
         install_sources=yaml.safe_dump([
-            'ppa:stub/cassandra',
+            'ppa:cassandra-charmers/stable',
             'ppa:openjdk-r/ppa',
             'deb http://www.apache.org/dist/cassandra/debian 20x main']),
         install_keys=yaml.safe_dump([None, None, None]))
@@ -583,7 +583,7 @@ class Test21Deployment(Test1UnitDeployment):
     test_config = dict(
         edition='community',
         install_sources=yaml.safe_dump([
-            'ppa:stub/cassandra',
+            'ppa:cassandra-charmers/stable',
             'ppa:openjdk-r/ppa',
             'deb http://www.apache.org/dist/cassandra/debian 21x main']),
         install_keys=yaml.safe_dump([None, None, None]))
@@ -596,7 +596,7 @@ class Test22Deployment(Test1UnitDeployment):
     test_config = dict(
         edition='community',
         install_sources=yaml.safe_dump([
-            'ppa:stub/cassandra',
+            'ppa:cassandra-charmers/stable',
             'ppa:openjdk-r/ppa',
             'deb http://www.apache.org/dist/cassandra/debian 22x main']),
         install_keys=yaml.safe_dump([None, None, None]))
