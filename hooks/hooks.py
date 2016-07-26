@@ -29,15 +29,17 @@ def set_proxy():
 
 def bootstrap():
     try:
-        import bcrypt     # NOQA: flake8
-        import cassandra  # NOQA: flake8
+        import bcrypt     # NOQA
+        import cassandra  # NOQA
+        import netifaces  # NOQA
     except ImportError:
-        packages = ['python3-bcrypt', 'python3-cassandra']
+        packages = ['python3-bcrypt', 'python3-cassandra', 'python3-netifaces']
         set_proxy()
         fetch.configure_sources(update=True)
         fetch.apt_install(packages, fatal=True)
-        import bcrypt     # NOQA: flake8
-        import cassandra  # NOQA: flake8
+        import bcrypt     # NOQA
+        import cassandra  # NOQA
+        import netifaces  # NOQA
 
 
 def default_hook():

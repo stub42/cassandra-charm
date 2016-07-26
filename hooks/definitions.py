@@ -39,7 +39,7 @@ def get_service_definitions():
                          actions.preinstall,
                          actions.emit_meminfo,
                          actions.revert_unchangeable_config,
-                         actions.store_unit_private_ip,
+                         actions.store_ip_addresses,
                          actions.add_implicit_package_signing_keys,
                          actions.configure_sources,
                          actions.swapoff,
@@ -59,14 +59,13 @@ def get_service_definitions():
              # the unauthenticated replication ports is protected via
              # ufw firewall rules. We do not open the JMX port, although
              # we could since it is similarly protected by ufw.
-             ports=[config['rpc_port'],               # Thrift clients
-                    config['native_transport_port'],  # Native clients.
-                    config['storage_port'],           # Plaintext replication
-                    config['ssl_storage_port']],      # Encrypted replication.
+             ports=[config['rpc_port'],                # Thrift clients
+                    config['native_transport_port']],  # Native clients.
 
              required_data=[relations.StorageRelation(),
                             relations.PeerRelation()],
-             provided_data=[relations.StorageRelation()],
+             provided_data=[relations.StorageRelation(),
+                            relations.PeerRelation()],
              data_ready=[actions.configure_firewall,
                          actions.update_etc_hosts,
                          actions.maintain_seeds,

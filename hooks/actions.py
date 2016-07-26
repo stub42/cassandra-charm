@@ -53,8 +53,10 @@ RESTART_REQUIRED_KEYS = set([
     'saved_caches_directory',
     'storage_port',
     'ssl_storage_port',
+    'listen_interface',
     'rpc_port',
     'native_transport_port',
+    'rpc_interface',
     'partitioner',
     'num_tokens',
     'max_heap_size',
@@ -476,9 +478,10 @@ def reset_auth_keyspace_replication():
 
 
 @action
-def store_unit_private_ip():
+def store_ip_addresses():
     '''Store the unit's private ip address, so we can tell if it changes.'''
-    hookenv.config()['unit_private_ip'] = hookenv.unit_private_ip()
+    hookenv.config()['_rpc_addr'] = helpers.rpc_broadcast_ip_address()
+    hookenv.config()['_listen_addr'] = helpers.listen_ip_address()
 
 
 def needs_restart():
@@ -500,7 +503,7 @@ def needs_restart():
     config = hookenv.config()
 
     # If our IP address has changed, we need to restart.
-    if config.changed('unit_private_ip'):
+    if config.changed('_rpc_addr') or config.changed('_listen_addr'):
         helpers.status_set('waiting', 'IP address changed. '
                            'Waiting for restart permission.')
         return True
@@ -530,7 +533,7 @@ def needs_restart():
         old_seeds = set(config.previous('configured_seeds') or [])
         changed = old_seeds.symmetric_difference(new_seeds)
         # We don't care about the local node in the changes.
-        changed.discard(hookenv.unit_private_ip())
+        changed.discard(helpers.listen_ip_address())
         if changed:
             helpers.status_set(hookenv.status_get()[0],
                                'Updated seeds {!r}. '
@@ -717,7 +720,7 @@ def _publish_database_relation(relid, superuser):
     config = hookenv.config()
     hookenv.relation_set(relid,
                          username=username, password=password,
-                         host=hookenv.unit_public_ip(),
+                         host=helpers.rpc_broadcast_ip_address(),
                          native_transport_port=config['native_transport_port'],
                          rpc_port=config['rpc_port'],
                          cluster_name=config['cluster_name'],
@@ -797,8 +800,8 @@ def configure_firewall():
 
     # Rules for peers
     for relinfo in hookenv.relations_of_type('cluster'):
-        if relinfo['private-address']:
-            pa = hookenv._ensure_ip(relinfo['private-address'])
+        if relinfo.get('listen_ip'):
+            pa = relinfo['listen_ip']
             for port in peer_ports:
                 desired_rules.add((pa, 'any', port))
     # Rules for admin connections. We allow database-admin relations access
@@ -899,7 +902,7 @@ def maintain_seeds():
 
     # If there are no seeds or bootstrapped nodes, start with the leader. Us.
     if len(seed_ips) == 0:
-        seed_ips.add(hookenv.unit_private_ip())
+        seed_ips.add(helpers.listen_ip_address())
 
     hookenv.log('Updated seeds == {!r}'.format(seed_ips), DEBUG)
 
@@ -993,7 +996,7 @@ def request_unit_superuser():
 @action
 def update_etc_hosts():
     hostname = socket.gethostname()
-    addr = hookenv.unit_private_ip()
+    addr = helpers.listen_ip_address()
     hosts_map = {addr: hostname}
     # only need to add myself to /etc/hosts
     helpers.update_hosts_file('/etc/hosts', hosts_map)

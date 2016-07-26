@@ -34,6 +34,9 @@ else
     PYVER := 3.5
 endif
 
+CHARM_STORE_URL := cs:~cassandra-charmers/cassandra
+REPO := git+ssh://git.launchpad.net/cassandra-charm
+
 
 # /!\ Ensure that errors early in pipes cause failures, rather than
 # overridden by the last stage of the pipe. cf. 'test.py | ts'
@@ -61,8 +64,6 @@ SHELL=bash -o pipefail
 deps: packages venv3
 
 lint: deps
-	date
-	free --human
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402,E265 \
@@ -78,6 +79,7 @@ unittest: lint
 	@echo OK: Unit tests pass `date`
 
 test: unittest
+	date
 	AMULET_TIMEOUT=3600 \
 	$(NOSETESTS) tests.test_integration
 	
@@ -171,7 +173,7 @@ packages: .stamp-packages
 	# Install bootstrap debs, and Python packages used by the charm
 	# to ensure versions match.
 	sudo add-apt-repository -y ppa:stub/juju
-	sudo add-apt-repository -y ppa:stub/cassandra
+	sudo add-apt-repository -y ppa:cassandra-charmers/stable
 	sudo apt-get update
 	sudo apt-get install -y \
 	    python3 python3-pip python3-apt python3-dev python-virtualenv \
@@ -196,7 +198,8 @@ venv3: packages .stamp-venv3
 	# by the charm.
 	$(PIP) install bcrypt cassandra-driver blist
 	$(PIP) install --upgrade -I nose flake8
-	$(PIP) install --upgrade coverage amulet mock juju-deployer juju-wait
+	$(PIP) install --upgrade \
+	    coverage amulet mock juju-deployer juju-wait netifaces
 
 	echo 'nosetests:' `which nosetests`
 	echo 'flake8:' `which flake8`
@@ -223,3 +226,33 @@ sync:
 	#@python .charm_helpers_sync.py \
 	#	-c lib/testcharms/testclient/charm-helpers.yaml
 	@rm .charm_helpers_sync.py
+
+
+publish-devel:
+	@if [ -n "`git status --porcelain`" ]; then \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    echo '!!! There are uncommitted changes !!!'; \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    false; \
+	fi
+	git clean -fdx
+	export rev=`charm push . $(CHARM_STORE_URL) 2>&1 \
+                | tee /dev/tty | grep url: | cut -f 2 -d ' '` \
+	&& git tag -f -m "$$rev" `echo $$rev | tr -s '~:/' -` \
+	&& git push --tags $(REPO) \
+	&& charm publish -c development $$rev
+
+
+publish-stable:
+	@if [ -n "`git status --porcelain`" ]; then \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    echo '!!! There are uncommitted changes !!!'; \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    false; \
+	fi
+	git clean -fdx
+	export rev=`charm push . $(CHARM_STORE_URL) 2>&1 \
+                | tee /dev/tty | grep url: | cut -f 2 -d ' '` \
+	&& git tag -f -m "$$rev" `echo $$rev | tr -s '~:/' -` \
+	&& git push --tags $(REPO) \
+	&& charm publish -c stable $$rev

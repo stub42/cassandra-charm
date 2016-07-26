@@ -1,3 +1,5 @@
+# vim:filetype=yaml sw=4
+#
 # Copyright 2015 Canonical Ltd.
 #
 # This file is part of the Cassandra Charm for Juju.
@@ -37,7 +39,7 @@ options:
         default: |
             - deb http://www.apache.org/dist/cassandra/debian 30x main
             - ppa:openjdk-r/ppa   # For OpenJDK 8
-            - ppa:stub/cassandra  # For Python driver
+            - ppa:cassandra-charmers/stable  # For Python driver
         #   - deb http://debian.datastax.com/community stable main
         #   DSE requires you to register and add your username/password here.
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
@@ -47,8 +49,8 @@ options:
             charm-helpers standard listing of package install source
             signing keys, corresponding to install_sources.
         default: |
-            - null  # ppa:stub/cassandra signing key added automatically.
             - null  # Apache package signing key added automatically.
+            - null  # PPA package signing key added automatically.
             - null  # PPA package signing key added automatically.
             # - null  # DataStack package signing key added automatically.
     http_proxy:
@@ -237,6 +239,13 @@ options:
         type: int
         default: 9160
         description: Thrift protocol port for legacy clients.
+    rpc_interface:
+        type: string
+        default: ""
+        description: >
+            Network interface used for client connections. Must correspond
+            to a single IP address. By default, the unit's public IP address
+            is used.
     storage_port:
         type: int
         default: 7000
@@ -246,6 +255,13 @@ options:
         default: 7001
         description: >
             Cluster secure communication port. TODO: Unused. configure SSL.
+    listen_interface:
+        type: string
+        default: ""
+        description: >
+            Network interface used for connecting to other Cassandra nodes.
+            Must correspond to a single IP address. By default, the unit's
+            public IP address is used.
     authenticator:
         type: string
         default: PasswordAuthenticator

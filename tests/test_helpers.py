@@ -29,6 +29,7 @@ from unittest.mock import ANY, call, MagicMock, patch, sentinel
 
 from cassandra import AuthenticationFailed, ConsistencyLevel
 from cassandra.cluster import NoHostAvailable
+import netifaces
 import yaml
 
 from charmhelpers import fetch
@@ -1493,6 +1494,70 @@ class TestHelpers(TestCaseBase):
             m = {'10.0.1.3': 'existing'}
             helpers.update_hosts_file(f.name, m)
             self.assertEqual(new.strip(), open(f.name, 'r').read().strip())
+
+
+@patch('netifaces.ifaddresses')
+@patch('netifaces.interfaces')
+@patch('charmhelpers.core.hookenv.log')
+class TestInterfaceToIp(unittest.TestCase):
+
+    def test_ipv4(self, log, interfaces, ifaddresses):
+        interfaces.return_value = [sentinel.interface]
+        ifaddresses.return_value = {
+            netifaces.AF_INET: [{'addr': sentinel.v4_addr}],
+        }
+        self.assertEqual(helpers.interface_to_ip(sentinel.interface),
+                         sentinel.v4_addr)
+        self.assertFalse(log.called)
+
+    def test_ipv6(self, log, interfaces, ifaddresses):
+        interfaces.return_value = [sentinel.interface]
+        ifaddresses.return_value = {
+            netifaces.AF_INET6: [{'addr': sentinel.v6_addr}]
+        }
+        self.assertEqual(helpers.interface_to_ip(sentinel.interface),
+                         sentinel.v6_addr)
+        self.assertFalse(log.called)
+
+    def test_ipv4_and_ipv6(self, log, interfaces, ifaddresses):
+        interfaces.return_value = [sentinel.interface]
+        ifaddresses.return_value = {
+            netifaces.AF_INET: [{'addr': sentinel.v4_addr}],
+            netifaces.AF_INET6: [{'addr': sentinel.v6_addr}],
+        }
+        self.assertIsNone(helpers.interface_to_ip(sentinel.interface))
+        log.assert_called_once_with(ANY, hookenv.ERROR)
+
+    def test_missing_interface(self, log, interfaces, ifaddresses):
+        interfaces.return_value = [sentinel.interface]
+        self.assertIsNone(helpers.interface_to_ip(sentinel.different))
+        log.assert_called_once_with(ANY, hookenv.ERROR)
+
+    def test_empty_addr_entry(self, log, interfaces, ifaddresses):
+        interfaces.return_value = [sentinel.interface]
+        ifaddresses.return_value = {
+            netifaces.AF_INET: [{}, {'addr': sentinel.v4_addr}],
+        }
+        self.assertEqual(helpers.interface_to_ip(sentinel.interface),
+                         sentinel.v4_addr)
+        self.assertFalse(log.called)
+
+    def test_multi_addr(self, log, interfaces, ifaddresses):
+        interfaces.return_value = [sentinel.interface]
+        ifaddresses.return_value = {
+            netifaces.AF_INET: [{'addr': sentinel.addr1},
+                                {'addr': sentinel.addr2}],
+        }
+        self.assertIsNone(helpers.interface_to_ip(sentinel.interface))
+        log.assert_called_once_with(ANY, hookenv.ERROR)
+
+    def test_no_addr(self, log, interfaces, ifaddresses):
+        interfaces.return_value = [sentinel.interface]
+        ifaddresses.return_value = {
+            netifaces.AF_INET: [],
+        }
+        self.assertIsNone(helpers.interface_to_ip(sentinel.interface))
+        log.assert_called_once_with(ANY, hookenv.ERROR)
 
 
 class TestIsLxc(unittest.TestCase):

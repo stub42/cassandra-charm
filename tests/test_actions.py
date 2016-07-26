@@ -590,11 +590,14 @@ class TestActions(TestCaseBase):
         repair.assert_called_once_with()
         set_active.assert_called_once_with()
 
-    def test_store_unit_private_ip(self):
-        hookenv.unit_private_ip.side_effect = None
-        hookenv.unit_private_ip.return_value = sentinel.ip
-        actions.store_unit_private_ip('')
-        self.assertEqual(hookenv.config()['unit_private_ip'], sentinel.ip)
+    @patch('helpers.rpc_broadcast_ip_address')
+    @patch('helpers.listen_ip_address')
+    def test_store_ip_addresses(self, listen_addr, rpc_addr):
+        listen_addr.return_value = sentinel.private_ip
+        rpc_addr.return_value = sentinel.public_ip
+        actions.store_ip_addresses('')
+        self.assertEqual(hookenv.config()['_rpc_addr'], sentinel.public_ip)
+        self.assertEqual(hookenv.config()['_listen_addr'], sentinel.private_ip)
 
     @patch('charmhelpers.core.host.service_start')
     @patch('helpers.status_set')
@@ -647,7 +650,13 @@ class TestActions(TestCaseBase):
         self.assertFalse(actions.needs_restart())
 
         # A new IP address requires a restart.
-        config['unit_private_ip'] = 'new'
+        config['_rpc_addr'] = 'new'
+        self.assertTrue(actions.needs_restart())
+        config.save()
+        config.load_previous()
+        self.assertFalse(actions.needs_restart())
+
+        config['_listen_addr'] = 'new'
         self.assertTrue(actions.needs_restart())
         config.save()
         config.load_previous()
@@ -865,8 +874,8 @@ class TestActions(TestCaseBase):
     @patch('charmhelpers.core.hookenv.relations_of_type')
     @patch('actions.ufw')
     def test_configure_firewall(self, ufw, rel_of_type):
-        rel_of_type.side_effect = iter([[{'private-address': '1.1.0.1'},
-                                         {'private-address': '1.1.0.2'}],
+        rel_of_type.side_effect = iter([[{'listen_ip': '1.1.0.1'},
+                                         {'listen_ip': '1.1.0.2'}],
                                         []])
         actions.configure_firewall('')
 
