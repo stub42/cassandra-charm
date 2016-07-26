@@ -34,6 +34,9 @@ else
     PYVER := 3.5
 endif
 
+CHARM_STORE_URL := cs:~cassandra-charmers/cassandra
+REPO := git+ssh://git.launchpad.net/cassandra-charm
+
 
 # /!\ Ensure that errors early in pipes cause failures, rather than
 # overridden by the last stage of the pipe. cf. 'test.py | ts'
@@ -223,3 +226,33 @@ sync:
 	#@python .charm_helpers_sync.py \
 	#	-c lib/testcharms/testclient/charm-helpers.yaml
 	@rm .charm_helpers_sync.py
+
+
+publish-devel:
+	@if [ -n "`git status --porcelain`" ]; then \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    echo '!!! There are uncommitted changes !!!'; \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    false; \
+	fi
+	git clean -fdx
+	export rev=`charm push . $(CHARM_STORE_URL) 2>&1 \
+                | tee /dev/tty | grep url: | cut -f 2 -d ' '` \
+	&& git tag -f -m "$$rev" `echo $$rev | tr -s '~:/' -` \
+	&& git push --tags $(REPO) \
+	&& charm publish -c development $$rev
+
+
+publish-stable:
+	@if [ -n "`git status --porcelain`" ]; then \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    echo '!!! There are uncommitted changes !!!'; \
+	    echo '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'; \
+	    false; \
+	fi
+	git clean -fdx
+	export rev=`charm push . $(CHARM_STORE_URL) 2>&1 \
+                | tee /dev/tty | grep url: | cut -f 2 -d ' '` \
+	&& git tag -f -m "$$rev" `echo $$rev | tr -s '~:/' -` \
+	&& git push --tags $(REPO) \
+	&& charm publish -c stable $$rev
