@@ -112,7 +112,11 @@ class TestDeploymentBase(unittest.TestCase):
                                                '--format=yaml'])
         if not status_yaml.strip():
             return None
-        return yaml.safe_load(status_yaml)
+        status = yaml.safe_load(status_yaml)
+        if 'applications' in status:
+            # Quick fix for Juju 2.0 compatibility.
+            status['services'] = status['applications']
+        return status
 
     def cluster(self, username=None, password=None, hosts=None, port=9042):
         status = self.juju_status()
