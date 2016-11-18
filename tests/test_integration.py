@@ -615,6 +615,7 @@ def patched_juju(args, env=None):
     args = [str(a) for a in args]
     return real_juju(args, env)
 
+
 amulet.helpers.juju = patched_juju
 amulet.deployer.juju = patched_juju
 
