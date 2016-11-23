@@ -24,8 +24,8 @@ default:
 	@echo 'Usage: make [ lint | unittest | test | clean | sync ]'
 	env
 
-# Only trusty supported, but xenial expected soon.
-SERIES := $(shell $(JUJU) get-environment default-series)
+# Override on command line with 'make test SERIES=trusty'
+SERIES := xenial
 
 HOST_SERIES := $(shell lsb_release -sc)
 ifeq ($(HOST_SERIES),trusty)
@@ -64,6 +64,7 @@ SHELL=bash -o pipefail
 deps: packages venv3
 
 lint: deps
+	if [ -d .git ]; then git log -1 --decorate; fi
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402,E265 \
