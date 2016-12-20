@@ -11,5 +11,5 @@ makefile:
     - Test3UnitDeployment
     - Test20Deployment
     - Test21Deployment
-    - Test30Deployment
+    - Test22Deployment
     - TestAllowAllAuthenticatorDeployment
