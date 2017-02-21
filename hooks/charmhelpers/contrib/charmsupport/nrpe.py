@@ -1,18 +1,16 @@
 # Copyright 2014-2015 Canonical Limited.
 #
-# This file is part of charm-helpers.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# charm-helpers is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Lesser General Public License version 3 as
-# published by the Free Software Foundation.
+#  http://www.apache.org/licenses/LICENSE-2.0
 #
-# charm-helpers is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Lesser General Public License for more details.
-#
-# You should have received a copy of the GNU Lesser General Public License
-# along with charm-helpers.  If not, see <http://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Compatibility with the nrpe-external-master charm"""
 # Copyright 2012 Canonical Ltd.
@@ -40,6 +38,7 @@ from charmhelpers.core.hookenv import (
 )
 
 from charmhelpers.core.host import service
+from charmhelpers.core import host
 
 # This module adds compatibility with the nrpe-external-master and plain nrpe
 # subordinate charms. To use it in your charm:
@@ -109,6 +108,13 @@ from charmhelpers.core.host import service
 #
 #    def local_monitors_relation_changed():
 #        update_nrpe_config()
+#
+# 4.a If your charm is a subordinate charm set primary=False
+#
+#    from charmsupport.nrpe import NRPE
+#    (...)
+#    def update_nrpe_config():
+#        nrpe_compat = NRPE(primary=False)
 #
 # 5. ln -s hooks.py nrpe-external-master-relation-changed
 #    ln -s hooks.py local-monitors-relation-changed
@@ -222,9 +228,10 @@ class NRPE(object):
     nagios_exportdir = '/var/lib/nagios/export'
     nrpe_confdir = '/etc/nagios/nrpe.d'
 
-    def __init__(self, hostname=None):
+    def __init__(self, hostname=None, primary=True):
         super(NRPE, self).__init__()
         self.config = config()
+        self.primary = primary
         self.nagios_context = self.config['nagios_context']
         if 'nagios_servicegroups' in self.config and self.config['nagios_servicegroups']:
             self.nagios_servicegroups = self.config['nagios_servicegroups']
@@ -240,6 +247,12 @@ class NRPE(object):
             else:
                 self.hostname = "{}-{}".format(self.nagios_context, self.unit_name)
         self.checks = []
+        # Iff in an nrpe-external-master relation hook, set primary status
+        relation = relation_ids('nrpe-external-master')
+        if relation:
+            log("Setting charm primary status {}".format(primary))
+            for rid in relation_ids('nrpe-external-master'):
+                relation_set(relation_id=rid, relation_settings={'primary': self.primary})
 
     def add_check(self, *args, **kwargs):
         self.checks.append(Check(*args, **kwargs))
@@ -334,16 +347,25 @@ def add_init_service_checks(nrpe, services, unit_name):
     :param str unit_name: Unit name to use in check description
     """
     for svc in services:
+        # Don't add a check for these services from neutron-gateway
+        if svc in ['ext-port', 'os-charm-phy-nic-mtu']:
+            next
+
         upstart_init = '/etc/init/%s.conf' % svc
         sysv_init = '/etc/init.d/%s' % svc
-        if os.path.exists(upstart_init):
-            # Don't add a check for these services from neutron-gateway
-            if svc not in ['ext-port', 'os-charm-phy-nic-mtu']:
-                nrpe.add_check(
-                    shortname=svc,
-                    description='process check {%s}' % unit_name,
-                    check_cmd='check_upstart_job %s' % svc
-                )
+
+        if host.init_is_systemd():
+            nrpe.add_check(
+                shortname=svc,
+                description='process check {%s}' % unit_name,
+                check_cmd='check_systemd.py %s' % svc
+            )
+        elif os.path.exists(upstart_init):
+            nrpe.add_check(
+                shortname=svc,
+                description='process check {%s}' % unit_name,
+                check_cmd='check_upstart_job %s' % svc
+            )
         elif os.path.exists(sysv_init):
             cronpath = '/etc/cron.d/nagios-service-check-%s' % svc
             cron_file = ('*/5 * * * * root '

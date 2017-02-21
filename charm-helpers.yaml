@@ -21,6 +21,7 @@ include:
     - coordinator
     - core
     - fetch
+    - osplatform
     - contrib.charmsupport
     - contrib.templating.jinja
     - contrib.network.ufw
