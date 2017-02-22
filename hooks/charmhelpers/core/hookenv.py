@@ -341,6 +341,8 @@ def config(scope=None):
             subprocess.check_output(config_cmd_line).decode('UTF-8'))
         if scope is not None:
             return config_data
+        config_data = {k: ('' if v is None else v)
+                       for k, v in config_data.items()}
         return Config(config_data)
     except ValueError:
         return None
