@@ -766,6 +766,12 @@ def configure_firewall():
     This is primarily to block access to the replication and JMX ports,
     as juju's default port access controls are not strict enough and
     allow access to the entire environment.
+
+    The approach here is a whitelist, which is unsustainable as subordinates
+    may want to open arbitrary ports. This method should be rewritten
+    to instead blacklist the replication and jmx ports. Or better yet,
+    secure those ports with TLS (jmx may be an issue with old Cassandra
+    versions).
     '''
     config = hookenv.config()
     ufw.enable(soft_fail=True)
@@ -773,13 +779,14 @@ def configure_firewall():
     # Enable SSH from anywhere, relying on Juju and external firewalls
     # to control access.
     ufw.service('ssh', 'open')
-    ufw.service('nrpe', 'open')  # Also NRPE for nagios checks.
+    ufw.service('nrpe', 'open')   # Also NRPE for nagios checks.
     ufw.service('rsync', 'open')  # Also rsync for data transfer and backups.
+    client_ports = ['9103']       # Default telegraf port, for monitoring.
 
     # Clients need client access. These protocols are configured to
     # require authentication.
     client_keys = ['native_transport_port', 'rpc_port']
-    client_ports = [config[key] for key in client_keys]
+    client_ports.extend([config[key] for key in client_keys])
 
     # Peers need replication access. This protocols does not
     # require authentication, so firewall it from other nodes.
