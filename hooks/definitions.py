@@ -18,6 +18,7 @@ from charmhelpers.core import hookenv
 from charmhelpers.core import services
 
 import actions
+from coordinator import coordinator
 import helpers
 import relations
 
@@ -104,6 +105,14 @@ class RequiresLiveNode:
     def is_live(self):
         if helpers.is_decommissioned():
             hookenv.log('Node is decommissioned')
+            return False
+
+        if (coordinator.requested('restart') and
+                not coordinator.granted('restart')):
+            # Per lp:1713688, don't consider a running node as 'live'
+            # if it needs to be restarted, as we cannot expect it to
+            # behave correctly until that restart has occurred.
+            hookenv.log('Node is awaiting restart permission')
             return False
 
         if helpers.is_cassandra_running():
