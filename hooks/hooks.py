@@ -43,8 +43,8 @@ def bootstrap():
 
 
 def default_hook():
-    if not hookenv.has_juju_version('1.24'):
-        hookenv.status_set('blocked', 'Requires Juju 1.24 or higher')
+    if not hookenv.has_juju_version('1.25'):
+        hookenv.status_set('blocked', 'Requires Juju 1.25 or higher')
         # Error state, since we don't have 1.24 to give a nice blocked state.
         raise SystemExit(1)
 
