@@ -13,15 +13,15 @@ See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 
 # Editions
 
-This charm supports Apache Cassandra 2.0, 2.1, 2.2 & 3.0, and
-Datastax Enterprise 4.7, 4.8 & 5.0. The default is Apache Cassandra 3.0.
+This charm supports Apache Cassandra 2.x and 3.x, and Datastax
+Enterprise 4.7, 4.8, 5.0 and 5.1. The default is Apache Cassandra 3.0.
 
 To use a particular Apache Cassandra release, specify the relevant
 deb archive in in the `install_sources` config setting when deploying.
 
 ```yaml
     install_sources:
-      - deb http://www.apache.org/dist/cassandra/debian 22x main
+      - deb http://www.apache.org/dist/cassandra/debian 311 main
       - ppa:openjdk-r/ppa   # For OpenJDK 8
       - ppa:stub/cassandra  # For Python driver
 ```
@@ -177,12 +177,10 @@ permissions to the users.
 
 # Known Limitations and Issues
 
-This is the 'trusty' charm. Upgrade from the 'precise' charm is not supported.
-
 The `system_auth` keyspace replication factor is automatically increased
 but not decreased. If you have a service with three or more units and
-decommission enough nodes to drop below three, you will need to manually
-update the `system_auth` keyspace replication settings.
+later decommission enough nodes to drop below three, you will need to
+manually update the `system_auth` keyspace replication settings.
 
 
 # Contact Information
