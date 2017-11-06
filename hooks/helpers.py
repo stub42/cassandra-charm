@@ -1169,8 +1169,12 @@ def status_set(state, message):
 
 def service_status_set(state, message):
     '''Set the service status and log a message.'''
-    subprocess.check_call(['status-set', '--service', state, message])
-    hookenv.log('{} service state: {}'.format(state, message))
+    try:
+        subprocess.check_call(['status-set', '--application', state, message])
+        hookenv.log('{} application state: {}'.format(state, message))
+    except subprocess.CalledProcessError as x:
+        hookenv.log('Unable to set application state: {}'.format(x))
+        hookenv.log('Application state: {} {}'.format(state, message))
 
 
 def get_service_name(relid):
