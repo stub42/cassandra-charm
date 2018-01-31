@@ -41,6 +41,8 @@ import yaml
 from charmhelpers.core import hookenv, host
 from charmhelpers.core.hookenv import DEBUG, ERROR, WARNING
 from charmhelpers import fetch
+from charmhelpers.core.host import is_container
+
 
 from coordinator import coordinator
 
@@ -466,7 +468,8 @@ def get_cassandra_pid_file():
 def get_cassandra_packages():
     packages = set()
 
-    packages.add('ntp')
+    if not is_container():
+        packages.add('ntp')
     packages.add('run-one')
     packages.add('netcat')
 
