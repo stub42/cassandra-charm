@@ -14,6 +14,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import os.path
+import subprocess
+
 from charmhelpers import fetch
 from charmhelpers.core import hookenv
 
@@ -35,11 +38,19 @@ def bootstrap():
     except ImportError:
         packages = ['python3-bcrypt', 'python3-cassandra', 'python3-netifaces']
         set_proxy()
+        add_implicit_package_signing_keys()
         fetch.configure_sources(update=True)
         fetch.apt_install(packages, fatal=True)
         import bcrypt     # NOQA
         import cassandra  # NOQA
         import netifaces  # NOQA
+
+
+def add_implicit_package_signing_keys():
+    for key in ('apache', 'datastax'):
+        path = os.path.join(hookenv.charm_dir(), 'lib', '{}.key'.format(key))
+        subprocess.check_call(['apt-key', 'add', path],
+                              stdin=subprocess.DEVNULL)
 
 
 def default_hook():
