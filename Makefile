@@ -178,9 +178,11 @@ packages: .stamp-packages
 	sudo apt-get update
 	sudo apt-get install -y \
 	    python3 python3-pip python3-apt python3-dev python-virtualenv \
-	    charm-tools build-essential libev4 libev-dev libffi-dev \
-	    netcat python3-jinja2 juju-wait moreutils \
+	    build-essential libev4 libev-dev libffi-dev \
+	    netcat python3-jinja2 moreutils \
 	    python3-cassandra python3-bcrypt
+	sudo snap install charm
+	sudo snap install juju-wait --classic
 	touch .stamp-packages
 
 venv3: packages .stamp-venv3
