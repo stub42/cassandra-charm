@@ -1,4 +1,4 @@
-# Copyright 2015 Canonical Ltd.
+# Copyright 2015-2018 Canonical Ltd.
 #
 # This file is part of the Cassandra Charm for Juju.
 #
@@ -17,7 +17,6 @@ import configparser
 from contextlib import contextmanager
 from datetime import timedelta
 from distutils.version import LooseVersion
-import errno
 from functools import wraps
 import io
 import json
@@ -259,6 +258,12 @@ def is_lxc():
 def set_io_scheduler(io_scheduler, directory):
     '''Set the block device io scheduler.'''
 
+    if host.is_container():
+        return
+
+    hookenv.log("Setting block device of {} to IO scheduler {}"
+                "".format(directory, io_scheduler))
+
     assert os.path.isdir(directory)
 
     # The block device regex may be a tad simplistic.
@@ -266,41 +271,36 @@ def set_io_scheduler(io_scheduler, directory):
 
     output = subprocess.check_output(['df', directory],
                                      universal_newlines=True)
+    try:
+        block_dev = re.findall(block_regex, output)[0]
+    except IndexError:
+        hookenv.log("Unable to locate block device of {}".format(directory))
+        return
 
-    if not is_lxc():
-        hookenv.log("Setting block device of {} to IO scheduler {}"
-                    "".format(directory, io_scheduler))
-        try:
-            block_dev = re.findall(block_regex, output)[0]
-        except IndexError:
-            hookenv.log("Unable to locate block device of {} (in container?)"
-                        "".format(directory))
-            return
-        sys_file = os.path.join("/", "sys", "block", block_dev,
-                                "queue", "scheduler")
-        try:
-            host.write_file(sys_file, io_scheduler.encode('ascii'),
-                            perms=0o644)
-        except OSError as e:
-            if e.errno == errno.EACCES:
-                hookenv.log("Got Permission Denied trying to set the "
-                            "IO scheduler at {}. We may be in an LXC. "
-                            "Exiting gracefully".format(sys_file),
-                            WARNING)
-            elif e.errno == errno.ENOENT:
-                hookenv.log("Got no such file or directory trying to "
-                            "set the IO scheduler at {}. It may be "
-                            "this is an LXC, the device name is as "
-                            "yet unknown to the charm, or LVM/RAID is "
-                            "hiding the underlying device name. "
-                            "Exiting gracefully".format(sys_file),
-                            WARNING)
-            else:
-                raise e
-    else:
-        # Make no change if we are in an LXC
-        hookenv.log("In an LXC. Cannot set io scheduler {}"
-                    "".format(io_scheduler))
+    sys_file = os.path.join("/", "sys", "block", block_dev,
+                            "queue", "scheduler")
+    if not os.path.exists(sys_file):
+        hookenv.log("Got no such file or directory trying to "
+                    "set the IO scheduler at {}. It may be "
+                    "this is an LXC, the device name is as "
+                    "yet unknown to the charm, or LVM/RAID is "
+                    "hiding the underlying device name. "
+                    "Exiting gracefully".format(sys_file),
+                    WARNING)
+        return
+
+    available = open(sys_file, 'r').read().split()
+    if '[{}]'.format(io_scheduler) in available:
+        hookenv.log('{} already {}'.format(sys_file, io_scheduler), DEBUG)
+        return
+
+    if io_scheduler not in available:
+        hookenv.log('{} is not valid for {}'.format(io_scheduler, sys_file),
+                    WARNING)
+        return
+
+    host.write_file(sys_file, io_scheduler.encode('ascii'),
+                    perms=0o644)
 
 
 # FOR CHARMHELPERS
