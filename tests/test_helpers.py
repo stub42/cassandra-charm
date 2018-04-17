@@ -1016,6 +1016,7 @@ class TestHelpers(TestCaseBase):
         get_cassandra_version.return_value = '2.0'
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name='test_cluster_name',
+                                     file_cache_size_in_mb=768,
                                      partitioner='test_partitioner'))
 
         seed_ips.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
@@ -1042,6 +1043,7 @@ class TestHelpers(TestCaseBase):
                 cluster_name: test_cluster_name
                 authenticator: PasswordAuthenticator
                 num_tokens: 128
+                file_cache_size_in_mb: 768
                 partitioner: test_partitioner
                 listen_address: 10.20.0.1
                 rpc_address: 0.0.0.0
@@ -1087,6 +1089,7 @@ class TestHelpers(TestCaseBase):
         get_cassandra_version.return_value = '2.0'
         hookenv.config().update(dict(num_tokens=128,
                                      cluster_name='test_cluster_name',
+                                     file_cache_size_in_mb=768,
                                      partitioner='test_partitioner'))
 
         seed_ips.return_value = ['10.20.0.1', '10.20.0.2', '10.20.0.3']
@@ -1115,6 +1118,7 @@ class TestHelpers(TestCaseBase):
                 cluster_name: test_cluster_name
                 authenticator: PasswordAuthenticator
                 num_tokens: 128
+                file_cache_size_in_mb: 768
                 partitioner: test_partitioner
                 listen_address: 10.20.0.1
                 rpc_address: 0.0.0.0
@@ -1158,6 +1162,7 @@ class TestHelpers(TestCaseBase):
                                       yaml_file, get_cassandra_version):
         get_cassandra_version.return_value = '2.1'
         hookenv.config().update(dict(num_tokens=128,
+                                     file_cache_size_in_mb=768,
                                      cluster_name='test_cluster_name',
                                      partitioner='test_partitioner'))
 
@@ -1185,6 +1190,7 @@ class TestHelpers(TestCaseBase):
                 cluster_name: test_cluster_name
                 authenticator: PasswordAuthenticator
                 num_tokens: 128
+                file_cache_size_in_mb: 768
                 partitioner: test_partitioner
                 listen_address: 10.20.0.1
                 rpc_address: 0.0.0.0

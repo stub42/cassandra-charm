@@ -125,7 +125,7 @@ options:
         description: >
             Set kernel io scheduler for persistent storage.
             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
- 
+
 ##     units-to-update:
 ##         type: string
 ##         default: "all"
@@ -162,12 +162,12 @@ options:
         description: >
             The pct of heap used to trigger a nagios critcal alert
     nagios_disk_warn_pct:
-        default: 50 
+        default: 50
         type: int
         description: >
             The pct of data disk used to trigger a nagios warning
     nagios_disk_crit_pct:
-        default: 25 
+        default: 25
         type: int
         description: >
             The pct of data disk used to trigger a nagios critcal alert
@@ -202,6 +202,18 @@ options:
             another. All Cassandra services you wish to cluster together
             must have the same cluster_name. This setting cannot be changed
             after service deployment.
+    file_cache_size_in_mb:
+        type: int
+        default: 0
+        description: >
+            Maximum memory to use for sstable chunk cache and buffer pooling.
+            32MB of this are reserved for pooling buffers, the rest is used as
+            an cache that holds uncompressed sstable chunks. Defaults to the
+            smaller of 1/4 of heap or 512MB. This pool is allocated off-heap,
+            so is in addition to the memory allocated for heap. The cache also
+            has on-heap overhead which is roughly 128 bytes per chunk (i.e.
+            0.2% of the reserved size if the default 64k chunk size is used).
+            Memory is only allocated when needed.
     partitioner:
         default: Murmur3Partitioner
         type: string
@@ -212,7 +224,7 @@ options:
         type: int
         default: 256
         description: Number of tokens per node.
-            
+
     # Topology of the service in the cluster.
     datacenter:
         type: string
@@ -220,7 +232,7 @@ options:
         description: >
             The node's datacenter used by the endpoint_snitch. e.g. "DC1".
             It cannot be changed after service deployment.
-    rack: 
+    rack:
         type: string
         default: ""
         description: >
@@ -229,7 +241,7 @@ options:
             It defaults to the service name. Cassandra will store replicated
             data in different racks whenever possible.
 
-            
+
     # Networking options.
     native_transport_port:
         type: int
@@ -282,7 +294,7 @@ options:
             - CassandraAuthorizer stores permissions in
               system_auth.permissions table.
 
-   
+
     # Tuning options.
     compaction_throughput_mb_per_sec:
         type: int
@@ -301,8 +313,8 @@ options:
         description: >
             Throttles all outbound streaming file transfers on nodes to the
             given total throughput in Mbps. This is necessary because Cassandra
-            does mostly sequential IO when streaming data during bootstrap or 
-            repair, which can lead to saturating the network connection and 
+            does mostly sequential IO when streaming data during bootstrap or
+            repair, which can lead to saturating the network connection and
             degrading rpc performance. When unset, the default is 200 Mbps
             or 25 MB/s. 0 to disable throttling.
 

@@ -877,14 +877,20 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
     # Most options just copy from config.yaml keys with the same name.
     # Using the same name is preferred to match the actual Cassandra
     # documentation.
-    simple_config_keys = ['cluster_name', 'num_tokens',
-                          'partitioner', 'authorizer', 'authenticator',
+    simple_config_keys = ['authenticator', 'authorizer', 'cluster_name',
                           'compaction_throughput_mb_per_sec',
+                          'file_cache_size_in_mb', 'native_transport_port',
+                          'num_tokens', 'partitioner', 'rpc_port',
+                          'ssl_storage_port' 'storage_port',
                           'stream_throughput_outbound_megabits_per_sec',
-                          'tombstone_warn_threshold',
                           'tombstone_failure_threshold',
-                          'native_transport_port', 'rpc_port',
-                          'storage_port', 'ssl_storage_port']
+                          'tombstone_warn_threshold',]
+
+    # file_cache_size_in_mb defaults to 0 in YAML, because int values need
+    # an int default - but if left as default, let cassandra figure it out
+    if !config.get('file_cache_size_in_mb'):
+        simple_config_keys.remove('file_cache_size_in_mb')
+
     cassandra_yaml.update((k, config[k]) for k in simple_config_keys)
 
     seeds = ','.join(seeds or get_seed_ips())  # Don't include whitespace!

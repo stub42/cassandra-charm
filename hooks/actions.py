@@ -48,27 +48,28 @@ UNCHANGEABLE_KEYS = set(['cluster_name', 'datacenter', 'rack', 'edition'])
 # If any of these config items are changed, Cassandra needs to be
 # restarted and maybe remounted.
 RESTART_REQUIRED_KEYS = set([
-    'data_file_directories',
-    'commitlog_directory',
-    'saved_caches_directory',
-    'storage_port',
-    'ssl_storage_port',
-    'listen_interface',
-    'rpc_port',
-    'native_transport_port',
-    'rpc_interface',
-    'partitioner',
-    'num_tokens',
-    'max_heap_size',
-    'heap_newsize',
     'authenticator',
     'authorizer',
+    'commitlog_directory',
     'compaction_throughput_mb_per_sec',
-    'stream_throughput_outbound_megabits_per_sec',
-    'tombstone_warn_threshold',
-    'tombstone_failure_threshold',
+    'data_file_directories',
+    'file_cache_size_in_mb',
+    'heap_newsize',
     'jre',
-    'private_jre_url'])
+    'listen_interface',
+    'max_heap_size',
+    'native_transport_port',
+    'num_tokens',
+    'partitioner',
+    'private_jre_url',
+    'rpc_interface',
+    'rpc_port',
+    'saved_caches_directory',
+    'ssl_storage_port',
+    'storage_port',
+    'stream_throughput_outbound_megabits_per_sec',
+    'tombstone_failure_threshold',
+    'tombstone_warn_threshold',])
 
 ALL_CONFIG_KEYS = UNCHANGEABLE_KEYS.union(RESTART_REQUIRED_KEYS)
 
