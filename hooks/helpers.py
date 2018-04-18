@@ -884,11 +884,12 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
                           'ssl_storage_port' 'storage_port',
                           'stream_throughput_outbound_megabits_per_sec',
                           'tombstone_failure_threshold',
-                          'tombstone_warn_threshold',]
+                          'tombstone_warn_threshold']
 
     # file_cache_size_in_mb defaults to 0 in YAML, because int values need
     # an int default - but if left as default, let cassandra figure it out
-    if !config.get('file_cache_size_in_mb'):
+    if (config.get('file_cache_size_in_mb') is None
+            or config.get('file_cache_size_in_mb') <= 0):
         simple_config_keys.remove('file_cache_size_in_mb')
 
     cassandra_yaml.update((k, config[k]) for k in simple_config_keys)
