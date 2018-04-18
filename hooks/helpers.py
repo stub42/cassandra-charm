@@ -880,7 +880,7 @@ def configure_cassandra_yaml(overrides={}, seeds=None):
                           'compaction_throughput_mb_per_sec',
                           'file_cache_size_in_mb', 'native_transport_port',
                           'num_tokens', 'partitioner', 'rpc_port',
-                          'ssl_storage_port' 'storage_port',
+                          'ssl_storage_port', 'storage_port',
                           'stream_throughput_outbound_megabits_per_sec',
                           'tombstone_failure_threshold',
                           'tombstone_warn_threshold']
