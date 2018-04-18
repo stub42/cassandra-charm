@@ -276,7 +276,6 @@ def set_io_scheduler(io_scheduler, directory):
     except IndexError:
         hookenv.log("Unable to locate block device of {}".format(directory))
         return
-
     sys_file = os.path.join("/", "sys", "block", block_dev,
                             "queue", "scheduler")
     if not os.path.exists(sys_file):
@@ -284,8 +283,8 @@ def set_io_scheduler(io_scheduler, directory):
                     "set the IO scheduler at {}. It may be "
                     "this is an LXC, the device name is as "
                     "yet unknown to the charm, or LVM/RAID is "
-                    "hiding the underlying device name. "
-                    "Exiting gracefully".format(sys_file),
+                    "hiding the underlying device name."
+                    "".format(sys_file),
                     WARNING)
         return
 
