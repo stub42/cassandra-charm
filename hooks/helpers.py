@@ -478,7 +478,17 @@ def get_cassandra_packages():
         return packages
 
     if edition == 'dse':
-        packages.add('dse-full')
+        # DSE 6.0 is not yet supported, use 5.1 instead
+        packages.add('dse=5.1.9-1')
+        packages.add('dse-full=5.1.9-1')
+        packages.add('dse-libcassandra=5.1.9-1')
+        packages.add('dse-libgraph=5.1.9-1')
+        packages.add('dse-libhadoop2-client=5.1.9-1')
+        packages.add('dse-libhadoop2-client-native=5.1.9-1')
+        packages.add('dse-liblog4j=5.1.9-1')
+        packages.add('dse-libsolr=5.1.9-1')
+        packages.add('dse-libspark=5.1.9-1')
+        packages.add('dse-libtomcat=5.1.9-1')
     else:
         packages.add('cassandra')  # 'cassandra-tools'
 
