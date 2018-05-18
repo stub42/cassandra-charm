@@ -22,21 +22,22 @@ description: |
     storage of structured data.
 tags: ["databases"]
 series:
+    - bionic
     - xenial
     - trusty
-    - bionic
 provides:
     database:
         interface: cassandra
     database-admin:
-        interface: cassandra-admin
+        interface: cassandra
     nrpe-external-master:
         interface: nrpe-external-master
         scope: container
-    data:
-        interface: block-storage
-        scope: container
-        optional: true
+    # TODO: Support or drop BSB interface
+    # data:
+    #     interface: block-storage
+    #     scope: container
+    #     optional: true
 peers:
     cluster:
         interface: cassandra-cluster

@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-# Copyright 2015 Canonical Ltd.
+# Copyright 2015-2018 Canonical Ltd.
 #
 # This file is part of the Cassandra Charm for Juju.
 #
@@ -15,7 +15,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+
+build:
+	CASS_DRIVER_NO_CYTHON charm build --no-local-layers
 
 JUJU = juju
 
@@ -61,14 +63,14 @@ NOSETESTS=.venv3/bin/nosetests-3.4 -sv  # Yes, even with 3.5
 # with ts(1)
 SHELL=bash -o pipefail
 
-deps: packages venv3
+deps: venv3
 
-lint: deps
+lint: venv3
 	if [ -d .git ]; then git log -1 --decorate; fi
 	charm proof $(CHARM_DIR)
 	flake8 \
 	    --ignore=E402,E265 \
-	    --exclude=charmhelpers,.venv2,.venv3 hooks tests testing
+	    --exclude=.venv2,.venv3 tests testing
 	@echo OK: Lint free `date`
 
 unittest: lint
@@ -169,23 +171,23 @@ debug:
 	-env
 
 
-packages: .stamp-packages
-.stamp-packages:
-	# Install bootstrap debs, and Python packages used by the charm
-	# to ensure versions match.
-	sudo add-apt-repository -y ppa:stub/juju
-	sudo add-apt-repository -y ppa:cassandra-charmers/stable
-	sudo apt-get update
-	sudo apt-get install -y \
-	    python3 python3-pip python3-apt python3-dev python-virtualenv \
-	    build-essential libev4 libev-dev libffi-dev \
-	    netcat python3-jinja2 moreutils \
-	    python3-cassandra python3-bcrypt
-	sudo snap install charm
-	sudo snap install juju-wait --classic
-	touch .stamp-packages
+# packages: .stamp-packages
+# .stamp-packages:
+# 	# Install bootstrap debs, and Python packages used by the charm
+# 	# to ensure versions match.
+# 	sudo add-apt-repository -y ppa:stub/juju
+# 	sudo add-apt-repository -y ppa:cassandra-charmers/stable
+# 	sudo apt-get update
+# 	sudo apt-get install -y \
+# 	    python3 python3-pip python3-apt python3-dev python-virtualenv \
+# 	    build-essential libev4 libev-dev libffi-dev \
+# 	    netcat python3-jinja2 moreutils \
+# 	    python3-cassandra python3-bcrypt
+# 	sudo snap install charm
+# 	sudo snap install juju-wait --classic
+# 	touch .stamp-packages
 
-venv3: packages .stamp-venv3
+venv3: .stamp-venv3
 .stamp-venv3:
 	# Build a Python virtualenv to run our tests.
 	virtualenv -p python3 --system-site-packages ${VENV3}
@@ -199,10 +201,10 @@ venv3: packages .stamp-venv3
 
 	# Pip install packages needed by the test suite but not used
 	# by the charm.
-	$(PIP) install bcrypt cassandra-driver blist
-	$(PIP) install --upgrade -I nose flake8
-	$(PIP) install --upgrade \
-	    coverage amulet mock juju-deployer juju-wait netifaces
+	# $(PIP) install bcrypt cassandra-driver blist
+	# $(PIP) install --upgrade -I nose flake8
+	# $(PIP) install --upgrade \
+	#     coverage amulet mock juju-deployer juju-wait netifaces
 
 	echo 'nosetests:' `which nosetests`
 	echo 'flake8:' `which flake8`
