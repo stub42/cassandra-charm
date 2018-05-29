@@ -156,7 +156,11 @@ def configure_cassandra():
 @when_not('cassandra.ports.opened')
 def open_ports():
     config = cassandra.config()
-    for k in ['rpc_port', 'native_transport_port']:
+    if cassandra.has_cassandra_version('3.0'):
+        port_keys = ['native_transport_port']
+    else:
+        port_keys = ['rpc_port', 'native_transport_port']
+    for k in port_keys:
         prev_k = '{}.previous'.format(k)
         prev = config.get(prev_k)
         want = config[k]

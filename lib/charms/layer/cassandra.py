@@ -154,9 +154,16 @@ def get_cassandra_version():
     if edition == 'apache-snap':
         return get_snap_version('cassandra')
     elif edition == 'dse':
+        # Per Product Compatibility: DataStax Enterprise, Apache Cassandra, CQL,
+        # and SSTable compatibility
+        # https://docs.datastax.com/en/landing_page/doc/landing_page/compatibility.html
         dse_ver = get_package_version('dse-full')
         if not dse_ver:
             return None
+        elif LooseVersion(dse_ver) >= LooseVersion('6.0'):
+            return '3.11'
+        elif LooseVersion(dse_ver) >= LooseVersion('5.1'):
+            return '3.10'
         elif LooseVersion(dse_ver) >= LooseVersion('5.0'):
             return '3.0'
         elif LooseVersion(dse_ver) >= LooseVersion('4.7'):
@@ -302,6 +309,11 @@ def get_cassandra_yaml(overrides={}, seeds=None):
                           'tombstone_failure_threshold',
                           'tombstone_warn_threshold']
 
+    # Protocol no longer supported, config option ignored. Do not add to cassandra.yaml
+    # or DSE 6.0 fails to start.
+    if has_cassandra_version('3.0'):
+        simple_config_keys.remove('rpc_port')
+
     # file_cache_size_in_mb defaults to 0 in YAML, because int values need
     # an int default - but if left as default, let cassandra figure it out
     if (c.get('file_cache_size_in_mb') is None or
@@ -332,10 +344,13 @@ def get_cassandra_yaml(overrides={}, seeds=None):
     # with the system_auth keyspace replication settings.
     cassandra_yaml['endpoint_snitch'] = 'GossipingPropertyFileSnitch'
 
-    # Per Bug #1523546 and CASSANDRA-9319, Thrift is disabled by default in
-    # Cassandra 2.2. Ensure it is enabled if rpc_port is non-zero.
-    if int(c['rpc_port']) > 0:
-        cassandra_yaml['start_rpc'] = True
+    if not has_cassandra_version('3.0'):
+        # Per Bug #1523546 and CASSANDRA-9319, Thrift is disabled by default in
+        # Cassandra 2.2. Ensure it is enabled if rpc_port is non-zero.
+        # The protocol is no longer supported with later versions, and adding
+        # the setting to cassandra.yaml stops DSE 6.0 from starting up.
+        if int(c['rpc_port']) > 0:
+            cassandra_yaml['start_rpc'] = True
 
     cassandra_yaml.update(overrides)
 

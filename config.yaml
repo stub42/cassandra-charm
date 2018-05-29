@@ -247,7 +247,9 @@ options:
     rpc_port:
         type: int
         default: 9160
-        description: Thrift protocol port for legacy clients.
+        description: >
+            DEPRECATED, ignored by Cassandra 3.0+.
+            Thrift protocol port for legacy clients.
     rpc_interface:
         type: string
         default: ""
