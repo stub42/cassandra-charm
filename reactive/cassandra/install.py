@@ -39,6 +39,7 @@ from charmhelpers.core import (
 )
 from charmhelpers.core.hookenv import (
     DEBUG,
+    ERROR,
     WARNING,
 )
 from charms import (
@@ -151,6 +152,8 @@ def reset_limits():
 @when('cassandra.config.validated')
 @when_not('cassandra.installed')
 def install_packages():
+    pin_dse()
+
     apt.queue_install(cassandra.get_deb_packages())
 
     if reactive.is_flag_set('apt.queued_installs'):
@@ -168,6 +171,21 @@ def install_packages():
     elif cassandra.get_jre() == 'openjdk':
         subprocess.check_call(['update-java-alternatives', '--jre-headless', '--set', 'java-1.8.0-openjdk-amd64'])
     reactive.set_flag('cassandra.installed')
+
+
+def pin_dse():
+    config = cassandra.config()
+    ver = config['dse_version']
+    content = dedent('''\
+                     Package: dse*
+                     Pin: version {}*
+                     Pin-Priority: 995
+                     ''').format(ver)
+    d = '/etc/apt/preferences.d'
+    if not os.path.exists(d):
+        host.mkdir(d, perms=0o755)
+    p = os.path.join(d, 'cassandra_charm')
+    host.write_file(p, content)
 
 
 def fetch_oracle_jre():
@@ -315,9 +333,20 @@ def reset_all_io_schedulers():
 def set_application_version():
     config = cassandra.config()
     last_update = config.get('last_version_update', 0)
-    if time.time() > last_update + 3600:
-        hookenv.application_version_set(cassandra.get_cassandra_version())
+    if time.time() < last_update + 3600:
+        return
+    ed = cassandra.get_edition()
+    if ed == 'apache-snap':
+        ver = cassandra.get_snap_version('cassandra')
+    elif ed == 'dse':
+        ver = cassandra.get_package_version('dse')
+    else:
+        ver = cassandra.get_package_version('cassandra')
+    if ver:
+        hookenv.application_version_set(ver)
         config['last_version_update'] = int(time.time())
+    else:
+        hookenv.log('Invalid version {!r} extracted'.format(ver), ERROR)
 
 
 #              data_ready=[actions.configure_firewall,

@@ -38,6 +38,7 @@ UNCHANGEABLE_KEYS = frozenset([
     'datacenter',
     'rack',
     'edition',
+    'dse_version',
 ])
 
 # If any of these config items are changed, Cassandra needs to be
@@ -89,6 +90,7 @@ ENUMS = {
     'authenticator': frozenset(['PasswordAuthenticator', 'AllowAllAuthenticator']),
     'edition': frozenset(['community', 'dse', 'apache-snap']),
     'jre': frozenset(['openjdk', 'oracle']),
+    'dse_version': frozenset(['4.7', '4.8', '5.0', '5.1', '6.0']),
 }
 
 
@@ -101,6 +103,17 @@ def upgrade_charm():
     reactive.clear_flag('cassandra.config.validated')
     reactive.clear_flag('cassandra.configured')
     reactive.clear_flag('cassandra.ports.opened')
+
+
+@hook('upgrade-charm')
+def populate_dse_version():
+    if cassandra.get_edition() != 'dse':
+        return
+    config = cassandra.config()
+    if config.get('dse_version', None) is None:
+        ver = cassandra.get_package_version('dse')[:3]
+        assert ver in ENUMS['dse_version'], 'Extracted invalid DSE version {!r}'.format(ver)
+        config['dse_version'] = ver
 
 
 @when_not('cassandra.config.validated')
@@ -136,7 +149,13 @@ def validate_config():
     for k in gone:
         del config[k]
     for k, v in new_config.items():
-        config[k] = v
+        if k in UNCHANGEABLE_KEYS:
+            # Don't update unchangeable keys once set. Other handlers
+            # may need to override, such as populating dse_version from
+            # deployments prior to the setting existing.
+            config.setdefault(k, v)
+        else:
+            config[k] = v
 
     reactive.set_flag('cassandra.config.validated')
 

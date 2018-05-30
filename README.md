@@ -14,7 +14,7 @@ See [cassandra.apache.org](http://cassandra.apache.org) for more information.
 # Editions
 
 This charm supports Apache Cassandra 2.x and 3.x, and Datastax
-Enterprise 4.7, 4.8, 5.0 and 5.1. The default is Apache Cassandra 3.0.
+Enterprise 4.7, 4.8, 5.0, 5.1 & 6.0 The default is Apache Cassandra 3.11.
 
 To use a particular Apache Cassandra release, specify the relevant
 deb archive in in the `install_sources` config setting when deploying.
@@ -27,8 +27,10 @@ deb archive in in the `install_sources` config setting when deploying.
 ```
 
 To use Datastax Enterprise, set the `edition` config setting to `dse`
-and the Datastax Enterprise archive URL in `install_sources` (including your
-username and password).
+and `dse_version` to the major version such as "5.1". You also must set the
+Datastax Enterprise archive URL in `install_sources`, as the packages require
+your personal credentials to be downloaded and the URL must include the username
+and password.
 
 ```yaml
     install_sources:

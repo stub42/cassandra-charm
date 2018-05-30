@@ -157,7 +157,7 @@ def get_cassandra_version():
         # Per Product Compatibility: DataStax Enterprise, Apache Cassandra, CQL,
         # and SSTable compatibility
         # https://docs.datastax.com/en/landing_page/doc/landing_page/compatibility.html
-        dse_ver = get_package_version('dse-full')
+        dse_ver = get_package_version('dse')
         if not dse_ver:
             return None
         elif LooseVersion(dse_ver) >= LooseVersion('6.0'):
@@ -208,7 +208,7 @@ def get_cassandra_service():
 
 
 def get_deb_packages():
-    packages = set()
+    packages = set(['libaio1'])
 
     edition = get_edition()
     if edition == 'dse':
@@ -311,7 +311,7 @@ def get_cassandra_yaml(overrides={}, seeds=None):
 
     # Protocol no longer supported, config option ignored. Do not add to cassandra.yaml
     # or DSE 6.0 fails to start.
-    if has_cassandra_version('3.0'):
+    if has_cassandra_version('3.11'):
         simple_config_keys.remove('rpc_port')
 
     # file_cache_size_in_mb defaults to 0 in YAML, because int values need
@@ -344,7 +344,7 @@ def get_cassandra_yaml(overrides={}, seeds=None):
     # with the system_auth keyspace replication settings.
     cassandra_yaml['endpoint_snitch'] = 'GossipingPropertyFileSnitch'
 
-    if not has_cassandra_version('3.0'):
+    if not has_cassandra_version('3.11'):
         # Per Bug #1523546 and CASSANDRA-9319, Thrift is disabled by default in
         # Cassandra 2.2. Ensure it is enabled if rpc_port is non-zero.
         # The protocol is no longer supported with later versions, and adding

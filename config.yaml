@@ -77,6 +77,12 @@ options:
             Apache Cassandra packages. 'dse' is for DataStax Enterprise.
             Selecting 'dse' overrides the jvm setting. 'apache-snap' uses a
             snap package of Apache Cassandra.
+    dse_version:
+        type: string
+        default: "6.0"
+        description: >
+            The major DataStax Enterprise version to track when edition is set to 'dse'.
+            One of "4.7", "4.8", "5.0", "5.1", "6.0".
     jre:
         type: string
         default: openjdk
@@ -248,7 +254,7 @@ options:
         type: int
         default: 9160
         description: >
-            DEPRECATED, ignored by Cassandra 3.0+.
+            DEPRECATED, ignored by Cassandra 3.11+.
             Thrift protocol port for legacy clients.
     rpc_interface:
         type: string
