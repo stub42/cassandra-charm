@@ -22,8 +22,6 @@ deb archive in in the `install_sources` config setting when deploying.
 ```yaml
     install_sources:
       - deb http://www.apache.org/dist/cassandra/debian 311 main
-      - ppa:openjdk-r/ppa   # For OpenJDK 8
-      - ppa:stub/cassandra  # For Python driver
 ```
 
 To use Datastax Enterprise, set the `edition` config setting to `dse`
@@ -35,8 +33,6 @@ and password.
 ```yaml
     install_sources:
       - deb http://un:pw@debian.datastax.com/enterprise stable main
-      - ppa:openjdk-r/ppa   # For OpenJDK 8
-      - ppa:stub/cassandra  # For Python driver
 ```
 
 
@@ -77,7 +73,8 @@ environments but will perform poorly with real workloads.
 
 - Do not attempt to store too much data per node. If you need more space,
   add more nodes. Most workloads work best with a capacity under 1TB
-  per node.
+  per node, so take care with larger deployments. Recommended capacities
+  are vague and version dependent.  
 
 - You need to keep 50% of your disk space free for Cassandra maintenance
   operations. If you expect your nodes to hold 500GB of data each, you
@@ -103,12 +100,13 @@ local archive to avoid downloading from datastax.com.
 
 ## Oracle Java SE
 
-Cassandra recommends using Oracle Java SE 8. Unfortunately, this
-software is accessible only after accepting Oracle's click-through
-license making deployments using it much more cumbersome. You will need
-to download the Oracle Java SE 8 Server Runtime for Linux, and place the
-tarball at a URL accessible to your deployed units. The config item
-`private_jre_url` needs to be set to this URL.
+While OpenJDK is now supported, it is still often recommended to use
+Oracle Java SE 8. Unfortunately, this software is accessible only
+after accepting Oracle's click-through license making deployments
+using it much more cumbersome. You will need to download the Oracle
+Java SE 8 Server Runtime for Linux, and place the tarball at a URL
+accessible to your deployed units. The config item `private_jre_url`
+needs to be set to this URL.
 
 
 # Usage
@@ -116,54 +114,26 @@ tarball at a URL accessible to your deployed units. The config item
 To relate the Cassandra charm to a service that understands how to talk to
 Cassandra using Thrift or the native Cassandra protocol::
 
-    juju deploy cs:service-that-needs-cassandra
-    juju add-relation service-that-needs-cassandra cassandra:database
+    juju deploy cs:~cassandra-charmers/cqlsh
+    juju add-relation cqlsh cassandra:database
 
 
 Alternatively, if you require a superuser connection, use the
 `database-admin` relation instead of `database`::
 
-    juju deploy cs:admin-service
-    juju add-relation admin-service cassandra:database-admin
+    juju deploy cs:~cassandra-charmers/cqlsh cqlsh-admin
+    juju add-relation cqlsh-admin cassandra:database-admin
 
-
-Client charms need to provide nothing. The Cassandra service publishes the
-following connection settings and cluster information on the client's relation:
-
-`username` and `password`:
-
-    Authentication credentials. The cluster is configured to use
-    the standard PasswordAuthenticator authentication provider, rather
-    than the insecure default. You can use different credentials
-    if you wish, using an account created through some other mechanism.
-
-`host`:
-
-    IP address to connect to.
-
-`native_transport_port`:
-
-    Port for drivers and tools using the newer native protocol.
-
-`rpc_port`:
-
-    Port for drivers and tools using the legacy Thrift protocol.
-
-`cluster_name`:
-
-    The cluster name. A client service may be related to several
-    Cassandra services, and this setting may be used to tell which
-    services belong to which cluster.
-
-`datacenter` and `rack`:
-
-    The datacenter and rack units in this service belong to. Required for
-    setting keyspace replication correctly.
+Charms using the recommended charms.reactive framework should include
+'interface:cassandra' in their layer.yaml. Documentation for using the
+interface can be seen at https://github.com/stub42/interface-cassandra.
 
 The cluster is configured to use the recommended 'snitch'
 (GossipingPropertyFileSnitch), so you will need to configure replication of
 your keyspaces using the NetworkTopologyStrategy replica placement strategy.
-For example, using the default datacenter named 'juju':
+The datacenter is set in the Cassandra charm configuration, and provided
+by the client interface if clients need to do this programatically. For
+example, using the default datacenter named 'juju':
 
     CREATE KEYSPACE IF NOT EXISTS mydata WITH REPLICATION =
     { 'class': 'NetworkTopologyStrategy', 'juju': 3};
@@ -177,15 +147,11 @@ in the service configuration to CassandraAuthorizer and manually grant
 permissions to the users.
 
 
-# Known Limitations and Issues
-
-The `system_auth` keyspace replication factor is automatically increased
-but not decreased. If you have a service with three or more units and
-later decommission enough nodes to drop below three, you will need to
-manually update the `system_auth` keyspace replication settings.
-
-
 # Contact Information
+
+## General
+
+[The Juju mailing list](https://lists.ubuntu.com/mailman/listinfo/juju)
 
 ## Charm
 
@@ -197,3 +163,7 @@ manually update the `system_auth` keyspace replication settings.
 
 - [Apache Cassandra homepage](http://cassandra.apache.org/)
 - [Cassandra Getting Started](http://wiki.apache.org/cassandra/GettingStarted)
+
+## DataStax Enterprise
+
+- [DataStax homepage](https://www.datastax.com)
