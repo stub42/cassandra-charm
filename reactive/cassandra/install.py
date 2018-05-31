@@ -79,7 +79,7 @@ register_trigger(when='config.changed', clear_flag='cassandra.io_schedulers.done
 
 @when_not('cassandra.swapoff.done')
 def swapoff(fstab_path='/etc/fstab'):
-    '''Turn off swapping in the container, permanently.'''
+    '''Turn off swapping on the machine, permanently.'''
     # Turn off swap in the current session
     if host.is_container():
         hookenv.log("In a container, not touching swap.")
@@ -144,8 +144,7 @@ def reset_limits():
                       ubuntu - nproc 32768
                       ubuntu - as unlimited
                       ''')
-    host.write_file('/etc/security/limits.d/cassandra-charm.conf',
-                    contents.encode('US-ASCII'))
+    host.write_file('/etc/security/limits.d/cassandra-charm.conf', contents.encode('US-ASCII'))
     reactive.set_flag("cassandra.limits.done")
 
 
@@ -200,8 +199,7 @@ def fetch_oracle_jre():
         urllib.request.urlretrieve(url, filename)
         config['retrieved_jre'] = url
 
-    pattern = os.path.join(hookenv.charm_dir(),
-                           'lib', 'server-jre-?u*-linux-x64.tar.gz')
+    pattern = os.path.join(hookenv.charm_dir(), 'lib', 'server-jre-?u*-linux-x64.tar.gz')
     tarballs = glob.glob(pattern)
     if not (url or tarballs):
         helpers.status_set('blocked', 'private_jre_url not set and no local tarballs.')
@@ -243,10 +241,8 @@ def install_oracle_jre_tarball(tarball):
     for tool in ['java', 'javac']:
         tool_path = os.path.join(dest, 'bin', tool)
         subprocess.check_call(['update-alternatives', '--install',
-                               os.path.join('/usr/bin', tool),
-                               tool, tool_path, '1'])
-        subprocess.check_call(['update-alternatives',
-                               '--set', tool, tool_path])
+                               os.path.join('/usr/bin', tool), tool, tool_path, '1'])
+        subprocess.check_call(['update-alternatives', '--set', tool, tool_path])
 
 
 @when('cassandra.configured')
@@ -290,8 +286,7 @@ def update_hosts_file(hosts_file, hosts_map):
             if len(_line) < 2 or not (_line[0] == ip or hostname in _line[1:]):
                 keepers.append(line)
             else:
-                hookenv.log('Marking line {!r} for update or removal'
-                            ''.format(line.strip()), level=DEBUG)
+                hookenv.log('Marking line {!r} for update or removal'.format(line.strip()), level=DEBUG)
 
         lines = keepers
         newlines.append('{} {}\n'.format(ip, hostname))
@@ -313,8 +308,7 @@ def update_hosts_file(hosts_file, hosts_map):
 def reset_all_io_schedulers():
     cassandra.ensure_all_database_directories()
     dirs = cassandra.get_all_database_directories()
-    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']] +
-            [dirs['saved_caches_directory']])
+    dirs = (dirs['data_file_directories'] + [dirs['commitlog_directory']] + [dirs['saved_caches_directory']])
     config = cassandra.config()
     missing = False
     for d in dirs:
@@ -347,12 +341,3 @@ def set_application_version():
         config['last_version_update'] = int(time.time())
     else:
         hookenv.log('Invalid version {!r} extracted'.format(ver), ERROR)
-
-
-#              data_ready=[actions.configure_firewall,
-#              data_ready=[actions.post_bootstrap,
-#                          actions.create_unit_superusers,
-#                          actions.publish_database_relations,
-#                          actions.publish_database_admin_relations,
-#                          actions.nrpe_external_master_relation,
-#                          actions.emit_cluster_info,

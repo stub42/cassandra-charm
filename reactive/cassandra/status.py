@@ -22,8 +22,6 @@ from charms.reactive import (
 
 import helpers
 
-# TODO: Decommissioned status
-
 
 @when('cassandra.live')
 @when_not('cassandra.needs_restart')
