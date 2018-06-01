@@ -115,78 +115,8 @@ class TestHelpers(TestCaseBase):
             self.assertFalse(os.path.exists(prc_backup))
             self.assertFalse(os.path.exists(prc))
 
-    @patch('helpers.autostart_disabled')
-    @patch('charmhelpers.fetch.apt_install')
-    def test_install_packages(self, apt_install, autostart_disabled):
-        packages = ['a_pack', 'b_pack']
-        helpers.install_packages(packages)
-
-        # All packages got installed, and hook aborted if package
-        # installation failed.
-        apt_install.assert_called_once_with(['a_pack', 'b_pack'], fatal=True)
-
-        # The autostart_disabled context manager was used to stop
-        # package installation starting services.
-        autostart_disabled().__enter__.assert_called_once_with()
-        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
-
-    @patch('helpers.autostart_disabled')
-    @patch('charmhelpers.fetch.apt_install')
-    def test_install_packages_extras(self, apt_install, autostart_disabled):
-        packages = ['a_pack', 'b_pack']
-        hookenv.config()['extra_packages'] = 'c_pack d_pack'
-        helpers.install_packages(packages)
-
-        # All packages got installed, and hook aborted if package
-        # installation failed.
-        apt_install.assert_called_once_with(['a_pack', 'b_pack',
-                                             'c_pack', 'd_pack'], fatal=True)
-
-        # The autostart_disabled context manager was used to stop
-        # package installation starting services.
-        autostart_disabled().__enter__.assert_called_once_with()
-        autostart_disabled().__exit__.assert_called_once_with(None, None, None)
-
-    @patch('helpers.autostart_disabled')
-    @patch('charmhelpers.fetch.apt_install')
-    def test_install_packages_noop(self, apt_install, autostart_disabled):
-        # Everything is already installed. Nothing to do.
-        fetch.filter_installed_packages.side_effect = lambda pkgs: []
-
-        packages = ['a_pack', 'b_pack']
-        hookenv.config()['extra_packages'] = 'c_pack d_pack'
-        helpers.install_packages(packages)
-
-        # All packages got installed, and hook aborted if package
-        # installation failed.
-        self.assertFalse(apt_install.called)
-
-        # Autostart wasn't messed with.
-        self.assertFalse(autostart_disabled.called)
-
     def test_encrypt_password(self):
         self.assertEqual(type(helpers.encrypt_password('')), str)
-
-    @patch('subprocess.Popen')
-    def test_ensure_package_status(self, popen):
-        for status in ['install', 'hold']:
-            with self.subTest(status=status):
-                popen.reset_mock()
-                hookenv.config()['package_status'] = status
-                helpers.ensure_package_status(['a_pack', 'b_pack'])
-
-                selections = 'a_pack {}\nb_pack {}\n'.format(
-                    status, status).encode('US-ASCII')
-
-                self.assertEqual(
-                    [call(['dpkg', '--set-selections'], stdin=subprocess.PIPE),
-                     call().communicate(input=selections)], popen.mock_calls)
-
-        popen.reset_mock()
-        hookenv.config()['package_status'] = 'invalid'
-        self.assertRaises(RuntimeError,
-                          helpers.ensure_package_status, ['a_pack', 'b_back'])
-        self.assertFalse(popen.called)
 
     @patch('charmhelpers.core.hookenv.leader_get')
     def test_get_seed_ips(self, leader_get):
@@ -380,10 +310,6 @@ class TestHelpers(TestCaseBase):
         # An error was logged.
         hookenv.log.assert_called_once_with(ANY, hookenv.ERROR)
 
-    def test_get_jre_dse_override(self):
-        hookenv.config()['edition'] = 'dse'
-        self.assertEqual(helpers.get_jre(), 'oracle')
-
     @patch('charmhelpers.core.host.lsb_release')
     def test_get_cassandra_edition(self, lsb_release):
         lsb_release.return_value = {'DISTRIB_CODENAME': 'trusty'}
@@ -513,20 +439,20 @@ class TestHelpers(TestCaseBase):
     def test_get_cassandra_packages(self):
         # Default
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'ntp', 'run-one',
+                            set(['cassandra', 'run-one',
                                  'netcat', 'openjdk-8-jre-headless']))
 
     def test_get_cassandra_packages_oracle_jre(self):
         # Oracle JRE
         hookenv.config()['jre'] = 'oracle'
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['cassandra', 'ntp', 'run-one', 'netcat']))
+                            set(['cassandra', 'run-one', 'netcat']))
 
     def test_get_cassandra_packages_dse(self):
         # DataStax Enterprise, and implicit Oracle JRE.
         hookenv.config()['edition'] = 'dsE'  # Insensitive.
         self.assertSetEqual(helpers.get_cassandra_packages(),
-                            set(['dse-full', 'ntp', 'run-one', 'netcat']))
+                            set(['dse-full', 'run-one', 'netcat']))
 
     @patch('helpers.get_cassandra_service')
     @patch('charmhelpers.core.host.service_stop')
@@ -1564,14 +1490,6 @@ class TestInterfaceToIp(unittest.TestCase):
         }
         self.assertIsNone(helpers.interface_to_ip(sentinel.interface))
         log.assert_called_once_with(ANY, hookenv.ERROR)
-
-
-class TestIsLxc(unittest.TestCase):
-    def test_is_lxc(self):
-        # Test the function runs under the current environmnet.
-        # Unfortunately we can't sanely test that it is returning the
-        # correct value
-        helpers.is_lxc()
 
 
 if __name__ == '__main__':

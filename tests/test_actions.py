@@ -38,60 +38,6 @@ import helpers
 
 
 class TestActions(TestCaseBase):
-    def test_action_wrapper(self):
-        @actions.action
-        def somefunc(*args, **kw):
-            return 42, args, kw
-
-        hookenv.hook_name.return_value = 'catch-fire'
-
-        # The wrapper stripts the servicename argument, which we have no
-        # use for, logs a message and invokes the wrapped function.
-        hookenv.remote_unit.return_value = None
-        self.assertEqual(somefunc('sn', 1, foo=4), (42, (1,), dict(foo=4)))
-        hookenv.log.assert_called_once_with('** Action catch-fire/somefunc')
-
-        # Different log message if there is a remote unit.
-        hookenv.log.reset_mock()
-        os.environ['JUJU_REMOTE_UNIT'] = 'foo'
-        self.assertEqual(somefunc('sn', 1, foo=4), (42, (1,), dict(foo=4)))
-        hookenv.log.assert_called_once_with(
-            '** Action catch-fire/somefunc (foo)')
-
-    def test_revert_unchangeable_config(self):
-        config = hookenv.config()
-
-        self.assertIn('datacenter', actions.UNCHANGEABLE_KEYS)
-
-        # In the first hook, revert does nothing as there is nothing to
-        # revert too.
-        config['datacenter'] = 'mission_control'
-        self.assertTrue(config.changed('datacenter'))
-        actions.revert_unchangeable_config('')
-        self.assertEqual(config['datacenter'], 'mission_control')
-
-        config.save()
-        config.load_previous()
-        config['datacenter'] = 'orbital_1'
-
-        actions.revert_unchangeable_config('')
-        self.assertEqual(config['datacenter'], 'mission_control')  # Reverted
-
-        hookenv.log.assert_any_call(ANY, hookenv.ERROR)  # Logged the problem.
-
-    @patch('charmhelpers.core.hookenv.is_leader')
-    def test_leader_only(self, is_leader):
-
-        @actions.leader_only
-        def f(*args, **kw):
-            return args, kw
-
-        is_leader.return_value = False
-        self.assertIsNone(f(1, foo='bar'))
-
-        is_leader.return_value = True
-        self.assertEqual(f(1, foo='bar'), ((1,), dict(foo='bar')))
-
     def test_set_proxy(self):
         # NB. Environment is already mocked.
         os.environ['http_proxy'] = ''
@@ -103,57 +49,6 @@ class TestActions(TestCaseBase):
         actions.set_proxy('')
         self.assertEqual(os.environ['http_proxy'], 'foo')
         self.assertEqual(os.environ['https_proxy'], 'foo')
-
-    @patch('subprocess.check_call')
-    def test_preinstall(self, check_call):
-        # Noop if there are no preinstall hooks found running the
-        # install hook.
-        hookenv.hook_name.return_value = 'install'
-        actions.preinstall('')
-        self.assertFalse(check_call.called)
-        hookenv.log.assert_any_call('No preinstall hooks found')
-
-        # If preinstall hooks are found running the install hook,
-        # the preinstall hooks are run.
-        hook_dirs = []
-        hook_files = []
-        for i in range(1, 3):
-            hook_dirs.append(os.path.join(hookenv.charm_dir(),
-                                          'exec.d', str(i)))
-            hook_files.append(os.path.join(hook_dirs[-1], 'charm-pre-install'))
-
-            os.makedirs(hook_dirs[-1])
-            with open(hook_files[-1], 'w') as f1:
-                print('mocked', file=f1)
-            os.chmod(hook_files[-1], 0o755)
-
-        check_call.reset_mock()
-        actions.preinstall('')
-
-        calls = [call(['sh', '-c', f2]) for f2 in hook_files]
-        check_call.assert_has_calls(calls)
-
-        # If a preinstall hook is not executable, a warning is raised.
-        hook_dir = os.path.join(hookenv.charm_dir(), 'exec.d', '55')
-        hook_file = os.path.join(hook_dir, 'charm-pre-install')
-        os.makedirs(hook_dir)
-        with open(hook_file, 'w') as f1:
-            print('whoops', file=f1)
-        os.chmod(hook_file, 0o644)
-        check_call.reset_mock()
-        hookenv.log.reset_mock()
-        actions.preinstall('')
-        check_call.assert_has_calls(calls)  # Only previous hooks run.
-        hookenv.log.assert_has_calls([
-            call(ANY),
-            call(ANY),
-            call(ANY, hookenv.WARNING)])
-
-        # Nothing happens if the install hook is not being run.
-        hookenv.hook_name.return_value = 'config-changed'
-        check_call.reset_mock()
-        actions.preinstall('')
-        self.assertFalse(check_call.called)
 
     @patch('subprocess.check_call')
     def test_swapoff(self, check_call):
@@ -182,58 +77,6 @@ class TestActions(TestCaseBase):
         helpers.is_lxc.return_value = True
         actions.swapoff('')
         self.assertFalse(check_call.called)
-
-    @patch('charmhelpers.fetch.configure_sources')
-    def test_configure_sources(self, configure_sources):
-        config = hookenv.config()
-
-        # fetch.configure_sources called the first time
-        actions.configure_sources('')
-        configure_sources.assert_called_once_with(True)
-
-        # fetch.configure_sources not called if relevant config is unchanged.
-        config.save()
-        config.load_previous()
-        configure_sources.reset_mock()
-        actions.configure_sources('')
-        self.assertFalse(configure_sources.called)
-
-        # Changing install_sources causes fetch.configure_sources to be
-        # called.
-        config.save()
-        config.load_previous()
-        configure_sources.reset_mock()
-        config['install_sources'] = 'foo'
-        actions.configure_sources('')
-        configure_sources.assert_called_once_with(True)
-
-        # Changing install_keys causes fetch.configure_sources to be
-        # called.
-        config.save()
-        config.load_previous()
-        configure_sources.reset_mock()
-        config['install_keys'] = 'foo'
-        actions.configure_sources('')
-        configure_sources.assert_called_once_with(True)
-
-    @patch('charmhelpers.core.hookenv.charm_dir')
-    @patch('subprocess.check_call')
-    def test_add_implicit_package_signing_keys(self, check_call, charm_dir):
-        charm_dir.return_value = os.path.join(os.path.dirname(__file__),
-                                              os.pardir)
-        actions.add_implicit_package_signing_keys('')
-
-        keys = ['apache', 'datastax']
-
-        self.assertEqual(check_call.call_count, len(keys))
-
-        for k in keys:
-            with self.subTest(key=k):
-                path = os.path.join(hookenv.charm_dir(),
-                                    'lib', '{}.key'.format(k))
-                self.assertTrue(os.path.exists(path))
-                check_call.assert_any_call(['apt-key', 'add', path],
-                                           stdin=subprocess.DEVNULL)
 
     @patch('charmhelpers.core.host.write_file')
     @patch('subprocess.check_call')
@@ -271,21 +114,6 @@ class TestActions(TestCaseBase):
         self.assertFalse(check_call.called)
         hookenv.log.assert_any_call('In an LXC. '
                                     'Leaving sysctl unchanged.')
-
-    @patch('helpers.get_cassandra_edition')
-    @patch('helpers.ensure_cassandra_snap_installed')
-    @patch('helpers.get_cassandra_packages')
-    @patch('helpers.ensure_package_status')
-    def test_ensure_cassandra_package_status(self, ensure_package_status,
-                                             get_cassandra_packages,
-                                             ensure_snap_installed,
-                                             get_cassandra_edition):
-        get_cassandra_packages.return_value = sentinel.cassandra_packages
-        get_cassandra_edition.return_value = 'community'
-        actions.ensure_cassandra_package_status('')
-        ensure_package_status.assert_called_once_with(
-            sentinel.cassandra_packages)
-        self.assertFalse(ensure_snap_installed.called)
 
     @patch('helpers.get_cassandra_edition')
     @patch('helpers.ensure_cassandra_snap_installed')
@@ -439,16 +267,6 @@ class TestActions(TestCaseBase):
             call(['update-alternatives', '--set', 'javac',
                   os.path.join(dest, 'bin', 'javac')])])
 
-    @patch('subprocess.check_output')
-    def test_emit_java_version(self, check_output):
-        check_output.return_value = 'Line 1\nLine 2'
-        actions.emit_java_version('')
-        check_output.assert_called_once_with(['java', '-version'],
-                                             universal_newlines=True)
-        hookenv.log.assert_has_calls([call(ANY),
-                                      call('JRE: Line 1'),
-                                      call('JRE: Line 2')])
-
     @patch('helpers.configure_cassandra_yaml')
     def test_configure_cassandra_yaml(self, configure_cassandra_yaml):
         # actions.configure_cassandra_yaml is just a wrapper around the
@@ -590,108 +408,6 @@ class TestActions(TestCaseBase):
         repair.assert_called_once_with()
         set_active.assert_called_once_with()
 
-    @patch('helpers.rpc_broadcast_ip_address')
-    @patch('helpers.listen_ip_address')
-    def test_store_ip_addresses(self, listen_addr, rpc_addr):
-        listen_addr.return_value = sentinel.private_ip
-        rpc_addr.return_value = sentinel.public_ip
-        actions.store_ip_addresses('')
-        self.assertEqual(hookenv.config()['_rpc_addr'], sentinel.public_ip)
-        self.assertEqual(hookenv.config()['_listen_addr'], sentinel.private_ip)
-
-    @patch('charmhelpers.core.host.service_start')
-    @patch('helpers.status_set')
-    @patch('helpers.actual_seed_ips')
-    @patch('helpers.get_seed_ips')
-    @patch('relations.StorageRelation.needs_remount')
-    @patch('helpers.is_bootstrapped')
-    @patch('helpers.is_cassandra_running')
-    @patch('helpers.is_decommissioned')
-    def test_needs_restart(self, is_decom, is_running, is_bootstrapped,
-                           needs_remount, seed_ips, actual_seeds,
-                           status_set, service_start):
-        is_decom.return_value = False
-        is_running.return_value = True
-        needs_remount.return_value = False
-        seed_ips.return_value = set(['1.2.3.4'])
-        actual_seeds.return_value = set(['1.2.3.4'])
-
-        config = hookenv.config()
-        config['configured_seeds'] = list(sorted(seed_ips()))
-        config.save()
-        config.load_previous()  # Ensure everything flagged as unchanged.
-
-        self.assertFalse(actions.needs_restart())
-
-        # Decommissioned nodes are not restarted.
-        is_decom.return_value = True
-        self.assertFalse(actions.needs_restart())
-        is_decom.return_value = False
-        self.assertFalse(actions.needs_restart())
-
-        # Nodes not running need to be restarted.
-        is_running.return_value = False
-        self.assertTrue(actions.needs_restart())
-        is_running.return_value = True
-        self.assertFalse(actions.needs_restart())
-
-        # If we have a new mountpoint, we need to restart in order to
-        # migrate data.
-        needs_remount.return_value = True
-        self.assertTrue(actions.needs_restart())
-        needs_remount.return_value = False
-        self.assertFalse(actions.needs_restart())
-
-        # Certain changed config items trigger a restart.
-        config['max_heap_size'] = '512M'
-        self.assertTrue(actions.needs_restart())
-        config.save()
-        config.load_previous()
-        self.assertFalse(actions.needs_restart())
-
-        # A new IP address requires a restart.
-        config['_rpc_addr'] = 'new'
-        self.assertTrue(actions.needs_restart())
-        config.save()
-        config.load_previous()
-        self.assertFalse(actions.needs_restart())
-
-        config['_listen_addr'] = 'new'
-        self.assertTrue(actions.needs_restart())
-        config.save()
-        config.load_previous()
-        self.assertFalse(actions.needs_restart())
-
-        # If the seeds have changed, we need to restart.
-        seed_ips.return_value = set(['9.8.7.6'])
-        actual_seeds.return_value = set(['9.8.7.6'])
-        self.assertTrue(actions.needs_restart())
-        is_running.side_effect = iter([False, True])
-        helpers.start_cassandra()
-        is_running.side_effect = None
-        is_running.return_value = True
-        self.assertFalse(actions.needs_restart())
-
-    @patch('charmhelpers.core.hookenv.is_leader')
-    @patch('helpers.is_bootstrapped')
-    @patch('helpers.ensure_database_directories')
-    @patch('helpers.remount_cassandra')
-    @patch('helpers.start_cassandra')
-    @patch('helpers.stop_cassandra')
-    @patch('helpers.status_set')
-    def test_maybe_restart(self, status_set, stop_cassandra, start_cassandra,
-                           remount, ensure_directories, is_bootstrapped,
-                           is_leader):
-        coordinator.grants = {}
-        coordinator.requests = {hookenv.local_unit(): {}}
-        coordinator.relid = 'cluster:1'
-        coordinator.grant('restart', hookenv.local_unit())
-        actions.maybe_restart('')
-        stop_cassandra.assert_called_once_with()
-        remount.assert_called_once_with()
-        ensure_directories.assert_called_once_with()
-        start_cassandra.assert_called_once_with()
-
     @patch('helpers.stop_cassandra')
     def test_stop_cassandra(self, helpers_stop_cassandra):
         actions.stop_cassandra('ignored')
@@ -744,93 +460,6 @@ class TestActions(TestCaseBase):
             with self.subTest(key=key):
                 self.assertIn(key, combined)
 
-    @patch('actions._publish_database_relation')
-    def test_publish_database_relations(self, publish_db_rel):
-        actions.publish_database_relations('')
-        publish_db_rel.assert_called_once_with('database:1', superuser=False)
-
-    @patch('actions._publish_database_relation')
-    def test_publish_database_admin_relations(self, publish_db_rel):
-        actions.publish_database_admin_relations('')
-        publish_db_rel.assert_called_once_with('database-admin:1',
-                                               superuser=True)
-
-    @patch('helpers.leader_ping')
-    @patch('helpers.ensure_user')
-    @patch('helpers.connect')
-    @patch('helpers.get_service_name')
-    @patch('helpers.encrypt_password')
-    @patch('charmhelpers.core.host.pwgen')
-    @patch('charmhelpers.core.hookenv.is_leader')
-    @patch('actions._client_credentials')
-    def test_publish_database_relation_leader(self, client_creds, is_leader,
-                                              pwgen, encrypt_password,
-                                              get_service_name,
-                                              connect, ensure_user,
-                                              leader_ping):
-        is_leader.return_value = True  # We are the leader.
-        client_creds.return_value = (None, None)  # No creds published yet.
-
-        get_service_name.return_value = 'cservice'
-        pwgen.side_effect = iter(['secret1', 'secret2'])
-        encrypt_password.side_effect = iter(['crypt1', 'crypt2'])
-        connect().__enter__.return_value = sentinel.session
-
-        config = hookenv.config()
-        config['native_transport_port'] = 666
-        config['rpc_port'] = 777
-        config['cluster_name'] = 'fred'
-        config['datacenter'] = 'mission_control'
-        config['rack'] = '01'
-
-        actions._publish_database_relation('database:1', superuser=False)
-
-        ensure_user.assert_called_once_with(sentinel.session,
-                                            'juju_cservice', 'crypt1',
-                                            False)
-        leader_ping.assert_called_once_with()  # Peers woken.
-
-        hookenv.relation_set.assert_has_calls([
-            call('database:1',
-                 username='juju_cservice', password='secret1',
-                 host='10.30.0.1', native_transport_port=666, rpc_port=777,
-                 cluster_name='fred', datacenter='mission_control',
-                 rack='01')])
-
-    @patch('helpers.leader_ping')
-    @patch('helpers.ensure_user')
-    @patch('helpers.connect')
-    @patch('helpers.get_service_name')
-    @patch('helpers.encrypt_password')
-    @patch('charmhelpers.core.host.pwgen')
-    @patch('charmhelpers.core.hookenv.is_leader')
-    @patch('actions._client_credentials')
-    def test_publish_database_relation_super(self, client_creds, is_leader,
-                                             pwgen, encrypt_password,
-                                             get_service_name,
-                                             connect, ensure_user,
-                                             leader_ping):
-        is_leader.return_value = True  # We are the leader.
-        client_creds.return_value = (None, None)  # No creds published yet.
-
-        get_service_name.return_value = 'cservice'
-        pwgen.side_effect = iter(['secret1', 'secret2'])
-        encrypt_password.side_effect = iter(['crypt1', 'crypt2'])
-        connect().__enter__.return_value = sentinel.session
-
-        config = hookenv.config()
-        config['native_transport_port'] = 666
-        config['rpc_port'] = 777
-        config['cluster_name'] = 'fred'
-        config['datacenter'] = 'mission_control'
-        config['rack'] = '01'
-
-        actions._publish_database_relation('database:1', superuser=True)
-
-        ensure_user.assert_called_once_with(sentinel.session,
-                                            'juju_cservice_admin', 'crypt1',
-                                            True)
-
     @patch('charmhelpers.core.host.write_file')
     def test_install_maintenance_crontab(self, write_file):
         # First 7 units get distributed, one job per day.
@@ -861,80 +490,6 @@ class TestActions(TestCaseBase):
         expected = (b'\n37 8 * * 5 cassandra run-one-until-success '
                     b'nodetool repair -pr')
         self.assertIn(expected, contents)
-
-    @patch('helpers.emit_netstats')
-    @patch('helpers.emit_status')
-    @patch('helpers.emit_describe_cluster')
-    def test_emit_cluster_info(self, emit_desc, emit_status, emit_netstats):
-        actions.emit_cluster_info('')
-        emit_desc.assert_called_once_with()
-        emit_status.assert_called_once_with()
-        emit_netstats.assert_called_once_with()
-
-    @patch('charmhelpers.core.hookenv.relations_of_type')
-    @patch('actions.ufw')
-    def test_configure_firewall(self, ufw, rel_of_type):
-        rel_of_type.side_effect = iter([[{'listen_ip': '1.1.0.1'},
-                                         {'listen_ip': '1.1.0.2'}],
-                                        []])
-        actions.configure_firewall('')
-
-        # Confirm our mock provided the expected data.
-        rel_of_type.assert_has_calls([call('cluster'), call('database-admin')])
-
-        ufw.enable.assert_called_once_with(soft_fail=True)  # Always enabled.
-
-        # SSH and the client protocol ports are always fully open.
-        ufw.service.assert_has_calls([call('ssh', 'open'),
-                                      call('nrpe', 'open'),
-                                      call('rsync', 'open'),
-                                      call(9042, 'open'),
-                                      call(9160, 'open')])
-
-        # This test is running for the first time, so there are no
-        # previously applied rules to remove. It opens necessary access
-        # to peers and other related units. The 1.1.* addresses are
-        # peers, and they get storage (7000), ssl_storage (7001),
-        # JMX (7199), Thrift (9160) and native (9042). The remaining
-        # addresses are clients, getting just Thrift and native.
-        ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7000),
-                                           call('1.1.0.1', 'any', 7001),
-
-                                           call('1.1.0.2', 'any', 7000),
-                                           call('1.1.0.2', 'any', 7001)],
-                                          any_order=True)
-
-        # If things change in a later hook, unwanted rules are removed
-        # and new ones added.
-        config = hookenv.config()
-        config.save()
-        config.load_previous()
-        config['native_transport_port'] = 7777  # 9042 -> 7777
-        config['storage_port'] = 7002  # 7000 -> 7002
-        config['open_client_ports'] = True
-        ufw.reset_mock()
-
-        rel_of_type.side_effect = iter([[],
-                                        [{'private-address': '1.1.0.1'},
-                                         {'private-address': '1.1.0.2'}]])
-        actions.configure_firewall('')
-
-        # Three ports now globally open. Yes, having the globally open
-        # native and Thrift ports does make the later more specific
-        # rules meaningless, but we add the specific rules anyway.
-        ufw.service.assert_has_calls([call('ssh', 'open'),
-                                      call('nrpe', 'open'),
-                                      call(9042, 'close'),
-                                      call(7777, 'open'),
-                                      call(9160, 'open')], any_order=True)
-        ufw.revoke_access.assert_has_calls([call('1.1.0.1', 'any', 7000),
-                                            call('1.1.0.2', 'any', 7000)],
-                                           any_order=True)
-        ufw.grant_access.assert_has_calls([call('1.1.0.1', 'any', 7001),
-                                           call('1.1.0.1', 'any', 7002),
-                                           call('1.1.0.2', 'any', 7001),
-                                           call('1.1.0.2', 'any', 7002)],
-                                          any_order=True)
 
     @patch('helpers.mountpoint')
     @patch('helpers.get_cassandra_version')
@@ -1113,65 +668,6 @@ class TestActions(TestCaseBase):
         is_leader.return_value = True
         actions.reset_default_password('')  # noop
         self.assertFalse(connect.called)
-
-    @patch('helpers.get_seed_ips')
-    @patch('helpers.status_set')
-    @patch('charmhelpers.core.hookenv.status_get')
-    @patch('charmhelpers.core.hookenv.is_leader')
-    def test_set_active(self, is_leader, status_get, status_set, seed_ips):
-        is_leader.return_value = False
-        status_get.return_value = ('waiting', '')
-        seed_ips.return_value = set()
-        actions.set_active('')
-        status_set.assert_called_once_with('active', 'Live node')
-
-    @patch('helpers.get_seed_ips')
-    @patch('helpers.status_set')
-    @patch('charmhelpers.core.hookenv.status_get')
-    @patch('charmhelpers.core.hookenv.is_leader')
-    def test_set_active_seed(self, is_leader,
-                             status_get, status_set, seed_ips):
-        is_leader.return_value = False
-        status_get.return_value = ('waiting', '')
-        seed_ips.return_value = set([hookenv.unit_private_ip()])
-        actions.set_active('')
-        status_set.assert_called_once_with('active', 'Live seed')
-
-    @patch('helpers.num_nodes')
-    @patch('helpers.get_seed_ips')
-    @patch('helpers.service_status_set')
-    @patch('helpers.status_set')
-    @patch('charmhelpers.core.hookenv.status_get')
-    @patch('charmhelpers.core.hookenv.is_leader')
-    def test_set_active_service(self, is_leader,
-                                status_get, status_set, service_status_set,
-                                seed_ips, num_nodes):
-        status_get.return_value = ('waiting', '')
-        is_leader.return_value = True
-        seed_ips.return_value = set([hookenv.unit_private_ip()])
-        num_nodes.return_value = 1
-        actions.set_active('')
-        service_status_set.assert_called_once_with('active',
-                                                   'Single node cluster')
-
-        service_status_set.reset_mock()
-        num_nodes.return_value = 6
-        actions.set_active('')
-        service_status_set.assert_called_once_with('active',
-                                                   '6 node cluster')
-
-    @patch('helpers.encrypt_password')
-    @patch('helpers.superuser_credentials')
-    @patch('helpers.peer_relid')
-    def test_request_unit_superuser(self, peer_relid, sup_creds, crypt):
-        peer_relid.return_value = sentinel.peer_relid
-        sup_creds.return_value = (sentinel.username, sentinel.password)
-        crypt.return_value = sentinel.pwhash
-        hookenv.relation_get.return_value = dict()
-        actions.request_unit_superuser('')
-        hookenv.relation_set.assert_called_once_with(
-            sentinel.peer_relid,
-            username=sentinel.username, pwhash=sentinel.pwhash)
 
     @patch('helpers.update_hosts_file')
     @patch('socket.gethostname')
