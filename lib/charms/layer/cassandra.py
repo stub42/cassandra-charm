@@ -329,8 +329,11 @@ def get_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml['listen_address'] = listen_ip_address()
     if c['rpc_interface']:
         cassandra_yaml['rpc_address'] = rpc_broadcast_ip_address()
+    elif hookenv.has_juju_version('2.3'):
+        cassandra_yaml['rpc_address'] = rpc_ip_address()
+        cassandra_yaml['broadcast_rpc_address'] = rpc_broadcast_ip_address()
     else:
-        # If no specific interface, we listen on all interfaces.
+        # If no specific interface & old Juju, we listen on all interfaces.
         cassandra_yaml['rpc_address'] = '0.0.0.0'
         if not get_cassandra_version().startswith('2.0'):
             rpc_addr = rpc_broadcast_ip_address()
@@ -407,15 +410,51 @@ def get_seed_ips():
 
 def listen_ip_address():
     c = config()
-    return (interface_to_ip(c['listen_interface']) or
-            hookenv.unit_private_ip())
+    # Pre-juju2, listen_interface was used to control the interface used for
+    # communication & replication between Cassandra units.
+    if c['listen_interface'] or not hookenv.has_juju_version('2.3'):
+        return (interface_to_ip(c['listen_interface']) or
+                hookenv.unit_private_ip())
+
+    # Post-juju2, addresses for relation endpoints can be specified at deploy time
+    # in a standard way, so listen_interface in config should be unnecessary.
+    ip = hookenv.network_get('cluster')['bind-addresses'][0]['addresses'][0]['address']
+    hookenv.log('listen_ip_address == {!r}'.format(ip), DEBUG)
+    return ip
+
+
+def rpc_ip_address():
+    c = config()
+    # Pre-juju2, rpc_interface was used to control the interface used for
+    # client communication.
+    if c['rpc_interface'] or not hookenv.has_juju_version('2.3'):
+        return (interface_to_ip(c['rpc_interface']) or
+                hookenv.unit_public_ip())
+
+    # Post-juju2, addresses for relation endpoints can be specified at deploy time
+    # in a standard way, so listen_interface in config should be unnecessary.
+    # Only the database endpoint is used, as Cassandra only supports a single
+    # IP address to broadcast as the connection address.
+    ip = hookenv.network_get('database')['bind-addresses'][0]['addresses'][0]['address']
+    hookenv.log('rpc_ip_address == {!r}'.format(ip), DEBUG)
+    return ip
 
 
 def rpc_broadcast_ip_address():
     c = config()
-    # TODO: Advertise ingress IP address. But we might have several?
-    return (interface_to_ip(c['rpc_interface']) or
-            hookenv.unit_public_ip())
+    # Pre-juju2, rpc_interface was used to control the interface used for
+    # client communication.
+    if c['rpc_interface'] or not hookenv.has_juju_version('2.3'):
+        return (interface_to_ip(c['rpc_interface']) or
+                hookenv.unit_public_ip())
+
+    # Post-juju2, addresses for relation endpoints can be specified at deploy time
+    # in a standard way, so listen_interface in config should be unnecessary.
+    # Only the database endpoint is used, as Cassandra only supports a single
+    # IP address to broadcast as the connection address.
+    ip = hookenv.network_get('database')['ingress-addresses'][0]
+    hookenv.log('rpc_broadcast_ip_address == {!r}'.format(ip), DEBUG)
+    return ip
 
 
 def interface_to_ip(interface):
