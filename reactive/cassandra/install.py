@@ -37,6 +37,7 @@ from charmhelpers.core import (
     host,
     templating,
 )
+from charmhelpers.contrib.network import ufw
 from charmhelpers.core.hookenv import (
     DEBUG,
     ERROR,
@@ -341,3 +342,14 @@ def set_application_version():
         config['last_version_update'] = int(time.time())
     else:
         hookenv.log('Invalid version {!r} extracted'.format(ver), ERROR)
+
+
+@when_not('cassandra.ufw.disabled')
+def disable_ufw():
+    '''Older versions of the charm used UFW to block access to
+    replication and JMX ports. Turn it off, as we now trust Juju
+    to control this, and firewalls used appropriately when it can't
+    '''
+    hookenv.log('Disabling UFW, no longer used by this charm')
+    ufw.disable()
+    reactive.set_flag('cassandra.ufw.disabled')
