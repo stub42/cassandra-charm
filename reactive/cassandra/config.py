@@ -172,6 +172,16 @@ def configure_cassandra():
 
 
 @when('cassandra.configured')
+@when('cassandra.bootstrapped')
+@when('config.changed')
+def maybe_restart():
+    for k in RESTART_REQUIRED_KEYS:
+        if reactive.is_flag_set('config.changed.{}'.format(k)):
+            hookenv.log('{} changed, restart required'.format(k))
+            reactive.set_flag('cassandra.needs_restart')
+
+
+@when('cassandra.configured')
 @when_not('cassandra.ports.opened')
 def open_ports():
     config = cassandra.config()
