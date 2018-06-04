@@ -37,25 +37,11 @@ from charms import (
 )
 from charms.layer import cassandra
 from charms.reactive import (
-    hook,
     when,
     when_any,
     when_not,
 )
 from charms.reactive.flags import register_trigger
-
-
-@hook('upgrade-charm')
-def upgrade_charm():
-    if reactive.is_flag_set('leadership.is_leader'):
-        # Each node used to have its own set of credentials, which
-        # was unnecessarily clever.
-        if (reactive.is_flag_set('leadership.set.default_admin_password_changed') and
-                not reactive.is_flag_set('leadership.username')):
-            username = 'juju_{}'.format(re.subn(r'\W', '_', hookenv.local_unit())[0])
-            username, password = cassandra.get_cqlshrc_credentials(username)
-            if username is not None and password is not None:
-                leadership.leader_set(username=username, password=password)
 
 
 register_trigger(when='leadership.changed.seeds', clear_flag='cassandra.configured')
@@ -160,7 +146,13 @@ def restart():
     return False
 
 
-@when('cassandra.needs_restart')
+@when('cassandra.configured')
+@when_not('cassandra.bootstrapped')
+@when_not('cassandra.needs_restart')
+def request_bootstrap():
+    reactive.set_flag('cassandra.needs_restart')
+
+
 @when('cassandra.configured')
 @when('coordinator.granted.restart')
 @when_not('cassandra.bootstrapped')
@@ -176,6 +168,8 @@ def wait_for_bootstrap():
     while True:
         time.sleep(interval)
         status = cassandra.get_node_status()
+        if status == 'STARTING':
+            continue
         if status in ['JOINING', 'NORMAL']:
             return True
         if not status:
@@ -183,6 +177,18 @@ def wait_for_bootstrap():
         else:
             helpers.status_set('blocked', 'Node in unexpected state {!r}'.format(status))
         return False
+
+
+@when('leadership.is_leader')
+@when('cassandra.config.validated')
+@when('leadership.set.default_admin_password_changed')
+@when_not('leadership.set.username')
+def upgrade_credentials():
+    '''Migrate credentials from pre-reactive charm deployment'''
+    username = 'juju_{}'.format(re.subn(r'\W', '_', hookenv.local_unit())[0])
+    username, password = cassandra.get_cqlshrc_credentials(username)
+    if username is not None and password is not None:
+        leadership.leader_set(username=username, password=password)
 
 
 @when('leadership.is_leader')
@@ -207,7 +213,9 @@ def reset_default_password():
     hookenv.leader_set(default_admin_password_changed=True)
 
 
+@when('leadership.is_leader')
 @when('leadership.set.default_admin_password_changed')
+@when('cassandra.config.validated')
 @when_not('leadership.set.username')
 def auth_update():
     # We used to have individual superuser credentials for each node,

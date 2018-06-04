@@ -47,6 +47,7 @@ from charmhelpers.core.hookenv import (
 from charms import (
     leadership,
     localconfig,
+    reactive,
 )
 import helpers
 
@@ -681,12 +682,16 @@ def connect(username=None, password=None, timeout=CONNECT_TIMEOUT):
 
     auth_provider = get_auth_provider(username, password)
 
+    addresses = set([address])
+    cluster_ep = reactive.endpoint_from_name('cluster')
+    addresses.update(cluster_ep.get_bootstrapped_ips())
+
     # Although we specify a reconnection_policy, it does not apply to
     # the initial connection so we retry in a loop.
     start = time.time()
     until = start + timeout
     while True:
-        cluster = cassandra.cluster.Cluster([address], port=port, auth_provider=auth_provider)
+        cluster = cassandra.cluster.Cluster(list(addresses), port=port, auth_provider=auth_provider)
         try:
             session = cluster.connect()
             session.default_timeout = timeout

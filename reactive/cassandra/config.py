@@ -107,9 +107,9 @@ def upgrade_charm():
 
 @hook('upgrade-charm')
 def populate_dse_version():
-    if cassandra.get_edition() != 'dse':
+    if hookenv.config()['edition'] != 'dse':
         return
-    config = cassandra.config()
+    config = cassandra.config()  # Not cassandra.config(), not yet validated.
     if config.get('dse_version', None) is None:
         ver = cassandra.get_package_version('dse')[:3]
         assert ver in ENUMS['dse_version'], 'Extracted invalid DSE version {!r}'.format(ver)
@@ -122,7 +122,8 @@ def validate_config():
     new_config = dict(hookenv.config())
 
     invalid = False
-    for k in UNCHANGEABLE_KEYS:
+    silent_unchangeable_keys = set(['dse_version'])
+    for k in (UNCHANGEABLE_KEYS - silent_unchangeable_keys):
         old = config.get(k, None)
         new = new_config.get(k, None)
         if old is not None and old != new:
