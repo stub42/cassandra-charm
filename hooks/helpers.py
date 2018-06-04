@@ -589,7 +589,7 @@ def ensure_database_directories():
         ensure_database_directory(db_dir)
 
 
-CONNECT_TIMEOUT = 10
+CONNECT_TIMEOUT = 60
 
 
 @contextmanager
