@@ -173,7 +173,6 @@ def configure_cassandra():
 
 
 @when('cassandra.configured')
-@when('cassandra.bootstrapped')
 @when('config.changed')
 def maybe_restart():
     for k in RESTART_REQUIRED_KEYS:
@@ -186,17 +185,15 @@ def maybe_restart():
 @when_not('cassandra.ports.opened')
 def open_ports():
     config = cassandra.config()
-    if cassandra.has_cassandra_version('3.0'):
-        port_keys = ['native_transport_port']
-    else:
-        port_keys = ['rpc_port', 'native_transport_port']
+    port_keys = ['rpc_port', 'native_transport_port']
     for k in port_keys:
         prev_k = '{}.previous'.format(k)
         prev = config.get(prev_k)
         want = config[k]
         if want == prev:
             continue
-        hookenv.open_port(want)
+        if k != 'rpc_port' or cassandra.has_thrift_support():
+            hookenv.open_port(want)
         if prev is not None:
             hookenv.close_port(prev)
         config[prev_k] = want

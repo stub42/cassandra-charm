@@ -310,9 +310,7 @@ def get_cassandra_yaml(overrides={}, seeds=None):
                           'tombstone_failure_threshold',
                           'tombstone_warn_threshold']
 
-    # Protocol no longer supported, config option ignored. Do not add to cassandra.yaml
-    # or DSE 6.0 fails to start.
-    if has_cassandra_version('3.11'):
+    if not has_thrift_support():
         simple_config_keys.remove('rpc_port')
 
     # file_cache_size_in_mb defaults to 0 in YAML, because int values need
@@ -348,7 +346,7 @@ def get_cassandra_yaml(overrides={}, seeds=None):
     # with the system_auth keyspace replication settings.
     cassandra_yaml['endpoint_snitch'] = 'GossipingPropertyFileSnitch'
 
-    if not has_cassandra_version('3.11'):
+    if has_thrift_support():
         # Per Bug #1523546 and CASSANDRA-9319, Thrift is disabled by default in
         # Cassandra 2.2. Ensure it is enabled if rpc_port is non-zero.
         # The protocol is no longer supported with later versions, and adding
@@ -359,6 +357,18 @@ def get_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml.update(overrides)
 
     return cassandra_yaml
+
+
+def has_thrift_support():
+    # DSE 6.0 is not starting with Thrift enabled.
+    if get_edition() == 'dse':
+        ver = LooseVersion(get_package_version('dse'))
+        if ver >= LooseVersion('6.0'):
+            return False
+    # Thrift will be dropped with Cassandra 4
+    if has_cassandra_version('4.0'):
+        return False
+    return True
 
 
 def read_cassandra_yaml():
