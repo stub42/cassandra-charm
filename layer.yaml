@@ -6,7 +6,13 @@ includes:
     - layer:coordinator
     - layer:nagios
 exclude:
-    - .venv?
+    - ".venv?"
+    - ".tox"
+    - "*~"
+    - ".coverage"
+    - "__pycache__"
+    - "*.pyc"
+    - "old"
 options:
     basic:
         use_venv: true

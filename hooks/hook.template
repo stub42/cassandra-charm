@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 
+import json
+json.JSONDecodeError = Exception
+
 # Load modules from $JUJU_CHARM_DIR/lib
 import sys  # noqa
 sys.path.append('lib')
 
 from charms.layer import basic  # noqa
 basic.bootstrap_charm_deps()
+
+import json  # noqa
+json.JSONDecodeError = Exception
+
 basic.init_config_states()
 
 

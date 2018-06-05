@@ -326,17 +326,9 @@ def get_cassandra_yaml(overrides={}, seeds=None):
     cassandra_yaml['seed_provider'][0]['parameters'][0]['seeds'] = seeds
 
     cassandra_yaml['listen_address'] = listen_ip_address()
-    if c['rpc_interface']:
-        cassandra_yaml['rpc_address'] = rpc_broadcast_ip_address()
-    elif hookenv.has_juju_version('2.3'):
-        cassandra_yaml['rpc_address'] = rpc_ip_address()
+    cassandra_yaml['rpc_address'] = rpc_ip_address()
+    if has_cassandra_version('2.1'):
         cassandra_yaml['broadcast_rpc_address'] = rpc_broadcast_ip_address()
-    else:
-        # If no specific interface & old Juju, we listen on all interfaces.
-        cassandra_yaml['rpc_address'] = '0.0.0.0'
-        if not get_cassandra_version().startswith('2.0'):
-            rpc_addr = rpc_broadcast_ip_address()
-            cassandra_yaml['broadcast_rpc_address'] = rpc_addr
 
     dirs = get_all_database_directories()
     cassandra_yaml.update(dirs)

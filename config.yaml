@@ -18,20 +18,7 @@
 
 options:
     # Install and upgrade charm related options
-    extra_packages:
-        type: string
-        default: ""
-        description: >
-                Extra packages to install. A space delimited list of packages.
-    package_status:
-        default: "install"
-        type: string
-        description: >
-            The status of service-affecting packages will be set to this
-            value in the dpkg database. Useful valid values are "install"
-            and "hold".
     install_sources:
-        type: string
         description: >
             charm-helpers standard listing of package install sources.
             If you are using Datastax Enterprise, you will need to
@@ -44,12 +31,8 @@ options:
         #   DSE requires you to register and add your username/password here.
         #   - deb http://un:pw@debian.datastax.com/enterprise stable main
     install_keys:
-        type: string
-        description: >
-            charm-helpers standard listing of package install source
-            signing keys, corresponding to install_sources.
         default: |
-            - null  # Apache package signing key added automatically.
+            - null  # Apache and DataStax package signing keys are added automatically.
     http_proxy:
         type: string
         description: >
@@ -57,12 +40,6 @@ options:
             This causes pip(1) and other tools to perform downloads via
             the proxy server. eg. http://squid.dc1.lan:8080
         default: ""
-    # TODO: Add JNA
-    # private_jna_url:
-    #     type: string
-    #     default: ""
-    #     description: >
-    #         URL for the private jna tar file. DSE requires JNA >= 3.4
     private_jre_url:
         type: string
         default: ""
@@ -129,31 +106,7 @@ options:
             Set kernel io scheduler for persistent storage.
             https://www.kernel.org/doc/Documentation/block/switching-sched.txt
 
-##     units-to-update:
-##         type: string
-##         default: "all"
-##         description: >
-##             Comma separated list of unit numbers to update (i.e. modify
-##             /etc setup and trigger cassandra restart on config-change or
-##             upgrade-charm), or "all".
-
     # nrpe-external-master relation related options
-    nagios_context:
-      default: "juju"
-      type: string
-      description: |
-        Used by the nrpe subordinate charms.
-        A string that will be prepended to instance name to set the host name
-        in nagios. So for instance the hostname would be something like:
-            juju-myservice-0
-        If you're running multiple environments with the same services in them
-        this allows you to differentiate between them.
-    nagios_servicegroups:
-      default: ""
-      type: string
-      description: >
-        A comma-separated list of nagios servicegroups.
-        If left empty, the nagios_context will be used as the servicegroup
     nagios_heapchk_warn_pct:
         default: 80
         type: int

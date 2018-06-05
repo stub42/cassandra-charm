@@ -73,21 +73,6 @@ def mountpoint(path):
     return path
 
 
-# FOR CHARMHELPERS
-def recursive_chown(directory, owner="root", group="root"):
-    '''Change ownership of all files and directories in 'directory'.
-
-    Ownership of 'directory' is also reset.
-    '''
-    shutil.chown(directory, owner, group)
-    for root, dirs, files in os.walk(directory):
-        for dirname in dirs:
-            shutil.chown(os.path.join(root, dirname), owner, group)
-        for filename in files:
-            shutil.chown(os.path.join(root, filename), owner, group)
-
-
-
 @logged
 def stop_cassandra():
     if is_cassandra_running():

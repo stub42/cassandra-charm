@@ -28,3 +28,8 @@ import sys
 
 print('Injecting environment variables (in {})'.format(__file__), file=sys.stderr)
 os.environ['CASS_DRIVER_NO_CYTHON'] = '1'
+
+
+# Disgusting hack to fix charms.reactive under trusty. Remove when 0.6.4 is released.
+import json  # noqa
+json.JSONDecodeError = Exception

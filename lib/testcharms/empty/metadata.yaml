@@ -1,5 +1,5 @@
 name: empty
-maintainer: Somchai Turdsak <somchai@example.com>
+maintainer: Foo <foo@example.com>
 summary: A charm that does nothing except define some relations.
 description: |
     This is a client charm for testing the Cassandra client relations.
@@ -8,4 +8,8 @@ requires:
     database:
         interface: cassandra
     database-admin:
-        interface: cassandra-admin
+        interface: cassandra
+series:
+    - bionic
+    - xenial
+    - trusty

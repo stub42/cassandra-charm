@@ -144,6 +144,19 @@ def week_spread(unit_num):
     return (sched_dow, sched_hour, sched_minute)
 
 
+def recursive_chown(directory, owner="root", group="root"):
+    '''Change ownership of all files and directories in 'directory'.
+
+    Ownership of 'directory' is also reset.
+    '''
+    shutil.chown(directory, owner, group)
+    for root, dirs, files in os.walk(directory):
+        for dirname in dirs:
+            shutil.chown(os.path.join(root, dirname), owner, group)
+        for filename in files:
+            shutil.chown(os.path.join(root, filename), owner, group)
+
+
 def status_set(status, msg):
     if not status:
         status = hookenv.status_get()[0]
