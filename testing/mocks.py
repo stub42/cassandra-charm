@@ -31,7 +31,7 @@ CHARM_DIR = os.path.abspath(os.path.join(
     os.path.dirname(__file__), os.pardir))
 
 
-def mock_charmhelpers(test_case):
+def mock_charmhelpers(test_case):  # noqa TODO: Drop or fix complexity
     hookenv.cache.clear()  # Clear the hookenv memorisation.
 
     mocks = []
