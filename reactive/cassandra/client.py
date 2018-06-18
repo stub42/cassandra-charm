@@ -74,6 +74,7 @@ def publish_credentials(rel, superuser):
         hookenv.log("Credentials for {} ({}) already published".format(rel.application_name, rel.relation_id))
         return
     hookenv.log("Publishing credentials for {} ({})".format(rel.application_name, rel.relation_id))
+    assert rel.application_name, 'charms.reactive Relation failed to provide application_name property'
     username = 'juju_{}'.format(rel.application_name)
     if superuser:
         username += '_admin'

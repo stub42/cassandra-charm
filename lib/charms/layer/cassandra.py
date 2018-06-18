@@ -820,6 +820,8 @@ def ensure_user(session, username, encrypted_password, superuser=False):
     if auth.lower() == 'allowallauthenticator':
         return  # No authentication means we cannot create users
 
+    assert username != 'juju_None'
+
     if superuser:
         hookenv.log('Creating SUPERUSER {}'.format(username))
     else:
