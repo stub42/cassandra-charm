@@ -44,11 +44,13 @@ register_trigger('leadership.changed.client_rel_ping', clear_flag='cassandra.cli
 @when_not('cassandra.client.published')
 def publish():
     for rel in reactive.endpoint_from_name('database').relations:
-        publish_credentials(rel, False)
-        publish_general(rel)
+        if rel.application_name is not None:
+            publish_credentials(rel, False)
+            publish_general(rel)
     for rel in reactive.endpoint_from_name('database-admin').relations:
-        publish_credentials(rel, True)
-        publish_general(rel)
+        if rel.application_name is not None:
+            publish_credentials(rel, True)
+            publish_general(rel)
     reactive.set_flag('cassandra.client.published')
 
 
