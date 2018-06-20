@@ -30,28 +30,16 @@ from charms.reactive import (
     when_any,
     when_not,
 )
-from charms.reactive.flags import register_trigger
 
 
-register_trigger('config.changed', clear_flag='cassandra.client.published')
-register_trigger('endpoint.database.joined', clear_flag='cassandra.client.published')
-register_trigger('endpoint.database-admin.joined', clear_flag='cassandra.client.published')
-register_trigger('leadership.changed.client_rel_ping', clear_flag='cassandra.client.published')
-
-
-@when_any('endpoint.database.changed.private-address', 'endpoint.database-admin.changed.private-address')
-def new_client():
-    # endpoint.{endpoint_name}.joined gets set when the first relation
-    # is joined, and not cleared until all relations have been
-    # departed. This means it will not change when subsequent
-    # relations are added (multiple clients related to the same
-    # endpoint, common with this charm). Instead, use
-    # endpoint.{endpoint_name}.changed.private-address to detect
-    # when new units join any relation, and republish credentials
-    # in case the relation is new.
+@when_any('config.changed',
+          'endpoint.database.changed',
+          'endpoint.database-admin.changed',
+          'leadership.changed.client_rel_ping')
+def trigger_publish():
     reactive.clear_flag('cassandra.client.published')
-    reactive.clear_flag('endpoint.database.changed.private-address')
-    reactive.clear_flag('endpoint.database-admin.changed.private-address')
+    reactive.clear_flag('endpoint.database.changed')
+    reactive.clear_flag('endpoint.database-admin.changed')
 
 
 @when('leadership.is_leader')
