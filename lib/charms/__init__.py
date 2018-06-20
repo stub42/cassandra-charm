@@ -22,9 +22,11 @@ We set the CASS_DRIVER_NO_CYTHON environment variable so pip
 installs of cassandra-driver do not attempt to compile the
 very large driver.
 '''
-
 import os
+from pkgutil import extend_path
 import sys
+
+__path__ = extend_path(__path__, __name__)
 
 print('Injecting environment variables (in {})'.format(__file__), file=sys.stderr)
 os.environ['CASS_DRIVER_NO_CYTHON'] = '1'
