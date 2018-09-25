@@ -37,6 +37,9 @@ def upgrade_charm():
     reactive.clear_flag('cassandra.nrpe.installed')
 
 
+reactive.register_trigger(when='config.changed', clear_flag='cassandra.nrpe.installed')
+
+
 def local_plugins_dir():
     return '/usr/local/lib/nagios/plugins'
 
