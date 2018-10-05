@@ -36,9 +36,10 @@ options:
     http_proxy:
         type: string
         description: >
-            Value for the http_proxy and https_proxy environment variables.
-            This causes pip(1) and other tools to perform downloads via
-            the proxy server. eg. http://squid.dc1.lan:8080
+            DEPRECATED. Use Juju model-config settings. Value for the http_proxy
+            and https_proxy environment variables. This causes pip(1) and other
+            tools to perform downloads via the proxy server.
+            eg. http://squid.dc1.lan:8080
         default: ""
     private_jre_url:
         type: string
