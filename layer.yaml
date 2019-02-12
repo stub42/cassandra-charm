@@ -23,6 +23,7 @@ options:
             - run-one
             - netcat
             - java-common
+            - cython3
     apt:
         keys:
             - lib/apache.key
