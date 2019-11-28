@@ -24,6 +24,7 @@ from contextlib import closing
 import errno
 import glob
 import os.path
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -350,6 +351,7 @@ def disable_ufw():
     replication and JMX ports. Turn it off, as we now trust Juju
     to control this, and firewalls used appropriately when it can't
     '''
-    hookenv.log('Disabling UFW, no longer used by this charm')
-    ufw.disable()
+    if shutil.which('ufw') is not None:
+        hookenv.log('Disabling UFW, no longer used by this charm')
+        ufw.disable()
     reactive.set_flag('cassandra.ufw.disabled')
