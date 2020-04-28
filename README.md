@@ -41,7 +41,7 @@ and password.
 Cassandra deployments are relatively simple in that they consist of a set of
 Cassandra nodes which seed from each other to create a ring of servers:
     
-    juju deploy -n3 cs:trusty/cassandra
+    juju deploy -n3 cs:cassandra
 
 The service units will deploy and will form a single ring.
 
@@ -50,7 +50,7 @@ New nodes can be added to scale up:
     juju add-unit cassandra
 
 
-/!\ Nodes must be manually decommissioned before dropping a unit.
+/!\ *Nodes must be manually decommissioned before dropping a unit.*
 
     juju run --unit cassandra/1 "nodetool decommission"
     # Wait until Mode is DECOMMISSIONED
