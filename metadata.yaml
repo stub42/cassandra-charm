@@ -22,6 +22,7 @@ description: |
     storage of structured data.
 tags: ["databases"]
 series:
+    - focal
     - bionic
     - xenial
     - trusty
