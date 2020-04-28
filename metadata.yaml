@@ -33,11 +33,6 @@ provides:
     nrpe-external-master:
         interface: nrpe-external-master
         scope: container
-    # TODO: Support or drop BSB interface
-    # data:
-    #     interface: block-storage
-    #     scope: container
-    #     optional: true
 peers:
     cluster:
         interface: cassandra-cluster
